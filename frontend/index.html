@@ -3,11 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RH Survey — Plataforma de Avaliacao</title>
-    <meta name="description" content="RH Survey - Avaliacao 360, NPS e gestao de pesquisas organizacionais com LGPD" />
+    <title>RH Survey</title>
+    <style>
+      body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #F1F5F9; }
+      #loading {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        height: 100vh; gap: 16px;
+      }
+      #logo {
+        width: 56px; height: 56px; background: linear-gradient(135deg,#5B21B6,#7C3AED);
+        border-radius: 16px; display: flex; align-items: center; justify-content: center;
+        font-weight: 800; color: white; font-size: 20px;
+      }
+      #loading p { color: #64748B; font-size: 14px; margin: 0; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="loading">
+        <div id="logo">RH</div>
+        <p>Carregando RH Survey...</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
