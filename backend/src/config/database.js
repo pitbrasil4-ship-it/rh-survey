@@ -1,9 +1,10 @@
-
 'use strict';
 const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 
-const DB_PATH = process.env.DATABASE_URL?.replace('file:', '') || path.join(__dirname, '../../dev.db');
+// In Docker: /app/dev.db  |  local dev: fallback to project root
+const DB_PATH = process.env.SQLITE_PATH || '/app/dev.db';
+
 let db;
 
 function getDB() {
@@ -20,13 +21,15 @@ function initSchema() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS tenants (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL,
-      plan TEXT DEFAULT 'free', active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+      plan TEXT DEFAULT 'free', active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
-      role TEXT DEFAULT 'viewer', two_fa_secret TEXT, two_fa_enabled INTEGER DEFAULT 0,
-      last_login TEXT, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')),
+      role TEXT DEFAULT 'viewer', two_fa_secret TEXT,
+      two_fa_enabled INTEGER DEFAULT 0, last_login TEXT,
+      active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -38,21 +41,25 @@ function initSchema() {
       id TEXT PRIMARY KEY, tenant_id TEXT, created_by_id TEXT,
       name TEXT NOT NULL, description TEXT, category TEXT,
       target_group TEXT, status TEXT DEFAULT 'rascunho',
-      anonymous INTEGER DEFAULT 1, deadline TEXT, lgpd_basis TEXT DEFAULT 'consentimento',
-      public_token TEXT UNIQUE, created_at TEXT DEFAULT (datetime('now')), published_at TEXT,
+      anonymous INTEGER DEFAULT 1, deadline TEXT,
+      lgpd_basis TEXT DEFAULT 'consentimento',
+      public_token TEXT UNIQUE,
+      created_at TEXT DEFAULT (datetime('now')), published_at TEXT,
       FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
       FOREIGN KEY(created_by_id) REFERENCES users(id)
     );
     CREATE TABLE IF NOT EXISTS questions (
       id TEXT PRIMARY KEY, survey_id TEXT, order_num INTEGER,
-      type TEXT NOT NULL, text TEXT NOT NULL, options TEXT, required INTEGER DEFAULT 1,
+      type TEXT NOT NULL, text TEXT NOT NULL, options TEXT,
+      required INTEGER DEFAULT 1,
       FOREIGN KEY(survey_id) REFERENCES surveys(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS respondents (
-      id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT NOT NULL, email TEXT,
-      group_type TEXT, department TEXT, role TEXT,
-      consent_given INTEGER DEFAULT 0, consent_date TEXT, consent_channel TEXT,
-      data_retention_until TEXT, anonymized INTEGER DEFAULT 0,
+      id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT NOT NULL,
+      email TEXT, group_type TEXT, department TEXT, role TEXT,
+      consent_given INTEGER DEFAULT 0, consent_date TEXT,
+      consent_channel TEXT, data_retention_until TEXT,
+      anonymized INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
