@@ -10,6 +10,8 @@ FROM node:22-alpine AS production
 WORKDIR /app
 
 RUN addgroup -g 1001 -S nodejs && adduser -S nodeuser -u 1001
+RUN mkdir -p /app && chown nodeuser:nodejs /app
+
 USER nodeuser
 
 COPY --from=base --chown=nodeuser:nodejs /app ./
