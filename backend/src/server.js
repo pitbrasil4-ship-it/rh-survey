@@ -6,30 +6,26 @@ const { getDB } = require('./config/database');
 
 const PORT = parseInt(process.env.PORT || '4000', 10);
 
-// Initialize DB on startup
+// Initialize DB — warn on failure but don't crash
+// (healthcheck will confirm the server is up first)
 try {
   getDB();
-  logger.info('✅ Banco de dados inicializado (SQLite)');
+  logger.info('Database initialized (SQLite at /app/dev.db)');
 } catch (e) {
-  logger.error('❌ Falha ao inicializar banco', { error: e.message });
-  process.exit(1);
+  logger.warn('Database init warning: ' + e.message + ' — will retry on first request');
 }
 
-const server = app.listen(PORT, () => {
-  logger.info(`🚀 RH Survey API rodando em http://localhost:${PORT}`);
-  logger.info(`📋 Health check: http://localhost:${PORT}/health`);
-  logger.info(`🔐 Segurança: Helmet + Rate Limiting + CORS ativos`);
-  logger.info(`🛡️  LGPD: Conformidade ativa (${process.env.NODE_ENV || 'development'})`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+  logger.info('RH Survey API running on port ' + PORT);
+  logger.info('Health: http://0.0.0.0:' + PORT + '/health');
+  logger.info('LGPD compliant | Helmet + Rate Limiting active');
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
-  logger.info('SIGTERM recebido — encerrando servidor...');
-  server.close(() => { logger.info('Servidor encerrado'); process.exit(0); });
+  server.close(() => { logger.info('Server closed'); process.exit(0); });
 });
 process.on('SIGINT', () => {
-  logger.info('SIGINT recebido — encerrando servidor...');
-  server.close(() => { logger.info('Servidor encerrado'); process.exit(0); });
+  server.close(() => { logger.info('Server closed'); process.exit(0); });
 });
 
 module.exports = server;
