@@ -1,0 +1,9 @@
+'use strict';
+const router = require('express').Router();
+router.use('/auth',        require('./auth.routes'));
+router.use('/surveys',     require('./surveys.routes'));
+router.use('/respondents', require('./respondents.routes'));
+router.use('/public',      require('./responses.routes'));
+router.use('/results',     require('./results.routes'));
+router.use('/lgpd',        require('./lgpd.routes'));
+module.exports = router;
