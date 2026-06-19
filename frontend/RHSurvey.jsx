@@ -1,0 +1,2562 @@
+import { useState } from "react";
+import {
+  LayoutDashboard, ClipboardList, Users, BarChart3, Settings, Plus, Search,
+  Bell, TrendingUp, CheckCircle, Clock, Send, Sparkles, Download, Eye, Edit,
+  Trash2, X, Loader2, Target, Award, Mail, Link2, ChevronDown, ArrowUpRight,
+  UserCheck, Building2, MessageSquare, ChevronRight, Shield, Lock, AlertTriangle,
+  FileText, Key, Activity, EyeOff, Database, RefreshCw, Info
+} from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, Radar
+} from "recharts";
+
+// ─── MOCK DATA ─────────────────────────────────────────────────────────────────
+const MOCK_SURVEYS = [
+  { id:1, name:"Avaliação de Gestores Q2 2025",  type:"gestores",     status:"ativo",    responses:47,  total:60,  created:"10/05/2025", category:"360°",    nps:72, anonymous:true  },
+  { id:2, name:"Satisfação de Fornecedores",      type:"fornecedores", status:"ativo",    responses:23,  total:35,  created:"15/05/2025", category:"NPS",     nps:65, anonymous:false },
+  { id:3, name:"Clima Organizacional",            type:"subordinados", status:"encerrado",responses:120, total:120, created:"01/04/2025", category:"Clima",   nps:81, anonymous:true  },
+  { id:4, name:"Avaliação 360° Liderança",        type:"gestores",     status:"rascunho", responses:0,   total:0,   created:"20/05/2025", category:"360°",    nps:0,  anonymous:true  },
+  { id:5, name:"Feedback Subordinados TI",        type:"subordinados", status:"ativo",    responses:12,  total:25,  created:"18/05/2025", category:"Feedback",nps:58, anonymous:true  },
+];
+
+const MOCK_RESPONDENTS = [
+  { id:1, name:"Carlos Silva",       email:"carlos@empresa.com",  group:"gestores",     department:"Vendas",    status:"respondeu", role:"Gerente",     consent:true  },
+  { id:2, name:"Ana Rodrigues",      email:"ana@empresa.com",     group:"gestores",     department:"TI",        status:"pendente",  role:"Diretora",    consent:true  },
+  { id:3, name:"Fornecedor ABC",     email:"contato@abc.com",     group:"fornecedores", department:"Logística", status:"respondeu", role:"Parceiro",    consent:true  },
+  { id:4, name:"João Pereira",       email:"joao@empresa.com",    group:"subordinados", department:"Financeiro",status:"pendente",  role:"Analista",    consent:false },
+  { id:5, name:"Maria Santos",       email:"maria@empresa.com",   group:"subordinados", department:"RH",        status:"respondeu", role:"Coordenadora",consent:true  },
+  { id:6, name:"Fornecedor XYZ",     email:"xyz@tech.com",        group:"fornecedores", department:"Tecnologia",status:"pendente",  role:"Parceiro",    consent:true  },
+  { id:7, name:"Pedro Alves",        email:"pedro@empresa.com",   group:"gestores",     department:"Marketing", status:"respondeu", role:"Gerente",     consent:true  },
+  { id:8, name:"Lucia Ferreira",     email:"lucia@empresa.com",   group:"subordinados", department:"Operações", status:"pendente",  role:"Técnica",     consent:false },
+];
+
+const RESPONSE_DATA    = [{ mes:"Jan",respostas:45},{ mes:"Fev",respostas:62},{ mes:"Mar",respostas:78},{ mes:"Abr",respostas:95},{ mes:"Mai",respostas:110},{ mes:"Jun",respostas:87}];
+const SATISFACTION_DATA= [{ name:"Ótimo",value:45,color:"#10B981"},{ name:"Bom",value:30,color:"#5B21B6"},{ name:"Regular",value:18,color:"#F59E0B"},{ name:"Ruim",value:7,color:"#EF4444"}];
+const RADAR_DATA       = [{ subject:"Liderança",score:85},{ subject:"Comunicação",score:72},{ subject:"Inovação",score:90},{ subject:"Equipe",score:78},{ subject:"Resultados",score:88},{ subject:"Desenvolv.",score:65}];
+const NPS_HISTORY      = [{ mes:"Jan",nps:55},{ mes:"Fev",nps:62},{ mes:"Mar",nps:58},{ mes:"Abr",nps:71},{ mes:"Mai",nps:75},{ mes:"Jun",nps:72}];
+
+const QUESTION_TYPES = [
+  { id:"nps",      label:"NPS (0–10)",      icon:"📊", desc:"Probabilidade de recomendar" },
+  { id:"scale",    label:"Escala Likert",   icon:"⭐", desc:"Avaliação 1 a 5"             },
+  { id:"multiple", label:"Múltipla Escolha",icon:"☑️", desc:"Uma ou mais opções"          },
+  { id:"text",     label:"Texto Aberto",    icon:"✏️", desc:"Resposta livre"               },
+  { id:"rating",   label:"Estrelas",        icon:"🌟", desc:"Avaliação visual 1–5"         },
+  { id:"yesno",    label:"Sim / Não",       icon:"✅", desc:"Escolha binária"              },
+];
+
+
+
+const MOCK_USERS = [
+  { id:1, name:"Admin RH",        email:"admin@empresa.com",    role:"admin",   lastLogin:"Hoje 08:41",  active:true  },
+  { id:2, name:"Fernanda Lima",   email:"fernanda@empresa.com", role:"manager", lastLogin:"Hoje 10:22",  active:true  },
+  { id:3, name:"Bruno Carvalho",  email:"bruno@empresa.com",    role:"viewer",  lastLogin:"Ontem 16:00", active:true  },
+  { id:4, name:"Rafael Moreira",  email:"rafael@empresa.com",   role:"manager", lastLogin:"3 dias atrás",active:false },
+];
+
+const MOCK_TEMPLATES = [
+  { id:1, name:"Avaliação 360° Completa",   category:"360°",        questions:18, uses:142, rating:4.9, tags:["Liderança","Desempenho","LGPD"] },
+  { id:2, name:"NPS Interno Rápido",        category:"NPS",         questions:3,  uses:89,  rating:4.7, tags:["NPS","Pulso","Quick"]           },
+  { id:3, name:"Clima Organizacional",      category:"Clima",       questions:25, uses:67,  rating:4.8, tags:["Engajamento","Cultura"]         },
+  { id:4, name:"Avaliação de Fornecedor",   category:"Fornecedores",questions:12, uses:54,  rating:4.6, tags:["B2B","Qualidade"]               },
+  { id:5, name:"Onboarding — 30 dias",      category:"Integração",  questions:8,  uses:38,  rating:4.5, tags:["Onboarding","Novo Colaborador"] },
+  { id:6, name:"Feedback de Desligamento",  category:"Turnover",    questions:15, uses:31,  rating:4.8, tags:["Exit Interview","Turnover"]     },
+  { id:7, name:"Avaliação de Treinamento",  category:"T&D",         questions:10, uses:28,  rating:4.4, tags:["Treinamento","Capacitação"]     },
+  { id:8, name:"Pesquisa Pulso Semanal",    category:"Pulso",       questions:5,  uses:125, rating:4.9, tags:["Ágil","Semanal","Quick"]        },
+];
+
+const MOCK_NOTIFICATIONS = [
+  { id:1, type:"response", text:"Ana Rodrigues respondeu a pesquisa Gestores Q2",    time:"5 min",      read:false },
+  { id:2, type:"alert",    text:"2 respondentes sem consentimento LGPD registrado",  time:"1h",         read:false },
+  { id:3, type:"ai",       text:"Insights gerados para Clima Organizacional",        time:"3h",         read:true  },
+  { id:4, type:"deadline", text:"Pesquisa Fornecedores encerra em 5 dias",           time:"Hoje 09:00", read:false },
+  { id:5, type:"success",  text:"Exportação de relatório PDF concluída",             time:"Hoje 11:30", read:true  },
+  { id:6, type:"security", text:"Tentativa de login bloqueada — IP desconhecido",   time:"Hoje 12:00", read:false },
+];
+
+const COMP_BAR_DATA = [
+  { grupo:"Gestores",     score:82 },
+  { grupo:"Fornecedores", score:68 },
+  { grupo:"Subordinados", score:75 },
+];
+
+const TREND_DATA = [
+  { mes:"Jan",gestores:74,subordinados:70,fornecedores:60 },
+  { mes:"Fev",gestores:76,subordinados:72,fornecedores:62 },
+  { mes:"Mar",gestores:78,subordinados:71,fornecedores:63 },
+  { mes:"Abr",gestores:80,subordinados:74,fornecedores:65 },
+  { mes:"Mai",gestores:82,subordinados:75,fornecedores:68 },
+  { mes:"Jun",gestores:84,subordinados:76,fornecedores:70 },
+];
+
+const SAMPLE_QUESTIONS = [
+  { id:1, type:"nps",      text:"De 0 a 10, qual a probabilidade de você recomendar este gestor a um colega?",             opts:[] },
+  { id:2, type:"scale",    text:"Como você avalia a capacidade de comunicação deste gestor?",                               opts:["Muito ruim","Ruim","Regular","Bom","Excelente"] },
+  { id:3, type:"rating",   text:"Avalie a liderança e motivação da equipe promovidas por este gestor.",                    opts:[] },
+  { id:4, type:"multiple", text:"Quais competências este gestor demonstra de forma consistente?",                           opts:["Comunicação clara","Tomada de decisão","Desenvolv. de pessoas","Foco em resultados","Inovação","Empatia"] },
+  { id:5, type:"text",     text:"Descreva uma situação em que este gestor demonstrou liderança exemplar.",                  opts:[] },
+  { id:6, type:"yesno",    text:"Você se sente apoiado e ouvido por este gestor em suas demandas?",                       opts:[] },
+];
+
+const MOCK_CAMPAIGNS = [
+  { id:1, name:"Gestores Q2 — E-mail",        channel:"email",    status:"enviado",  sent:60, opened:47, responded:47, survey:"Avaliação de Gestores Q2 2025", date:"10/05/2025" },
+  { id:2, name:"NPS Fornecedores — WhatsApp", channel:"whatsapp", status:"enviado",  sent:35, opened:28, responded:23, survey:"Satisfação de Fornecedores",    date:"15/05/2025" },
+  { id:3, name:"Feedback TI — E-mail",        channel:"email",    status:"agendado", sent:0,  opened:0,  responded:0,  survey:"Feedback Subordinados TI",      date:"25/05/2025" },
+];
+
+const AUDIT_LOG = [
+  { id:1, user:"admin@empresa.com", action:"Login efetuado",               time:"Hoje 08:41", type:"auth"   },
+  { id:2, user:"admin@empresa.com", action:"Pesquisa criada: Gestores Q2", time:"Hoje 09:12", type:"create" },
+  { id:3, user:"carlos@empresa.com",action:"Respondeu pesquisa #1",         time:"Hoje 10:05", type:"data"   },
+  { id:4, user:"admin@empresa.com", action:"Exportação de relatório PDF",   time:"Hoje 11:30", type:"export" },
+  { id:5, user:"ana@empresa.com",   action:"Tentativa de acesso negada",    time:"Hoje 12:00", type:"alert"  },
+];
+
+// ─── CONSTANTS ─────────────────────────────────────────────────────────────────
+const GRAD        = "linear-gradient(135deg,#5B21B6,#7C3AED)";
+const GRAD_GREEN  = "linear-gradient(135deg,#059669,#10B981)";
+const GRAD_AMBER  = "linear-gradient(135deg,#B45309,#F59E0B)";
+
+const STATUS_CFG = {
+  ativo:     { label:"Ativo",     bg:"bg-green-100", text:"text-green-700", dot:"bg-green-500"  },
+  encerrado: { label:"Encerrado", bg:"bg-slate-100", text:"text-slate-600", dot:"bg-slate-400"  },
+  rascunho:  { label:"Rascunho",  bg:"bg-amber-100", text:"text-amber-700", dot:"bg-amber-500"  },
+  respondeu: { label:"Respondeu", bg:"bg-green-100", text:"text-green-700", dot:"bg-green-500"  },
+  pendente:  { label:"Pendente",  bg:"bg-amber-100", text:"text-amber-700", dot:"bg-amber-400"  },
+};
+
+const GROUP_CFG = {
+  gestores:     { label:"Gestores",     color:"bg-purple-100 text-purple-700", Icon:UserCheck  },
+  fornecedores: { label:"Fornecedores", color:"bg-blue-100 text-blue-700",     Icon:Building2  },
+  subordinados: { label:"Subordinados", color:"bg-teal-100 text-teal-700",     Icon:Users      },
+};
+
+const TYPE_LABELS = { nps:"NPS", scale:"Escala", multiple:"Múltipla", text:"Texto", rating:"Estrelas", yesno:"Sim/Não" };
+const TYPE_COLORS = {
+  nps:"bg-purple-100 text-purple-700", scale:"bg-blue-100 text-blue-700",
+  multiple:"bg-green-100 text-green-700", text:"bg-orange-100 text-orange-700",
+  rating:"bg-amber-100 text-amber-700", yesno:"bg-teal-100 text-teal-700",
+};
+
+// ─── ATOMS ─────────────────────────────────────────────────────────────────────
+function Badge({ status }) {
+  const c = STATUS_CFG[status] || STATUS_CFG.rascunho;
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />{c.label}
+    </span>
+  );
+}
+
+function GroupBadge({ group }) {
+  const c = GROUP_CFG[group] || GROUP_CFG.subordinados;
+  const Icon = c.Icon;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${c.color}`}>
+      <Icon size={11} />{c.label}
+    </span>
+  );
+}
+
+function KpiCard({ title, value, subtitle, icon: Icon, colorClass, trend }) {
+  return (
+    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+      <div className="flex items-start justify-between mb-4">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colorClass}`}>
+          <Icon size={20} className="text-white" />
+        </div>
+        {trend && (
+          <span className="text-xs font-medium text-green-600 flex items-center gap-0.5 bg-green-50 px-2 py-1 rounded-full">
+            <ArrowUpRight size={10} />{trend}
+          </span>
+        )}
+      </div>
+      <div className="text-2xl font-bold text-slate-800 mb-0.5">{value}</div>
+      <div className="text-sm text-slate-500">{title}</div>
+      {subtitle && <div className="text-xs text-slate-400 mt-0.5">{subtitle}</div>}
+    </div>
+  );
+}
+
+function LGPDBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
+      <Shield size={10} />LGPD
+    </span>
+  );
+}
+
+// ─── LGPD CONSENT BANNER ──────────────────────────────────────────────────────
+function LGPDBanner({ onAccept }) {
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-50 p-4">
+      <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl border border-slate-200 p-5 flex items-start gap-4">
+        <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
+          <Shield size={20} style={{ color: "#5B21B6" }} />
+        </div>
+        <div className="flex-1">
+          <h3 className="font-semibold text-slate-800 text-sm mb-1">Privacidade & LGPD — Lei Geral de Proteção de Dados</h3>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Esta plataforma coleta e processa dados pessoais em conformidade com a <strong>Lei nº 13.709/2018 (LGPD)</strong>. 
+            As informações coletadas são utilizadas exclusivamente para fins de avaliação organizacional interna. 
+            Você tem direito de acesso, correção, portabilidade e exclusão dos seus dados a qualquer momento. 
+            Ao continuar, você consente com nossa <span className="text-purple-600 cursor-pointer hover:underline">Política de Privacidade</span>.
+          </p>
+        </div>
+        <div className="flex gap-2 flex-shrink-0">
+          <button className="px-4 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
+            Recusar opcionais
+          </button>
+          <button onClick={onAccept} className="px-4 py-2 text-xs text-white rounded-xl hover:opacity-90 transition-opacity" style={{ background: GRAD }}>
+            Aceitar e continuar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+function Sidebar({ page, setPage }) {
+  const nav = [
+    { id:"dashboard",     label:"Dashboard",      Icon:LayoutDashboard },
+    { id:"surveys",       label:"Pesquisas",       Icon:ClipboardList   },
+    { id:"respondents",   label:"Respondentes",    Icon:Users           },
+    { id:"evaluation360", label:"Avaliação 360°",  Icon:Target          },
+    { id:"results",       label:"Resultados",      Icon:BarChart3       },
+    { id:"formulario",    label:"Formulário",       Icon:FileText        },
+    { id:"templates",     label:"Templates",        Icon:FileCheck       },
+    { id:"relatorios",    label:"Relatórios Avanç.", Icon:BarChart2       },
+    { id:"equipe",        label:"Equipe & Acesso",  Icon:UserCheck       },
+    { id:"notificacoes",  label:"Notificações",      Icon:Bell            },
+    { id:"distribuicao",  label:"Distribuição",     Icon:Send            },
+    { id:"insights",      label:"Insights com IA",  Icon:Sparkles        },
+    { id:"lgpd",          label:"LGPD & Privac.",   Icon:Shield          },
+    { id:"security",      label:"Segurança",         Icon:Lock            },
+    { id:"settings",      label:"Configurações",    Icon:Settings        },
+  ];
+  return (
+    <div style={{ width:240, minWidth:240 }} className="bg-white border-r border-slate-100 flex flex-col h-screen">
+      <div className="px-5 py-4 border-b border-slate-100">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold" style={{ background:GRAD }}>RH</div>
+          <div>
+            <div className="font-bold text-slate-800 text-sm">RH Survey</div>
+            <div className="text-xs text-slate-400 flex items-center gap-1"><Shield size={9} className="text-green-500" />LGPD Compliant</div>
+          </div>
+        </div>
+      </div>
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        {nav.map(({ id, label, Icon }) => {
+          const active = page === id;
+          const isNew  = id === "evaluation360";
+          const isSec  = id === "lgpd" || id === "security";
+          return (
+            <button key={id} onClick={() => setPage(id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${active ? "text-white" : "text-slate-600 hover:bg-slate-50 hover:text-slate-800"}`}
+              style={active ? { background: isSec ? GRAD_GREEN : GRAD } : {}}>
+              <Icon size={17} />{label}
+              {isNew && !active && <span className="ml-auto text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-semibold">Novo</span>}
+            </button>
+          );
+        })}
+      </nav>
+      <div className="px-3 py-3 border-t border-slate-100 space-y-2">
+        <div className="flex items-center gap-2 px-2 py-1.5 bg-green-50 rounded-xl border border-green-100">
+          <Shield size={12} className="text-green-600" />
+          <span className="text-xs text-green-700 font-medium">Ambiente seguro · TLS 1.3</span>
+        </div>
+        <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-slate-50 cursor-pointer">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background:GRAD }}>RH</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold text-slate-700">Admin RH</div>
+            <div className="text-xs text-slate-400 truncate">admin@empresa.com</div>
+          </div>
+          <ChevronDown size={13} className="text-slate-400" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TOPBAR ────────────────────────────────────────────────────────────────────
+function TopBar({ title, unreadCount, onBell }) {
+  return (
+    <div className="bg-white border-b border-slate-100 px-8 py-3.5 flex items-center justify-between sticky top-0 z-10">
+      <div className="text-sm text-slate-400">
+        RH Survey <span className="mx-1 text-slate-300">/</span>
+        <span className="text-slate-700 font-medium">{title}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-100 rounded-full">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-xs text-green-700 font-medium">Sistema seguro</span>
+        </div>
+        <button onClick={onBell} className="relative p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+          <Bell size={17} />
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center leading-none">{unreadCount}</span>
+          )}
+        </button>
+        <div className="w-8 h-8 rounded-full text-white text-xs font-bold flex items-center justify-center" style={{ background:GRAD }}>RH</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── DASHBOARD ─────────────────────────────────────────────────────────────────
+function Dashboard({ setPage }) {
+  return (
+    <div className="p-8">
+      <div className="mb-7">
+        <h1 className="text-2xl font-bold text-slate-800">Bom dia, Equipe RH 👋</h1>
+        <p className="text-slate-500 mt-1 text-sm">Visão geral das pesquisas, avaliações e conformidade LGPD.</p>
+      </div>
+
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <KpiCard title="Pesquisas Ativas"   value="5"   subtitle="2 encerradas no mês"    icon={ClipboardList} colorClass="bg-purple-500" trend="+2 este mês" />
+        <KpiCard title="Total de Respostas" value="202" subtitle="Todos os questionários"  icon={CheckCircle}   colorClass="bg-emerald-500" trend="+18%"       />
+        <KpiCard title="Taxa de Conclusão"  value="79%" subtitle="Média da plataforma"     icon={TrendingUp}    colorClass="bg-blue-500"    trend="+5%"        />
+        <KpiCard title="NPS Médio"          value="72"  subtitle="Net Promoter Score"      icon={Award}         colorClass="bg-amber-500"   trend="+7 pts"     />
+      </div>
+
+      {/* LGPD quick status */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="bg-white rounded-2xl p-4 border border-green-200 shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0"><Shield size={18} className="text-green-600" /></div>
+          <div>
+            <div className="text-sm font-semibold text-slate-800">Consentimentos</div>
+            <div className="text-xs text-slate-500 mt-0.5">6 de 8 coletados <span className="text-green-600 font-medium">(75%)</span></div>
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl p-4 border border-blue-200 shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0"><Lock size={18} className="text-blue-600" /></div>
+          <div>
+            <div className="text-sm font-semibold text-slate-800">Dados Anonimizados</div>
+            <div className="text-xs text-slate-500 mt-0.5">4 pesquisas ativas protegidas</div>
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl p-4 border border-purple-200 shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0"><Activity size={18} style={{ color:"#5B21B6" }} /></div>
+          <div>
+            <div className="text-sm font-semibold text-slate-800">Última Auditoria</div>
+            <div className="text-xs text-slate-500 mt-0.5">Hoje às 08:41 · Sem alertas</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-5 mb-6">
+        <div className="col-span-2 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <h3 className="font-semibold text-slate-800 text-sm mb-1">Respostas por Mês</h3>
+          <p className="text-xs text-slate-400 mb-5">Evolução em 2025</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={RESPONSE_DATA}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="mes" tick={{ fontSize:11, fill:"#94a3b8" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize:11, fill:"#94a3b8" }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ borderRadius:10, border:"none", boxShadow:"0 4px 20px rgba(0,0,0,0.08)", fontSize:12 }} />
+              <Bar dataKey="respostas" fill="#5B21B6" radius={[5,5,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <h3 className="font-semibold text-slate-800 text-sm mb-1">Satisfação Geral</h3>
+          <p className="text-xs text-slate-400 mb-3">Distribuição dos resultados</p>
+          <ResponsiveContainer width="100%" height={130}>
+            <PieChart>
+              <Pie data={SATISFACTION_DATA} cx="50%" cy="50%" innerRadius={40} outerRadius={58} dataKey="value" stroke="none">
+                {SATISFACTION_DATA.map((e,i) => <Cell key={i} fill={e.color} />)}
+              </Pie>
+              <Tooltip contentStyle={{ borderRadius:10, border:"none", boxShadow:"0 4px 20px rgba(0,0,0,0.08)", fontSize:12 }} />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="space-y-1.5 mt-1">
+            {SATISFACTION_DATA.map((d,i) => (
+              <div key={i} className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ background:d.color }} />
+                  <span className="text-slate-600">{d.name}</span>
+                </div>
+                <span className="font-semibold text-slate-700">{d.value}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm mb-5">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h3 className="font-semibold text-slate-800 text-sm">Pesquisas Recentes</h3>
+          <button onClick={() => setPage("surveys")} className="text-xs font-medium flex items-center gap-1 hover:opacity-80" style={{ color:"#5B21B6" }}>
+            Ver todas <ChevronRight size={13} />
+          </button>
+        </div>
+        {MOCK_SURVEYS.slice(0,4).map((s,i) => (
+          <div key={s.id} className={`flex items-center gap-4 px-6 py-3.5 hover:bg-slate-50 transition-colors ${i<3?"border-b border-slate-50":""}`}>
+            <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
+              <ClipboardList size={14} style={{ color:"#5B21B6" }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-800 truncate">{s.name}</span>
+                {s.anonymous && <LGPDBadge />}
+              </div>
+              <div className="text-xs text-slate-400 mt-0.5">{s.responses}/{s.total} respostas · {s.created}</div>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <Badge status={s.status} /><GroupBadge group={s.type} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { label:"Nova Pesquisa",         desc:"Crie um questionário",  Icon:Plus,    bg:"bg-purple-500",  target:"surveys"      },
+          { label:"Gerenciar Respondentes",desc:"Adicione participantes",Icon:Users,   bg:"bg-blue-500",    target:"respondents"  },
+          { label:"Ver Resultados",        desc:"Análise completa",      Icon:BarChart3,bg:"bg-emerald-500",target:"results"      },
+        ].map(({ label,desc,Icon,bg,target },i) => (
+          <button key={i} onClick={() => setPage(target)} className="flex items-center gap-3 bg-white border border-slate-100 rounded-2xl p-4 hover:shadow-md transition-all text-left group">
+            <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0`}>
+              <Icon size={18} className="text-white" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-slate-800">{label}</div>
+              <div className="text-xs text-slate-400">{desc}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── SURVEY LIST ───────────────────────────────────────────────────────────────
+function SurveyList({ onCreateNew }) {
+  const [search,  setSearch]  = useState("");
+  const [filter,  setFilter]  = useState("todos");
+
+  const filtered = MOCK_SURVEYS.filter(s => {
+    const ms = s.name.toLowerCase().includes(search.toLowerCase());
+    const mf = filter === "todos" || s.status === filter;
+    return ms && mf;
+  });
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-7">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Pesquisas</h1>
+          <p className="text-sm text-slate-500 mt-1">Gerencie questionários com controle de privacidade e LGPD.</p>
+        </div>
+        <button onClick={onCreateNew} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-medium hover:opacity-90" style={{ background:GRAD }}>
+          <Plus size={15} />Nova Pesquisa
+        </button>
+      </div>
+
+      <div className="flex items-center gap-3 mb-5">
+        <div className="relative flex-1 max-w-xs">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:border-purple-400"
+            placeholder="Buscar pesquisa..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        {["todos","ativo","encerrado","rascunho"].map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-3.5 py-2 rounded-xl text-sm font-medium transition-all ${filter===f?"text-white":"bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}`}
+            style={filter===f?{ background:GRAD }:{}}>
+            {f==="todos"?"Todos":f.charAt(0).toUpperCase()+f.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-4">
+        {filtered.map(s => {
+          const pct = s.total>0 ? Math.round((s.responses/s.total)*100) : 0;
+          return (
+            <div key={s.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-all">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
+                  <ClipboardList size={18} style={{ color:"#5B21B6" }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-slate-800">{s.name}</h3>
+                        {s.anonymous && <LGPDBadge />}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <Badge status={s.status} /><GroupBadge group={s.type} />
+                        <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{s.category}</span>
+                        {s.anonymous && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1"><EyeOff size={10} />Anônima</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {[Eye,Edit,Trash2].map((Ic,j) => (
+                        <button key={j} className={`p-2 rounded-lg transition-colors ${j===2?"text-slate-400 hover:text-red-500 hover:bg-red-50":"text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}>
+                          <Ic size={14} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-6 mt-4">
+                    <div className="flex-1">
+                      <div className="flex justify-between text-xs text-slate-500 mb-1.5">
+                        <span>Progresso</span>
+                        <span className="font-medium text-slate-700">{s.responses}/{s.total}</span>
+                      </div>
+                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width:`${pct}%`, background:GRAD }} />
+                      </div>
+                    </div>
+                    {s.nps>0 && (
+                      <div className="text-center">
+                        <div className="text-lg font-bold" style={{ color:"#5B21B6" }}>{s.nps}</div>
+                        <div className="text-xs text-slate-400">NPS</div>
+                      </div>
+                    )}
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-slate-700">{pct}%</div>
+                      <div className="text-xs text-slate-400">Conclusão</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 mt-4 pt-3.5 border-t border-slate-50">
+                    <span className="text-xs text-slate-400 flex items-center gap-1"><Clock size={11} />{s.created}</span>
+                    <div className="flex gap-3 ml-auto">
+                      {[[Mail,"E-mail"],[Link2,"Copiar link"],[Send,"WhatsApp"]].map(([Ic,lbl],j) => (
+                        <button key={j} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium">
+                          <Ic size={11} />{lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── SURVEY BUILDER ────────────────────────────────────────────────────────────
+function SurveyBuilder({ onBack }) {
+  const [tab,       setTab]       = useState("builder");
+  const [surveyName,setSurveyName]= useState("");
+  const [questions, setQuestions] = useState([]);
+  const [aiContext, setAiContext]  = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiQs,      setAiQs]      = useState([]);
+  const [selType,   setSelType]   = useState("nps");
+  const [newQ,      setNewQ]      = useState("");
+  const [anonymous, setAnonymous] = useState(true);
+  const [lgpdOk,    setLgpdOk]   = useState(false);
+
+  const addQ = () => {
+    if (!newQ.trim()) return;
+    setQuestions(p => [...p,{ id:Date.now(), text:newQ, type:selType }]);
+    setNewQ("");
+  };
+
+  const generateAI = async () => {
+    if (!aiContext.trim()) return;
+    setAiLoading(true); setAiQs([]);
+    try {
+      const res  = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-6", max_tokens:1000,
+          messages:[{ role:"user",
+            content:`Você é especialista em RH e pesquisas organizacionais no Brasil. Gere 6 perguntas de avaliação para: "${aiContext}".
+Retorne APENAS JSON puro (sem markdown, sem explicação), exatamente neste formato:
+[{"text":"pergunta aqui","type":"nps"},{"text":"pergunta 2","type":"scale"}]
+Tipos disponíveis: nps, scale, multiple, text, rating, yesno. Use tipos variados. Perguntas em português, claras, objetivas, respeitando LGPD (sem dados pessoais desnecessários).`}]
+        })
+      });
+      const data = await res.json();
+      const raw  = (data.content?.[0]?.text||"[]").replace(/```json|```/g,"").trim();
+      setAiQs(JSON.parse(raw));
+    } catch {
+      setAiQs([{ text:"Erro ao gerar. Verifique a conexão e tente novamente.", type:"text" }]);
+    }
+    setAiLoading(false);
+  };
+
+  const tabs = [
+    { id:"builder", label:"✏️ Criar Perguntas" },
+    { id:"ai",      label:"✨ Gerar com IA"    },
+    { id:"import",  label:"📥 Importar"        },
+  ];
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center gap-4 mb-7">
+        <button onClick={onBack} className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl">
+          <ChevronRight size={17} className="rotate-180" />
+        </button>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Nova Pesquisa</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Configure, adicione perguntas e defina proteções de privacidade.</p>
+        </div>
+        <div className="ml-auto flex gap-3">
+          <button className="px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50">Salvar Rascunho</button>
+          <button disabled={!lgpdOk} title={!lgpdOk?"Confirme os termos LGPD antes de publicar":""}
+            className="px-4 py-2 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity" style={{ background:GRAD }}>
+            Publicar Pesquisa
+          </button>
+        </div>
+      </div>
+
+      {/* Basic Info */}
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-5">
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="col-span-2">
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-2">Nome da Pesquisa *</label>
+            <input className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-400 text-sm"
+              placeholder="Ex: Avaliação de Gestores Q3 2025" value={surveyName} onChange={e => setSurveyName(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">Público-Alvo</label>
+            <select className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white">
+              {["Gestores","Fornecedores","Subordinados","Todos"].map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">Categoria</label>
+            <select className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white">
+              {["Avaliação 360°","NPS","Clima Organizacional","Feedback"].map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* LGPD Panel */}
+        <div className="border border-green-200 rounded-xl p-4 bg-green-50">
+          <div className="flex items-center gap-2 mb-3">
+            <Shield size={15} className="text-green-600" />
+            <span className="text-sm font-semibold text-green-800">Configurações de Privacidade (LGPD)</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div onClick={() => setAnonymous(!anonymous)}
+                className={`w-10 h-5 rounded-full relative transition-colors ${anonymous?"bg-green-500":"bg-slate-300"}`}>
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${anonymous?"translate-x-5":"translate-x-0.5"}`} />
+              </div>
+              <div>
+                <div className="text-xs font-medium text-slate-700">Respostas Anônimas</div>
+                <div className="text-xs text-slate-500">Não vincula resposta ao respondente</div>
+              </div>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer" onClick={() => setLgpdOk(!lgpdOk)}>
+              <div className={`w-4 h-4 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${lgpdOk?"border-green-500 bg-green-500":"border-slate-300"}`}>
+                {lgpdOk && <span className="text-white text-xs font-bold">✓</span>}
+              </div>
+              <div>
+                <div className="text-xs font-medium text-slate-700">Confirmo conformidade LGPD *</div>
+                <div className="text-xs text-slate-500">Dados coletados com base legal e finalidade definida</div>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-2 mb-5">
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${tab===t.id?"text-white":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+            style={tab===t.id?{ background:GRAD }:{}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-5" style={{ gridTemplateColumns:"2fr 3fr" }}>
+        {/* LEFT */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          {tab==="builder" && (
+            <>
+              <h3 className="font-semibold text-slate-800 text-sm mb-4">Tipo de Pergunta</h3>
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                {QUESTION_TYPES.map(qt => (
+                  <button key={qt.id} onClick={() => setSelType(qt.id)}
+                    className={`p-3 rounded-xl text-left border transition-all ${selType===qt.id?"border-purple-400 bg-purple-50":"border-slate-200 hover:bg-slate-50"}`}>
+                    <div className="text-base mb-0.5">{qt.icon}</div>
+                    <div className="text-xs font-semibold text-slate-700 leading-tight">{qt.label}</div>
+                    <div className="text-xs text-slate-400 mt-0.5 leading-tight">{qt.desc}</div>
+                  </button>
+                ))}
+              </div>
+              <textarea className="w-full border border-slate-200 rounded-xl px-3 py-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-purple-400 resize-none"
+                placeholder="Digite o texto da pergunta..." rows={3} value={newQ} onChange={e => setNewQ(e.target.value)} />
+              <button onClick={addQ} disabled={!newQ.trim()}
+                className="w-full mt-3 py-2.5 text-sm font-medium text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+                style={{ background:GRAD }}>
+                + Adicionar Pergunta
+              </button>
+            </>
+          )}
+
+          {tab==="ai" && (
+            <>
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles size={16} style={{ color:"#5B21B6" }} />
+                <h3 className="font-semibold text-slate-800 text-sm">Gerador com IA</h3>
+              </div>
+              <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-100 rounded-xl mb-3">
+                <Info size={13} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-blue-700 leading-relaxed">A IA gera perguntas respeitando boas práticas de privacidade. Não insira dados pessoais no campo abaixo.</p>
+              </div>
+              <textarea className="w-full border border-slate-200 rounded-xl px-3 py-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-purple-400 resize-none"
+                placeholder="Ex: Avaliar liderança e comunicação do gestor de vendas pelos membros da equipe no último trimestre..."
+                rows={5} value={aiContext} onChange={e => setAiContext(e.target.value)} />
+              <button onClick={generateAI} disabled={aiLoading||!aiContext.trim()}
+                className="w-full mt-3 py-2.5 text-sm font-medium text-white rounded-xl flex items-center justify-center gap-2 disabled:opacity-60 hover:opacity-90"
+                style={{ background:GRAD }}>
+                {aiLoading ? <><Loader2 size={14} className="animate-spin" />Gerando...</> : <><Sparkles size={14} />Gerar com IA</>}
+              </button>
+              {aiQs.length>0 && (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-600">{aiQs.length} perguntas geradas</span>
+                    <button onClick={() => setQuestions(p => [...p,...aiQs.map((q,i) => ({ id:Date.now()+i,...q }))])}
+                      className="text-xs font-semibold hover:opacity-80" style={{ color:"#5B21B6" }}>
+                      Adicionar todas
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {aiQs.map((q,i) => (
+                      <div key={i} className="flex items-start gap-2 p-3 bg-purple-50 rounded-xl border border-purple-100">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-slate-700 leading-relaxed">{q.text}</p>
+                          <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[q.type]||"bg-slate-100 text-slate-600"}`}>
+                            {TYPE_LABELS[q.type]||q.type}
+                          </span>
+                        </div>
+                        <button onClick={() => setQuestions(p => [...p,{ id:Date.now()+i,...q }])}
+                          className="p-1.5 text-white rounded-lg flex-shrink-0 hover:opacity-80" style={{ background:"#5B21B6" }}>
+                          <Plus size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {tab==="import" && (
+            <>
+              <h3 className="font-semibold text-slate-800 text-sm mb-4">Importar Perguntas</h3>
+              <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center mb-4">
+                <div className="text-3xl mb-2">📄</div>
+                <p className="text-sm text-slate-600 mb-1">Arraste ou clique para selecionar</p>
+                <p className="text-xs text-slate-400">.xlsx, .csv ou .json</p>
+                <button className="mt-3 px-4 py-2 border border-slate-300 text-slate-600 text-xs rounded-xl hover:bg-slate-50">Selecionar Arquivo</button>
+              </div>
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-xs font-semibold text-slate-600 mb-3">Modelos prontos (LGPD):</p>
+                {["Avaliação de Gestores (Padrão)","Pesquisa de Clima","NPS Interno","Avaliação de Fornecedores"].map((t,i) => (
+                  <button key={i} className="w-full text-left p-3 rounded-xl hover:bg-slate-50 border border-slate-100 text-xs text-slate-700 flex items-center justify-between mb-2">
+                    <span className="flex items-center gap-2"><LGPDBadge />{t}</span>
+                    <ChevronRight size={13} className="text-slate-400" />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* RIGHT */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <h3 className="font-semibold text-slate-800 text-sm">Perguntas do Questionário</h3>
+            <span className="text-xs bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full font-medium">
+              {questions.length} pergunta{questions.length!==1?"s":""}
+            </span>
+          </div>
+          <div className="flex-1 p-5 space-y-2 overflow-y-auto" style={{ minHeight:300 }}>
+            {questions.length===0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center py-10">
+                <div className="text-4xl mb-3">📝</div>
+                <p className="text-sm font-medium text-slate-500">Nenhuma pergunta ainda</p>
+                <p className="text-xs text-slate-400 mt-1">Use o painel ao lado para criar ou importar</p>
+              </div>
+            ) : questions.map((q,i) => (
+              <div key={q.id} className="flex items-start gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-100 group">
+                <div className="w-6 h-6 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 flex-shrink-0">{i+1}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-800 leading-relaxed">{q.text}</p>
+                  <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[q.type]||"bg-slate-100 text-slate-600"}`}>
+                    {TYPE_LABELS[q.type]||q.type}
+                  </span>
+                </div>
+                <button onClick={() => setQuestions(p => p.filter(x => x.id!==q.id))}
+                  className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all flex-shrink-0">
+                  <X size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── RESPONDENTS ───────────────────────────────────────────────────────────────
+function RespondentManager() {
+  const [activeGroup, setActiveGroup] = useState("todos");
+  const [search,      setSearch]      = useState("");
+
+  const counts = {
+    todos:        MOCK_RESPONDENTS.length,
+    gestores:     MOCK_RESPONDENTS.filter(r => r.group==="gestores").length,
+    fornecedores: MOCK_RESPONDENTS.filter(r => r.group==="fornecedores").length,
+    subordinados: MOCK_RESPONDENTS.filter(r => r.group==="subordinados").length,
+  };
+
+  const filtered = MOCK_RESPONDENTS.filter(r => {
+    const mg = activeGroup==="todos" || r.group===activeGroup;
+    const ms = r.name.toLowerCase().includes(search.toLowerCase()) || r.email.toLowerCase().includes(search.toLowerCase());
+    return mg && ms;
+  });
+
+  const pending = MOCK_RESPONDENTS.filter(r => !r.consent).length;
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-7">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Respondentes</h1>
+          <p className="text-sm text-slate-500 mt-1">Gerencie participantes e consentimentos LGPD por grupo.</p>
+        </div>
+        <div className="flex gap-3">
+          <button className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+            <Download size={14} />Importar CSV
+          </button>
+          <button className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}>
+            <Plus size={14} />Adicionar
+          </button>
+        </div>
+      </div>
+
+      {pending>0 && (
+        <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl mb-5">
+          <AlertTriangle size={18} className="text-amber-500 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Consentimento pendente para {pending} respondente{pending>1?"s":""}</p>
+            <p className="text-xs text-amber-700 mt-0.5">Não é possível enviar pesquisas para respondentes sem consentimento LGPD registrado.</p>
+          </div>
+          <button className="ml-auto text-xs font-semibold text-amber-700 border border-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-100">
+            Enviar solicitação
+          </button>
+        </div>
+      )}
+
+      <div className="flex gap-2 mb-5">
+        {[
+          { id:"todos",        label:"Todos",        Icon:Users      },
+          { id:"gestores",     label:"Gestores",     Icon:UserCheck  },
+          { id:"fornecedores", label:"Fornecedores", Icon:Building2  },
+          { id:"subordinados", label:"Subordinados", Icon:Users      },
+        ].map(({ id, label, Icon }) => (
+          <button key={id} onClick={() => setActiveGroup(id)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all border ${activeGroup===id?"border-purple-300 bg-purple-50 text-purple-700":"border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+            <Icon size={14} />{label}
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${activeGroup===id?"bg-purple-100 text-purple-600":"bg-slate-100 text-slate-500"}`}>
+              {counts[id]}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="relative mb-4 max-w-xs">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:border-purple-400"
+          placeholder="Buscar por nome ou e-mail..." value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-100">
+              {["Nome","E-mail","Grupo","Departamento","Status","Consentimento LGPD","Ações"].map(h => (
+                <th key={h} className="text-left text-xs font-semibold text-slate-500 px-4 py-3">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r,i) => (
+              <tr key={r.id} className={`hover:bg-slate-50 transition-colors ${i<filtered.length-1?"border-b border-slate-50":""}`}>
+                <td className="px-4 py-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full text-white text-xs font-bold flex items-center justify-center flex-shrink-0" style={{ background:GRAD }}>
+                      {r.name.charAt(0)}
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-slate-800">{r.name}</div>
+                      <div className="text-xs text-slate-400">{r.role}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-3.5 text-sm text-slate-600">{r.email}</td>
+                <td className="px-4 py-3.5"><GroupBadge group={r.group} /></td>
+                <td className="px-4 py-3.5 text-sm text-slate-600">{r.department}</td>
+                <td className="px-4 py-3.5"><Badge status={r.status} /></td>
+                <td className="px-4 py-3.5">
+                  {r.consent
+                    ? <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full"><Shield size={10} />Coletado</span>
+                    : <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full"><AlertTriangle size={10} />Pendente</span>
+                  }
+                </td>
+                <td className="px-4 py-3.5">
+                  <div className="flex items-center gap-1">
+                    {[[Send,false],[Edit,false],[Trash2,true]].map(([Ic,danger],j) => (
+                      <button key={j} className={`p-1.5 rounded-lg transition-colors ${danger?"text-slate-400 hover:text-red-500 hover:bg-red-50":"text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}>
+                        <Ic size={13} />
+                      </button>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── 360° EVALUATION ──────────────────────────────────────────────────────────
+function Evaluation360() {
+  const cycles = [
+    { id:1, name:"Ciclo Q2 2025 — Liderança",  status:"ativo",    start:"01/05/2025", end:"30/06/2025", participants:24, completed:15 },
+    { id:2, name:"Avaliação Anual 2024",        status:"encerrado",start:"01/11/2024", end:"30/11/2024", participants:45, completed:45 },
+  ];
+  const matrix = [
+    { name:"Carlos Silva",  auto:82, gestores:78, pares:85, subordinados:80 },
+    { name:"Ana Rodrigues", auto:90, gestores:88, pares:92, subordinados:87 },
+    { name:"Pedro Alves",   auto:75, gestores:72, pares:78, subordinados:70 },
+  ];
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-7">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Avaliação 360°</h1>
+          <p className="text-sm text-slate-500 mt-1">Ciclos de avaliação com múltiplas perspectivas e anonimização LGPD.</p>
+        </div>
+        <button className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}>
+          <Plus size={14} />Novo Ciclo
+        </button>
+      </div>
+
+      <div className="rounded-2xl p-5 mb-6 border border-purple-100" style={{ background:"linear-gradient(135deg,#f5f3ff,#ede9fe)" }}>
+        <h3 className="font-semibold text-purple-800 text-sm mb-3">Como funciona a Avaliação 360°</h3>
+        <div className="grid grid-cols-4 gap-3">
+          {[["👤","Autoavaliação","O colaborador se avalia"],["⬆️","Gestor avalia","O líder avalia o colaborador"],["↔️","Pares avaliam","Colegas avaliam entre si"],["⬇️","Equipe avalia","Subordinados avaliam o gestor"]].map(([e,t,d],i) => (
+            <div key={i} className="bg-white rounded-xl p-3 text-center border border-purple-100">
+              <div className="text-xl mb-1">{e}</div>
+              <div className="text-xs font-semibold text-slate-700">{t}</div>
+              <div className="text-xs text-slate-400 mt-0.5 leading-tight">{d}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex items-center gap-2 text-xs text-purple-700 bg-white bg-opacity-70 px-3 py-2 rounded-xl border border-purple-100">
+          <Shield size={12} className="text-green-600" />
+          Todas as avaliações deste ciclo são anônimas conforme a LGPD. Os avaliadores não são identificados nas respostas.
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-5 mb-6">
+        {cycles.map(c => {
+          const pct = Math.round((c.completed/c.participants)*100);
+          return (
+            <div key={c.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="font-semibold text-slate-800 text-sm">{c.name}</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">{c.start} → {c.end}</p>
+                </div>
+                <Badge status={c.status} />
+              </div>
+              <div className="flex items-center gap-5 mb-4">
+                <div><div className="text-xl font-bold text-slate-800">{c.participants}</div><div className="text-xs text-slate-400">Participantes</div></div>
+                <div><div className="text-xl font-bold" style={{ color:"#5B21B6" }}>{c.completed}</div><div className="text-xs text-slate-400">Concluídos</div></div>
+                <div className="flex-1">
+                  <div className="flex justify-between text-xs text-slate-500 mb-1"><span>Conclusão</span><span className="font-medium">{pct}%</span></div>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width:`${pct}%`, background:GRAD }} />
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button className="flex-1 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50">Ver Detalhes</button>
+                <button className="flex-1 py-2 text-xs border rounded-xl hover:opacity-80" style={{ borderColor:"#5B21B6",color:"#5B21B6" }}>Relatório</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h3 className="font-semibold text-slate-800 text-sm">Matriz de Resultados — Q2 2025</h3>
+          <p className="text-xs text-slate-400 mt-0.5">Scores médios por perspectiva · Identidades protegidas por anonimização</p>
+        </div>
+        <table className="w-full">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-100">
+              {["Avaliado","👤 Auto","⬆️ Gestor","↔️ Pares","⬇️ Equipe","📊 Média"].map(h => (
+                <th key={h} className={`text-xs font-semibold text-slate-500 px-5 py-3 ${h==="Avaliado"?"text-left":"text-center"}`}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.map((row,i) => {
+              const avg   = Math.round((row.auto+row.gestores+row.pares+row.subordinados)/4);
+              const badge = avg>=85?"bg-green-100 text-green-700":avg>=75?"bg-blue-100 text-blue-700":"bg-amber-100 text-amber-700";
+              return (
+                <tr key={i} className={`hover:bg-slate-50 transition-colors ${i<matrix.length-1?"border-b border-slate-50":""}`}>
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full text-white text-xs font-bold flex items-center justify-center" style={{ background:GRAD }}>{row.name.charAt(0)}</div>
+                      <span className="text-sm font-medium text-slate-800">{row.name}</span>
+                    </div>
+                  </td>
+                  {[row.auto,row.gestores,row.pares,row.subordinados].map((v,j) => (
+                    <td key={j} className="px-5 py-4 text-center text-sm font-semibold text-slate-700">{v}</td>
+                  ))}
+                  <td className="px-5 py-4 text-center">
+                    <span className={`text-sm font-bold px-2.5 py-1 rounded-full ${badge}`}>{avg}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── RESULTS ───────────────────────────────────────────────────────────────────
+function ResultsDashboard() {
+  const [selected, setSelected] = useState(MOCK_SURVEYS[0]);
+  const valid = MOCK_SURVEYS.filter(s => s.responses>0);
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-7">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Resultados & Relatórios</h1>
+          <p className="text-sm text-slate-500 mt-1">Análise completa. Dados exportados com criptografia AES-256.</p>
+        </div>
+        <button className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+          <Download size={14} />Exportar PDF
+        </button>
+      </div>
+
+      <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm mb-6">
+        <div className="flex gap-2 overflow-x-auto">
+          {valid.map(s => (
+            <button key={s.id} onClick={() => setSelected(s)}
+              className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${selected.id===s.id?"text-white":"border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+              style={selected.id===s.id?{ background:GRAD }:{}}>
+              {s.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <KpiCard title="Respostas"         value={selected.responses}                                          subtitle={`de ${selected.total} convidados`} icon={MessageSquare} colorClass="bg-purple-500" />
+        <KpiCard title="Taxa de Conclusão" value={`${Math.round((selected.responses/selected.total)*100)}%`}  subtitle="Média de resposta"                 icon={CheckCircle}   colorClass="bg-emerald-500" />
+        <KpiCard title="NPS Score"         value={selected.nps}                                               subtitle="Net Promoter Score"                icon={TrendingUp}    colorClass="bg-blue-500" />
+        <KpiCard title="Anonimato"         value={selected.anonymous?"Ativo":"Inativo"}                       subtitle="Proteção LGPD"                     icon={Shield}        colorClass={selected.anonymous?"bg-green-500":"bg-slate-400"} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-5 mb-5">
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <h3 className="font-semibold text-slate-800 text-sm mb-4">Evolução do NPS</h3>
+          <ResponsiveContainer width="100%" height={170}>
+            <LineChart data={NPS_HISTORY}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="mes" tick={{ fontSize:11,fill:"#94a3b8" }} axisLine={false} tickLine={false} />
+              <YAxis domain={[40,90]} tick={{ fontSize:11,fill:"#94a3b8" }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ borderRadius:10,border:"none",boxShadow:"0 4px 20px rgba(0,0,0,0.08)",fontSize:12 }} />
+              <Line type="monotone" dataKey="nps" stroke="#5B21B6" strokeWidth={2.5} dot={{ fill:"#5B21B6",r:4 }} activeDot={{ r:6 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <h3 className="font-semibold text-slate-800 text-sm mb-4">Competências Avaliadas</h3>
+          <ResponsiveContainer width="100%" height={170}>
+            <RadarChart data={RADAR_DATA}>
+              <PolarGrid stroke="#f1f5f9" />
+              <PolarAngleAxis dataKey="subject" tick={{ fontSize:10,fill:"#94a3b8" }} />
+              <Radar dataKey="score" stroke="#5B21B6" fill="#5B21B6" fillOpacity={0.25} strokeWidth={2} />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <h3 className="font-semibold text-slate-800 text-sm mb-5">Distribuição de Satisfação</h3>
+        <div className="space-y-3">
+          {SATISFACTION_DATA.map((d,i) => (
+            <div key={i} className="flex items-center gap-4">
+              <span className="text-sm text-slate-600 w-14">{d.name}</span>
+              <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{ width:`${d.value}%`,background:d.color }} />
+              </div>
+              <span className="text-sm font-semibold text-slate-700 w-10 text-right">{d.value}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── LGPD PAGE ─────────────────────────────────────────────────────────────────
+function LGPDPage() {
+  const [expandedRight, setExpandedRight] = useState(null);
+
+  const rights = [
+    { icon:"👁️", title:"Acesso",         desc:"O titular pode solicitar confirmação da existência do tratamento e acesso aos dados.",   art:"Art. 18, I e II" },
+    { icon:"✏️", title:"Correção",        desc:"Dados incompletos, inexatos ou desatualizados devem ser corrigidos a pedido do titular.", art:"Art. 18, III"    },
+    { icon:"🗑️", title:"Exclusão",        desc:"Dados desnecessários ou tratados em desconformidade podem ser eliminados.",              art:"Art. 18, VI"     },
+    { icon:"📦", title:"Portabilidade",   desc:"O titular pode solicitar a portabilidade dos dados para outro fornecedor.",               art:"Art. 18, V"      },
+    { icon:"🚫", title:"Oposição",        desc:"O titular pode opor-se ao tratamento realizado sem consentimento.",                      art:"Art. 18, IX"     },
+    { icon:"📋", title:"Informação",      desc:"O titular tem direito de ser informado sobre o compartilhamento de dados.",              art:"Art. 18, VII"    },
+  ];
+
+  return (
+    <div className="p-8">
+      <div className="mb-7">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+            <Shield size={20} className="text-green-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">LGPD & Privacidade</h1>
+            <p className="text-sm text-slate-500">Conformidade com a Lei Geral de Proteção de Dados nº 13.709/2018</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Status */}
+      <div className="grid grid-cols-3 gap-4 mb-7">
+        {[
+          { label:"Base Legal",          value:"Consentimento explícito",        status:"ok",      icon:CheckCircle },
+          { label:"Encarregado (DPO)",   value:"dpo@empresa.com",                status:"ok",      icon:UserCheck   },
+          { label:"Relatório de Impacto",value:"Atualizado em 01/04/2025",       status:"ok",      icon:FileText    },
+          { label:"Retenção de Dados",   value:"12 meses após coleta",           status:"ok",      icon:Database    },
+          { label:"Consentimentos",      value:"75% coletados (6/8)",            status:"warning", icon:AlertTriangle},
+          { label:"Próxima Revisão",     value:"01/07/2025",                     status:"info",    icon:Clock       },
+        ].map(({ label,value,status,icon:Icon },i) => (
+          <div key={i} className={`bg-white rounded-2xl p-4 border shadow-sm flex items-start gap-3 ${status==="ok"?"border-green-200":status==="warning"?"border-amber-200":"border-blue-200"}`}>
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${status==="ok"?"bg-green-100":status==="warning"?"bg-amber-100":"bg-blue-100"}`}>
+              <Icon size={16} className={status==="ok"?"text-green-600":status==="warning"?"text-amber-500":"text-blue-500"} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">{label}</div>
+              <div className="text-sm font-semibold text-slate-800 mt-0.5">{value}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Rights */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm mb-6">
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h3 className="font-semibold text-slate-800 text-sm">Direitos dos Titulares — Art. 18 da LGPD</h3>
+          <p className="text-xs text-slate-400 mt-0.5">Funcionalidades disponíveis para atendimento de solicitações</p>
+        </div>
+        <div className="grid grid-cols-3 gap-0">
+          {rights.map((r,i) => (
+            <div key={i} onClick={() => setExpandedRight(expandedRight===i?null:i)}
+              className={`p-5 cursor-pointer transition-colors border-slate-50 ${i<3?"border-b":""} ${i%3!==2?"border-r":""} ${expandedRight===i?"bg-purple-50":"hover:bg-slate-50"}`}>
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">{r.icon}</span>
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">{r.title}</div>
+                  <div className="text-xs text-purple-600 font-medium mt-0.5">{r.art}</div>
+                  {expandedRight===i && <p className="text-xs text-slate-600 mt-2 leading-relaxed">{r.desc}</p>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Consent Log */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h3 className="font-semibold text-slate-800 text-sm">Registro de Consentimentos</h3>
+          <button className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80" style={{ color:"#5B21B6" }}>
+            <Download size={12} />Exportar log
+          </button>
+        </div>
+        <table className="w-full">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-100">
+              {["Respondente","E-mail","Consentimento","Data","Canal"].map(h => (
+                <th key={h} className="text-left text-xs font-semibold text-slate-500 px-5 py-3">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {MOCK_RESPONDENTS.map((r,i) => (
+              <tr key={r.id} className={`hover:bg-slate-50 ${i<MOCK_RESPONDENTS.length-1?"border-b border-slate-50":""}`}>
+                <td className="px-5 py-3 text-sm font-medium text-slate-800">{r.name}</td>
+                <td className="px-5 py-3 text-sm text-slate-600">{r.email}</td>
+                <td className="px-5 py-3">
+                  {r.consent
+                    ? <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full"><CheckCircle size={10} />Coletado</span>
+                    : <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full"><Clock size={10} />Pendente</span>
+                  }
+                </td>
+                <td className="px-5 py-3 text-xs text-slate-500">{r.consent?"10/05/2025 09:14":"—"}</td>
+                <td className="px-5 py-3 text-xs text-slate-500">{r.consent?"E-mail":"—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── SECURITY PAGE ─────────────────────────────────────────────────────────────
+function SecurityPage() {
+  const [twoFactor, setTwoFactor] = useState(true);
+  const [ipFilter,  setIpFilter]  = useState(false);
+
+  const auditTypeStyle = {
+    auth:   "bg-blue-100 text-blue-700",
+    create: "bg-purple-100 text-purple-700",
+    data:   "bg-green-100 text-green-700",
+    export: "bg-amber-100 text-amber-700",
+    alert:  "bg-red-100 text-red-700",
+  };
+  const auditTypeLabel = { auth:"Autenticação",create:"Criação",data:"Dados",export:"Exportação",alert:"Alerta" };
+
+  return (
+    <div className="p-8">
+      <div className="mb-7 flex items-start gap-4">
+        <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+          <Lock size={20} className="text-emerald-600" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Segurança Cibernética</h1>
+          <p className="text-sm text-slate-500 mt-1">Controles de acesso, criptografia, autenticação e trilha de auditoria.</p>
+        </div>
+      </div>
+
+      {/* Security score */}
+      <div className="bg-white rounded-2xl p-5 border border-green-200 shadow-sm mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-slate-800 text-sm">Pontuação de Segurança</h3>
+          <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full font-semibold">Excelente</span>
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="text-5xl font-bold text-emerald-500">92<span className="text-2xl text-slate-400">/100</span></div>
+          <div className="flex-1 space-y-2">
+            {[
+              ["Criptografia TLS 1.3",     100, true ],
+              ["Autenticação 2FA",          100, true ],
+              ["Senhas com hash bcrypt",    100, true ],
+              ["Filtro de IP",              0,   false],
+              ["Backups automáticos",       100, true ],
+              ["Rate limiting ativo",       100, true ],
+            ].map(([label,pct,ok],i) => (
+              <div key={i} className="flex items-center gap-3 text-xs">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ok?"bg-green-500":"bg-amber-400"}`} />
+                <span className="text-slate-600 w-44">{label}</span>
+                <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width:`${pct}%`,background:ok?"#10B981":"#F59E0B" }} />
+                </div>
+                <span className={`font-semibold w-8 text-right ${ok?"text-green-600":"text-amber-500"}`}>{pct}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="grid grid-cols-2 gap-5 mb-6">
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2"><Key size={15} className="text-purple-500" />Controles de Acesso</h3>
+          <div className="space-y-4">
+            {[
+              { label:"Autenticação de 2 fatores (2FA)", desc:"Obrigatório para todos os usuários admin", val:twoFactor, set:setTwoFactor },
+              { label:"Filtro por IP permitido",          desc:"Restringe acesso a IPs cadastrados",       val:ipFilter,  set:setIpFilter  },
+            ].map(({ label,desc,val,set },i) => (
+              <div key={i} className="flex items-center justify-between py-3 border-b border-slate-50 last:border-0">
+                <div>
+                  <div className="text-sm font-medium text-slate-800">{label}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{desc}</div>
+                </div>
+                <div onClick={() => set(!val)}
+                  className={`w-10 h-5 rounded-full relative transition-colors cursor-pointer ${val?"bg-green-500":"bg-slate-300"}`}>
+                  <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${val?"translate-x-5":"translate-x-0.5"}`} />
+                </div>
+              </div>
+            ))}
+            <div className="pt-2">
+              <div className="text-sm font-medium text-slate-800 mb-1">Política de Senha</div>
+              <div className="text-xs text-slate-500 leading-relaxed">Mínimo 12 caracteres · Letras maiúsculas e minúsculas · Números · Símbolos · Hash bcrypt (custo 12)</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2"><Database size={15} className="text-blue-500" />Proteção de Dados</h3>
+          <div className="space-y-3">
+            {[
+              ["Criptografia em trânsito",  "TLS 1.3 com HSTS habilitado",         "green"],
+              ["Criptografia em repouso",   "AES-256 para dados sensíveis",         "green"],
+              ["Anonymização automática",   "Ativa em pesquisas configuradas",      "green"],
+              ["Retenção de dados",         "Exclusão automática após 12 meses",    "green"],
+              ["Backup automatizado",       "Diário com retenção de 30 dias",       "green"],
+              ["SQL Injection / XSS",       "Sanitização e validação ativas",       "green"],
+            ].map(([label,value,color],i) => (
+              <div key={i} className="flex items-start justify-between text-xs py-2 border-b border-slate-50 last:border-0 gap-3">
+                <span className="text-slate-600">{label}</span>
+                <span className="font-medium text-green-700 text-right">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Audit Log */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+            <Activity size={15} className="text-slate-500" />Trilha de Auditoria
+          </h3>
+          <div className="flex gap-2">
+            <button className="flex items-center gap-1.5 text-xs border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50">
+              <RefreshCw size={11} />Atualizar
+            </button>
+            <button className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80" style={{ color:"#5B21B6" }}>
+              <Download size={11} />Exportar
+            </button>
+          </div>
+        </div>
+        <div className="divide-y divide-slate-50">
+          {AUDIT_LOG.map(log => (
+            <div key={log.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-slate-50 transition-colors">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${auditTypeStyle[log.type]}`}>
+                {auditTypeLabel[log.type]}
+              </span>
+              <span className="text-sm text-slate-700 flex-1">{log.action}</span>
+              <span className="text-xs text-slate-400">{log.user}</span>
+              <span className="text-xs text-slate-400 flex-shrink-0">{log.time}</span>
+              {log.type==="alert" && <AlertTriangle size={14} className="text-red-500 flex-shrink-0" />}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── SURVEY FORM (formulário público para respondentes) ───────────────────────
+function SurveyForm({ onBack }) {
+  const SURVEY = { name:"Avaliação de Gestores Q2 2025", category:"360°", anonymous:true };
+  const [step,    setStep]   = useState("consent");
+  const [current, setCurrent]= useState(0);
+  const [answers, setAnswers]= useState({});
+  const [starHover,setStarHover]=useState(0);
+
+  const Q = SAMPLE_QUESTIONS;
+  const total = Q.length;
+  const pct   = Math.round((current / total) * 100);
+
+  const setAns = (id, val) => setAnswers(p => ({...p, [id]: val}));
+
+  const renderQuestion = (q) => {
+    const val = answers[q.id];
+    if (q.type === "nps") return (
+      <div>
+        <div className="flex gap-1.5 flex-wrap justify-center mb-3">
+          {Array.from({length:11},(_,i) => {
+            const color = i<=6?"bg-red-100 text-red-700 border-red-200 hover:bg-red-200":i<=8?"bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200":"bg-green-100 text-green-700 border-green-200 hover:bg-green-200";
+            const sel   = val===i?"ring-2 ring-offset-1 ring-purple-500 scale-110":"";
+            return (
+              <button key={i} onClick={() => setAns(q.id,i)}
+                className={`w-12 h-12 rounded-xl border-2 font-bold text-sm transition-all ${color} ${sel}`}>
+                {i}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex justify-between text-xs text-slate-400 px-1">
+          <span>Muito improvável</span><span>Neutro</span><span>Muito provável</span>
+        </div>
+      </div>
+    );
+    if (q.type === "scale") return (
+      <div className="flex gap-3 justify-center">
+        {q.opts.map((opt,i) => (
+          <button key={i} onClick={() => setAns(q.id, i)}
+            className={`flex-1 py-4 rounded-2xl border-2 text-sm font-medium transition-all ${val===i?"border-purple-500 bg-purple-50 text-purple-700":"border-slate-200 text-slate-600 hover:border-purple-300 hover:bg-purple-50"}`}>
+            <div className="text-xl font-bold mb-1">{i+1}</div>
+            <div className="text-xs">{opt}</div>
+          </button>
+        ))}
+      </div>
+    );
+    if (q.type === "rating") return (
+      <div className="flex gap-3 justify-center">
+        {[1,2,3,4,5].map(i => (
+          <button key={i} onMouseEnter={() => setStarHover(i)} onMouseLeave={() => setStarHover(0)}
+            onClick={() => setAns(q.id, i)}
+            className="transition-transform hover:scale-110">
+            <Star size={44} className={`transition-colors ${i<=(starHover||val||0)?"text-amber-400 fill-amber-400":"text-slate-200"}`} />
+          </button>
+        ))}
+      </div>
+    );
+    if (q.type === "multiple") return (
+      <div className="grid grid-cols-2 gap-3">
+        {q.opts.map((opt,i) => {
+          const sel = Array.isArray(val) && val.includes(i);
+          return (
+            <button key={i} onClick={() => {
+              const cur = Array.isArray(val) ? val : [];
+              setAns(q.id, sel ? cur.filter(x=>x!==i) : [...cur, i]);
+            }}
+            className={`p-4 rounded-2xl border-2 text-sm font-medium text-left transition-all ${sel?"border-purple-500 bg-purple-50 text-purple-700":"border-slate-200 text-slate-600 hover:border-purple-300"}`}>
+              <div className={`w-5 h-5 rounded-lg border-2 mb-2 flex items-center justify-center ${sel?"border-purple-500 bg-purple-500":"border-slate-300"}`}>
+                {sel && <span className="text-white text-xs font-bold">✓</span>}
+              </div>
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+    );
+    if (q.type === "text") return (
+      <textarea className="w-full border-2 border-slate-200 rounded-2xl px-5 py-4 text-slate-700 placeholder-slate-400 focus:outline-none focus:border-purple-400 resize-none text-sm leading-relaxed"
+        placeholder="Digite sua resposta aqui..." rows={5} value={val||""}
+        onChange={e => setAns(q.id, e.target.value)} />
+    );
+    if (q.type === "yesno") return (
+      <div className="flex gap-4 justify-center">
+        {[["Sim","✅","bg-green-50 border-green-400 text-green-700","green"],["Não","❌","bg-red-50 border-red-400 text-red-700","red"]].map(([lbl,emoji,selCls,_],i) => {
+          const selected = (i===0 && val===true) || (i===1 && val===false);
+          return (
+            <button key={i} onClick={() => setAns(q.id, i===0)}
+              className={`w-48 py-8 rounded-2xl border-2 text-lg font-bold transition-all ${selected?selCls:"border-slate-200 text-slate-600 hover:border-slate-300"}`}>
+              <div className="text-4xl mb-2">{emoji}</div>{lbl}
+            </button>
+          );
+        })}
+      </div>
+    );
+    return null;
+  };
+
+  if (step === "consent") return (
+    <div className="p-8 max-w-2xl mx-auto">
+      <button onClick={onBack} className="mb-6 flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700">
+        <ChevronRight size={16} className="rotate-180" />Voltar
+      </button>
+      <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm text-center">
+        <div className="w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+          <ClipboardList size={28} className="text-white" />
+        </div>
+        <h1 className="text-2xl font-bold text-slate-800 mb-2">{SURVEY.name}</h1>
+        <div className="flex items-center justify-center gap-2 mb-6">
+          <LGPDBadge />
+          <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100 flex items-center gap-1"><EyeOff size={10} />Resposta Anônima</span>
+          <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{total} perguntas</span>
+        </div>
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 text-left">
+          <div className="flex items-center gap-2 mb-2"><Shield size={15} className="text-green-600" /><span className="text-sm font-semibold text-green-800">Aviso de Privacidade — LGPD</span></div>
+          <p className="text-xs text-green-700 leading-relaxed">
+            Suas respostas são <strong>completamente anônimas</strong> e protegidas conforme a Lei nº 13.709/2018 (LGPD). 
+            Os dados coletados serão utilizados exclusivamente para fins de avaliação organizacional. 
+            Você pode solicitar acesso, correção ou exclusão dos seus dados a qualquer momento.
+          </p>
+        </div>
+        <div className="mb-6">
+          <label className="flex items-start gap-3 text-left cursor-pointer" onClick={() => setStep("questions")}>
+            <div className="w-5 h-5 mt-0.5 rounded border-2 border-green-500 bg-green-500 flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-xs font-bold">✓</span>
+            </div>
+            <p className="text-sm text-slate-700 leading-relaxed">
+              Li e compreendo o aviso de privacidade. Consinto com a coleta das minhas respostas para a finalidade descrita.
+            </p>
+          </label>
+        </div>
+        <button onClick={() => setStep("questions")}
+          className="w-full py-4 rounded-2xl text-white font-semibold text-base hover:opacity-90 transition-opacity"
+          style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+          Começar Avaliação →
+        </button>
+      </div>
+    </div>
+  );
+
+  if (step === "done") return (
+    <div className="p-8 max-w-xl mx-auto text-center">
+      <div className="bg-white rounded-3xl p-12 border border-slate-100 shadow-sm">
+        <div className="text-6xl mb-4">🎉</div>
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Avaliação concluída!</h2>
+        <p className="text-slate-500 mb-6 text-sm leading-relaxed">
+          Suas respostas foram registradas com sucesso de forma anônima.<br />
+          Obrigado por contribuir para o desenvolvimento da nossa organização.
+        </p>
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6">
+          <div className="flex items-center justify-center gap-2 text-green-700 text-sm font-medium">
+            <Shield size={14} />{total} respostas registradas com proteção LGPD
+          </div>
+        </div>
+        <button onClick={onBack} className="px-8 py-3 text-white rounded-2xl font-medium hover:opacity-90" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+          Voltar ao início
+        </button>
+      </div>
+    </div>
+  );
+
+  const q = Q[current];
+  const answered = answers[q.id] !== undefined && answers[q.id] !== "";
+
+  return (
+    <div className="p-8 max-w-3xl mx-auto">
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-medium text-slate-500">{SURVEY.name}</span>
+          <span className="text-xs text-slate-400">{current+1} de {total}</span>
+        </div>
+        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-full rounded-full transition-all duration-500" style={{ width:`${((current)/total)*100}%`, background:"linear-gradient(90deg,#5B21B6,#7C3AED)" }} />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm mb-5">
+        <div className="flex items-start gap-3 mb-7">
+          <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>{current+1}</span>
+          <h2 className="text-lg font-semibold text-slate-800 leading-snug">{q.text}</h2>
+        </div>
+        {renderQuestion(q)}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <button disabled={current===0} onClick={() => setCurrent(p => p-1)}
+          className="flex items-center gap-2 px-5 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm disabled:opacity-40 hover:bg-slate-50">
+          <ChevronRight size={15} className="rotate-180" />Anterior
+        </button>
+        {current < total-1 ? (
+          <button disabled={!answered} onClick={() => setCurrent(p => p+1)}
+            className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm disabled:opacity-50 hover:opacity-90"
+            style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+            Próxima <ChevronRight size={15} />
+          </button>
+        ) : (
+          <button disabled={!answered} onClick={() => setStep("done")}
+            className="flex items-center gap-2 px-6 py-2.5 text-white rounded-xl text-sm font-semibold disabled:opacity-50 hover:opacity-90"
+            style={{ background:"linear-gradient(135deg,#059669,#10B981)" }}>
+            <CheckCircle size={15} />Enviar Avaliação
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── DISTRIBUTION CENTER ───────────────────────────────────────────────────────
+function DistributionCenter() {
+  const [tab,      setTab]     = useState("campanhas");
+  const [channel,  setChannel] = useState("email");
+
+  const chStatus = { enviado:"bg-green-100 text-green-700", agendado:"bg-amber-100 text-amber-700", rascunho:"bg-slate-100 text-slate-600" };
+  const chIcon   = { email:"📧", whatsapp:"💬" };
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-7">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Central de Distribuição</h1>
+          <p className="text-sm text-slate-500 mt-1">Envie pesquisas por e-mail, WhatsApp ou link seguro com rastreamento.</p>
+        </div>
+        <button className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm font-medium hover:opacity-90" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+          <Plus size={15} />Nova Campanha
+        </button>
+      </div>
+
+      <div className="flex gap-2 mb-6">
+        {[["campanhas","📋 Campanhas"],["nova","✉️ Nova Campanha"],["templates","🎨 Templates"]].map(([id,label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${tab===id?"text-white":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+            style={tab===id?{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }:{}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab==="campanhas" && (
+        <>
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            {[
+              { label:"Campanhas Enviadas", value:"2",   icon:Send,         color:"bg-purple-500" },
+              { label:"Taxa de Abertura",   value:"81%", icon:Eye,          color:"bg-blue-500"   },
+              { label:"Taxa de Resposta",   value:"72%", icon:CheckCircle,  color:"bg-green-500"  },
+            ].map(({ label,value,icon:Icon,color },i) => (
+              <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center gap-4">
+                <div className={`w-11 h-11 rounded-xl ${color} flex items-center justify-center flex-shrink-0`}><Icon size={20} className="text-white" /></div>
+                <div>
+                  <div className="text-2xl font-bold text-slate-800">{value}</div>
+                  <div className="text-xs text-slate-500">{label}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="font-semibold text-slate-800 text-sm">Campanhas</h3>
+            </div>
+            {MOCK_CAMPAIGNS.map((c,i) => {
+              const openRate     = c.sent>0 ? Math.round((c.opened/c.sent)*100)    : 0;
+              const respondRate  = c.sent>0 ? Math.round((c.responded/c.sent)*100) : 0;
+              return (
+                <div key={c.id} className={`px-6 py-5 hover:bg-slate-50 transition-colors ${i<MOCK_CAMPAIGNS.length-1?"border-b border-slate-50":""}`}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{chIcon[c.channel]}</span>
+                      <div>
+                        <div className="font-semibold text-slate-800 text-sm">{c.name}</div>
+                        <div className="text-xs text-slate-400 mt-0.5">{c.survey} · {c.date}</div>
+                      </div>
+                    </div>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${chStatus[c.status]}`}>{c.status}</span>
+                  </div>
+                  {c.sent>0 && (
+                    <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-slate-50">
+                      {[["Enviados",c.sent,"text-slate-700"],["Abertos",`${openRate}%`,"text-blue-600"],["Respondidos",`${respondRate}%`,"text-green-600"]].map(([lbl,val,cls],j) => (
+                        <div key={j} className="text-center">
+                          <div className={`text-lg font-bold ${cls}`}>{val}</div>
+                          <div className="text-xs text-slate-400">{lbl}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {tab==="nova" && (
+        <div className="grid grid-cols-5 gap-5">
+          <div className="col-span-2 space-y-5">
+            <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <h3 className="font-semibold text-slate-800 text-sm mb-4">Configurar Campanha</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1.5">Pesquisa</label>
+                  <select className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:outline-none bg-white">
+                    {MOCK_SURVEYS.filter(s=>s.status!=="encerrado").map(s => <option key={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1.5">Canal de envio</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[["email","E-mail","📧"],["whatsapp","WhatsApp","💬"],["link","Link","🔗"]].map(([id,lbl,emoji]) => (
+                      <button key={id} onClick={() => setChannel(id)}
+                        className={`py-3 rounded-xl border-2 text-xs font-medium transition-all ${channel===id?"border-purple-400 bg-purple-50 text-purple-700":"border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                        <div className="text-lg mb-0.5">{emoji}</div>{lbl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1.5">Destinatários</label>
+                  <div className="space-y-2">
+                    {["Gestores (3)","Fornecedores (3)","Subordinados (3)","Todos (8)"].map((g,i) => (
+                      <label key={i} className="flex items-center gap-2.5 py-2 px-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
+                        <input type="checkbox" className="w-4 h-4 accent-purple-600" defaultChecked={i===3} />
+                        <span className="text-sm text-slate-700">{g}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1.5">Agendamento</label>
+                  <input type="datetime-local" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:outline-none" />
+                </div>
+                <button className="w-full py-3 text-white rounded-xl font-medium text-sm hover:opacity-90" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+                  <Send size={14} className="inline mr-2" />Agendar Envio
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="col-span-3">
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+                <span className="text-xs font-semibold text-slate-600">Pré-visualização — {channel === "email" ? "E-mail" : channel === "whatsapp" ? "WhatsApp" : "Link público"}</span>
+              </div>
+              {channel === "email" && (
+                <div className="p-6">
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                    <div className="p-4 text-white text-center" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+                      <div className="text-lg font-bold mb-1">RH Survey</div>
+                      <div className="text-xs opacity-80">Plataforma de Avaliação Organizacional</div>
+                    </div>
+                    <div className="p-6">
+                      <p className="text-sm text-slate-700 mb-3">Olá, <strong>Carlos Silva</strong>,</p>
+                      <p className="text-sm text-slate-600 mb-4 leading-relaxed">
+                        Você foi convidado(a) a participar da pesquisa <strong>Avaliação de Gestores Q2 2025</strong>. 
+                        Sua opinião é muito importante para o desenvolvimento da nossa organização.
+                      </p>
+                      <p className="text-xs text-slate-500 mb-4 p-3 bg-green-50 rounded-xl border border-green-100">
+                        🔒 Esta pesquisa é totalmente anônima e está em conformidade com a LGPD (Lei nº 13.709/2018).
+                      </p>
+                      <div className="text-center my-5">
+                        <span className="inline-block py-3 px-8 text-white text-sm font-semibold rounded-xl" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+                          Responder Pesquisa →
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 text-center">Prazo: 30/06/2025 · Tempo estimado: 5 min</p>
+                    </div>
+                    <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 text-center">
+                      <p className="text-xs text-slate-400">Para cancelar o recebimento de comunicações, <span className="text-purple-600 cursor-pointer">clique aqui</span>.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {channel === "whatsapp" && (
+                <div className="p-6">
+                  <div className="bg-slate-100 rounded-2xl p-4 max-w-xs mx-auto">
+                    <div className="bg-white rounded-2xl rounded-tl-none p-4 shadow-sm">
+                      <p className="text-sm text-slate-700 leading-relaxed mb-3">
+                        Olá! 👋 Você foi convidado(a) para a avaliação <strong>Gestores Q2 2025</strong>.
+                      </p>
+                      <p className="text-xs text-slate-500 mb-3">🔒 Anônima · LGPD · 5 minutos</p>
+                      <div className="bg-purple-600 rounded-xl px-4 py-2 text-center">
+                        <span className="text-white text-xs font-semibold">Responder agora →</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {channel === "link" && (
+                <div className="p-6 text-center">
+                  <div className="w-16 h-16 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <Link2 size={28} style={{ color:"#5B21B6" }} />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-800 mb-2">Link seguro gerado</p>
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 max-w-sm mx-auto">
+                    <span className="text-xs text-slate-600 truncate flex-1">https://rhsurvey.app/s/abc123x</span>
+                    <button className="text-xs font-semibold flex-shrink-0" style={{ color:"#5B21B6" }}>Copiar</button>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-3">Link expira em 30/06/2025 · Proteção LGPD ativa</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab==="templates" && (
+        <div className="grid grid-cols-2 gap-4">
+          {[
+            { name:"Avaliação de Desempenho 360°",   type:"E-mail",    desc:"Template profissional com logo e aviso LGPD integrado",     tags:["RH","360°","Formal"]  },
+            { name:"NPS Rápido — WhatsApp",           type:"WhatsApp",  desc:"Mensagem curta e direta para alta taxa de resposta",        tags:["NPS","WhatsApp","Curto"] },
+            { name:"Pesquisa de Clima",               type:"E-mail",    desc:"Design acolhedor com foco em engajamento dos colaboradores", tags:["Clima","RH","Engaj."]  },
+            { name:"Feedback de Fornecedor",          type:"E-mail",    desc:"Tom formal com instruções claras de prazo e anonimato",     tags:["B2B","Formal","LGPD"]  },
+          ].map((t,i) => (
+            <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="font-semibold text-slate-800 text-sm">{t.name}</h3>
+                  <span className="text-xs text-slate-400 mt-0.5">{t.type}</span>
+                </div>
+                <button className="opacity-0 group-hover:opacity-100 text-xs font-semibold transition-opacity hover:opacity-80" style={{ color:"#5B21B6" }}>Usar</button>
+              </div>
+              <p className="text-xs text-slate-500 mb-3 leading-relaxed">{t.desc}</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {t.tags.map((tag,j) => <span key={j} className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{tag}</span>)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── AI INSIGHTS ──────────────────────────────────────────────────────────────
+function AIInsights() {
+  const [selected, setSelected] = useState(MOCK_SURVEYS[0]);
+  const [loading,  setLoading]  = useState(false);
+  const [insights, setInsights] = useState(null);
+  const [error,    setError]    = useState("");
+
+  const generateInsights = async () => {
+    setLoading(true); setInsights(null); setError("");
+    try {
+      const surveyData = {
+        nome: selected.name,
+        categoria: selected.category,
+        respostas: selected.responses,
+        total: selected.total,
+        nps: selected.nps,
+        taxaConclusao: Math.round((selected.responses/selected.total)*100),
+        satisfacao: { otimo:45, bom:30, regular:18, ruim:7 },
+        competencias: { lideranca:85, comunicacao:72, inovacao:90, equipe:78, resultados:88, desenvolvimento:65 },
+      };
+      const res = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-6", max_tokens:1200,
+          messages:[{ role:"user",
+            content:`Você é um especialista em RH e People Analytics no Brasil. Analise os dados desta pesquisa organizacional e gere um relatório executivo.
+
+Dados da Pesquisa:
+${JSON.stringify(surveyData, null, 2)}
+
+Retorne APENAS JSON puro (sem markdown, sem explicação) neste formato exato:
+{
+  "resumo": "2-3 frases resumindo o resultado geral",
+  "npsClassificacao": "Excelente|Bom|Neutro|Ruim",
+  "pontosFortesArr": ["ponto 1","ponto 2","ponto 3"],
+  "pontosAtencaoArr": ["ponto 1","ponto 2","ponto 3"],
+  "recomendacoesArr": ["ação 1","ação 2","ação 3","ação 4"],
+  "temasAbertosArr": ["tema 1","tema 2","tema 3"],
+  "prioridadeImediata": "descrição da ação mais urgente",
+  "benchmarkTexto": "comparação com médias de mercado brasileiro"
+}`}]
+        })
+      });
+      const data = await res.json();
+      const raw  = (data.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim();
+      setInsights(JSON.parse(raw));
+    } catch {
+      setError("Erro ao conectar com a IA. Verifique a conexão e tente novamente.");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="p-8">
+      <div className="mb-7">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+            <Sparkles size={20} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">Insights com IA</h1>
+            <p className="text-sm text-slate-500">Análise inteligente dos resultados com recomendações estratégicas para RH.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-6">
+        <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-3">Selecione a pesquisa para analisar</label>
+        <div className="flex gap-2 flex-wrap mb-4">
+          {MOCK_SURVEYS.filter(s=>s.responses>0).map(s => (
+            <button key={s.id} onClick={() => { setSelected(s); setInsights(null); }}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${selected.id===s.id?"text-white":"border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+              style={selected.id===s.id?{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }:{}}>
+              {s.name}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl mb-4">
+          {[["Respostas",`${selected.responses}/${selected.total}`],["NPS",selected.nps],["Conclusão",`${Math.round((selected.responses/selected.total)*100)}%`],["Categoria",selected.category]].map(([lbl,val],i) => (
+            <div key={i} className={`flex-1 text-center ${i<3?"border-r border-slate-200":""}`}>
+              <div className="text-sm font-bold text-slate-800">{val}</div>
+              <div className="text-xs text-slate-400">{lbl}</div>
+            </div>
+          ))}
+        </div>
+        <button onClick={generateInsights} disabled={loading}
+          className="w-full py-3 text-white rounded-xl font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-60 hover:opacity-90"
+          style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+          {loading ? <><Loader2 size={16} className="animate-spin" />Analisando com IA...</> : <><Sparkles size={16} />Gerar Análise Completa</>}
+        </button>
+        {error && <p className="text-xs text-red-500 mt-2 text-center">{error}</p>}
+      </div>
+
+      {loading && (
+        <div className="grid grid-cols-2 gap-4">
+          {[...Array(4)].map((_,i) => (
+            <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm animate-pulse">
+              <div className="h-4 bg-slate-100 rounded w-1/3 mb-3" /><div className="h-3 bg-slate-100 rounded w-full mb-2" /><div className="h-3 bg-slate-100 rounded w-4/5" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {insights && !loading && (
+        <div className="space-y-5">
+          {/* Resumo */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
+                <FileCheck size={16} style={{ color:"#5B21B6" }} />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="font-semibold text-slate-800 text-sm">Resumo Executivo</h3>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${insights.npsClassificacao==="Excelente"?"bg-green-100 text-green-700":insights.npsClassificacao==="Bom"?"bg-blue-100 text-blue-700":"bg-amber-100 text-amber-700"}`}>
+                    NPS {insights.npsClassificacao}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-600 leading-relaxed">{insights.resumo}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-5">
+            {/* Pontos fortes */}
+            <div className="bg-white rounded-2xl p-5 border border-green-100 shadow-sm">
+              <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500" />Pontos Fortes
+              </h3>
+              <div className="space-y-2">
+                {(insights.pontosFortesArr||[]).map((p,i) => (
+                  <div key={i} className="flex items-start gap-2.5 p-3 bg-green-50 rounded-xl">
+                    <CheckCircle size={14} className="text-green-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-slate-700 leading-relaxed">{p}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Pontos de atenção */}
+            <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm">
+              <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />Pontos de Atenção
+              </h3>
+              <div className="space-y-2">
+                {(insights.pontosAtencaoArr||[]).map((p,i) => (
+                  <div key={i} className="flex items-start gap-2.5 p-3 bg-amber-50 rounded-xl">
+                    <AlertTriangle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-slate-700 leading-relaxed">{p}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Recomendações */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+            <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+              <Zap size={15} style={{ color:"#5B21B6" }} />Recomendações Estratégicas
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              {(insights.recomendacoesArr||[]).map((r,i) => (
+                <div key={i} className="flex items-start gap-3 p-4 bg-purple-50 rounded-xl border border-purple-100">
+                  <span className="w-6 h-6 rounded-lg text-white text-xs font-bold flex items-center justify-center flex-shrink-0" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>{i+1}</span>
+                  <p className="text-xs text-slate-700 leading-relaxed">{r}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-5">
+            {/* Temas */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+                <MessageCircle size={15} className="text-blue-500" />Principais Temas (Respostas Abertas)
+              </h3>
+              <div className="space-y-2">
+                {(insights.temasAbertosArr||[]).map((t,i) => (
+                  <div key={i} className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl">
+                    <span className="text-xs font-bold text-blue-600 w-5 text-center">{i+1}</span>
+                    <span className="text-xs text-slate-700">{t}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Prioridade + Benchmark */}
+            <div className="space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
+                <h3 className="font-semibold text-red-800 text-sm mb-2 flex items-center gap-2">
+                  <AlertTriangle size={14} className="text-red-500" />Prioridade Imediata
+                </h3>
+                <p className="text-xs text-red-700 leading-relaxed">{insights.prioridadeImediata}</p>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5">
+                <h3 className="font-semibold text-blue-800 text-sm mb-2 flex items-center gap-2">
+                  <BarChart2 size={14} className="text-blue-500" />Benchmark de Mercado
+                </h3>
+                <p className="text-xs text-blue-700 leading-relaxed">{insights.benchmarkTexto}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─── NOTIFICATION CENTER ──────────────────────────────────────────────────────
+function NotificationCenter({ notifications, setNotifications }) {
+  const [filter, setFilter] = useState("todas");
+  const unread = notifications.filter(n => !n.read).length;
+
+  const typeIcon = {
+    response:{ icon:"💬", bg:"bg-blue-100",   label:"Resposta"   },
+    alert:   { icon:"⚠️", bg:"bg-amber-100",  label:"Alerta"     },
+    ai:      { icon:"✨", bg:"bg-purple-100",  label:"IA"         },
+    deadline:{ icon:"⏰", bg:"bg-red-100",     label:"Prazo"      },
+    success: { icon:"✅", bg:"bg-green-100",   label:"Sucesso"    },
+    security:{ icon:"🔒", bg:"bg-slate-100",   label:"Segurança"  },
+  };
+
+  const filtered = notifications.filter(n => {
+    if (filter === "nao_lidas") return !n.read;
+    if (filter === "alertas")   return n.type === "alert" || n.type === "security";
+    return true;
+  });
+
+  const markAllRead = () => setNotifications(p => p.map(n => ({...n, read:true})));
+  const markRead    = id  => setNotifications(p => p.map(n => n.id===id ? {...n,read:true} : n));
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-7">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Notificações</h1>
+          <p className="text-sm text-slate-500 mt-1">{unread > 0 ? `${unread} notificação${unread>1?"s":""} não lida${unread>1?"s":""}` : "Todas as notificações em dia ✓"}</p>
+        </div>
+        {unread > 0 && (
+          <button onClick={markAllRead} className="flex items-center gap-2 px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50">
+            <CheckCircle size={14} />Marcar todas como lidas
+          </button>
+        )}
+      </div>
+
+      <div className="flex gap-2 mb-5">
+        {[["todas","Todas"],["nao_lidas",`Não lidas (${unread})`],["alertas","Alertas"]].map(([id,label]) => (
+          <button key={id} onClick={() => setFilter(id)}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${filter===id?"text-white":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+            style={filter===id?{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }:{}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        {filtered.map(n => {
+          const t = typeIcon[n.type] || typeIcon.success;
+          return (
+            <div key={n.id} onClick={() => markRead(n.id)}
+              className={`flex items-start gap-4 p-4 rounded-2xl border cursor-pointer transition-all hover:shadow-sm ${n.read?"bg-white border-slate-100":"bg-purple-50 border-purple-100"}`}>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${t.bg}`}>{t.icon}</div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm leading-relaxed ${n.read?"text-slate-600":"text-slate-800 font-medium"}`}>{n.text}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-slate-400">{n.time} atrás</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${t.bg} text-slate-600`}>{t.label}</span>
+                </div>
+              </div>
+              {!n.read && <span className="w-2.5 h-2.5 rounded-full bg-purple-500 mt-1 flex-shrink-0" />}
+            </div>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div className="text-center py-12 text-slate-400">
+            <div className="text-4xl mb-3">🔔</div>
+            <p className="text-sm font-medium">Nenhuma notificação encontrada</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── TEAM MANAGEMENT ──────────────────────────────────────────────────────────
+function TeamManagement() {
+  const [users,    setUsers]    = useState(MOCK_USERS);
+  const [showForm, setShowForm] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newRole,  setNewRole]  = useState("viewer");
+
+  const roleConfig = {
+    admin:   { label:"Administrador", bg:"bg-purple-100 text-purple-700", desc:"Acesso total"                      },
+    manager: { label:"Gestor",        bg:"bg-blue-100 text-blue-700",     desc:"Cria e gerencia pesquisas"         },
+    viewer:  { label:"Visualizador",  bg:"bg-slate-100 text-slate-600",   desc:"Apenas leitura de resultados"      },
+  };
+
+  const PERMISSIONS = [
+    ["Criar pesquisas",         true,  true,  false],
+    ["Editar pesquisas",        true,  true,  false],
+    ["Excluir pesquisas",       true,  false, false],
+    ["Ver resultados",          true,  true,  true ],
+    ["Exportar relatórios",     true,  true,  true ],
+    ["Gerenciar respondentes",  true,  true,  false],
+    ["Gerenciar equipe",        true,  false, false],
+    ["Configurações LGPD",      true,  false, false],
+    ["Acessar segurança",       true,  false, false],
+  ];
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-7">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Equipe & Acesso</h1>
+          <p className="text-sm text-slate-500 mt-1">Gerencie usuários, papéis e permissões da plataforma.</p>
+        </div>
+        <button onClick={() => setShowForm(!showForm)}
+          className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm font-medium hover:opacity-90"
+          style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+          <Plus size={15} />Convidar Usuário
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-purple-50 border border-purple-200 rounded-2xl p-5 mb-6">
+          <h3 className="font-semibold text-slate-800 text-sm mb-4">Convidar novo usuário</h3>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-slate-600 block mb-1">E-mail corporativo</label>
+              <input className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400 bg-white"
+                placeholder="nome@empresa.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">Papel</label>
+              <select className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white" value={newRole} onChange={e => setNewRole(e.target.value)}>
+                <option value="admin">Administrador</option>
+                <option value="manager">Gestor</option>
+                <option value="viewer">Visualizador</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button onClick={() => { if(newEmail) { setUsers(p => [...p,{id:Date.now(),name:newEmail.split("@")[0],email:newEmail,role:newRole,lastLogin:"—",active:true}]); setNewEmail(""); setShowForm(false); }}}
+              className="px-4 py-2 text-white text-sm rounded-xl font-medium hover:opacity-90" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+              <Send size={13} className="inline mr-1.5" />Enviar Convite
+            </button>
+            <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-white">Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-5 mb-6">
+        {/* Users table */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h3 className="font-semibold text-slate-800 text-sm">Usuários ({users.length})</h3>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {users.map(u => {
+              const r = roleConfig[u.role];
+              return (
+                <div key={u.id} className="flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors">
+                  <div className="w-9 h-9 rounded-full text-white text-sm font-bold flex items-center justify-center flex-shrink-0"
+                    style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+                    {u.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-slate-800 truncate">{u.name}</span>
+                      {!u.active && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">Inativo</span>}
+                    </div>
+                    <div className="text-xs text-slate-400 truncate">{u.email}</div>
+                    <div className="text-xs text-slate-400">Último acesso: {u.lastLogin}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.bg}`}>{r.label}</span>
+                    <button className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Permission matrix */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h3 className="font-semibold text-slate-800 text-sm">Matriz de Permissões</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  <th className="text-left text-xs font-semibold text-slate-500 px-5 py-3">Ação</th>
+                  <th className="text-center text-xs font-semibold text-purple-600 px-3 py-3">Admin</th>
+                  <th className="text-center text-xs font-semibold text-blue-600 px-3 py-3">Gestor</th>
+                  <th className="text-center text-xs font-semibold text-slate-500 px-3 py-3">Viewer</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PERMISSIONS.map(([action, adm, mgr, viw], i) => (
+                  <tr key={i} className={`${i<PERMISSIONS.length-1?"border-b border-slate-50":""} hover:bg-slate-50`}>
+                    <td className="px-5 py-2.5 text-xs text-slate-700">{action}</td>
+                    {[adm, mgr, viw].map((ok, j) => (
+                      <td key={j} className="px-3 py-2.5 text-center">
+                        {ok
+                          ? <CheckCircle size={14} className="text-green-500 mx-auto" />
+                          : <X size={14} className="text-slate-300 mx-auto" />
+                        }
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TEMPLATES LIBRARY ────────────────────────────────────────────────────────
+function TemplatesLibrary({ onUseTemplate }) {
+  const [search,   setSearch]   = useState("");
+  const [category, setCategory] = useState("Todos");
+
+  const cats = ["Todos", ...Array.from(new Set(MOCK_TEMPLATES.map(t => t.category)))];
+
+  const filtered = MOCK_TEMPLATES.filter(t => {
+    const ms = t.name.toLowerCase().includes(search.toLowerCase()) || t.tags.some(g => g.toLowerCase().includes(search.toLowerCase()));
+    const mc = category === "Todos" || t.category === category;
+    return ms && mc;
+  });
+
+  const catColors = {
+    "360°":"bg-purple-100 text-purple-700", "NPS":"bg-blue-100 text-blue-700",
+    "Clima":"bg-teal-100 text-teal-700", "Fornecedores":"bg-amber-100 text-amber-700",
+    "Integração":"bg-green-100 text-green-700", "Turnover":"bg-red-100 text-red-700",
+    "T&D":"bg-indigo-100 text-indigo-700", "Pulso":"bg-pink-100 text-pink-700",
+  };
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-7">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Biblioteca de Templates</h1>
+          <p className="text-sm text-slate-500 mt-1">Pesquisas prontas e validadas, conformes com a LGPD. Use e personalize.</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 mb-5">
+        <div className="relative flex-1 max-w-xs">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:border-purple-400"
+            placeholder="Buscar template ou tag..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <div className="flex gap-2 overflow-x-auto">
+          {cats.map(c => (
+            <button key={c} onClick={() => setCategory(c)}
+              className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-medium transition-all ${category===c?"text-white":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+              style={category===c?{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }:{}}>
+              {c}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {filtered.map(t => (
+          <div key={t.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="font-semibold text-slate-800 text-sm">{t.name}</h3>
+                  <LGPDBadge />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${catColors[t.category]||"bg-slate-100 text-slate-600"}`}>{t.category}</span>
+                  <span className="text-xs text-slate-400">{t.questions} perguntas</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="flex items-center gap-1 justify-end mb-0.5">
+                  {[...Array(5)].map((_,i) => (
+                    <Star key={i} size={11} className={i < Math.floor(t.rating) ? "text-amber-400 fill-amber-400":"text-slate-200"} />
+                  ))}
+                </div>
+                <div className="text-xs text-slate-400">{t.uses} usos</div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1 mb-4">
+              {t.tags.map((tag,i) => (
+                <span key={i} className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{tag}</span>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-3 border-t border-slate-50">
+              <button className="flex-1 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-center gap-1">
+                <Eye size={11} />Visualizar
+              </button>
+              <button onClick={() => onUseTemplate && onUseTemplate(t)}
+                className="flex-1 py-2 text-xs text-white rounded-xl font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1"
+                style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+                <Plus size={11} />Usar Template
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── ADVANCED REPORTS ──────────────────────────────────────────────────────────
+function AdvancedReports() {
+  const [view, setView] = useState("comparativo");
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-7">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Relatórios Avançados</h1>
+          <p className="text-sm text-slate-500 mt-1">Análise comparativa entre grupos, períodos e competências.</p>
+        </div>
+        <div className="flex gap-2">
+          <button className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+            <Download size={14} />Exportar PDF
+          </button>
+          <button className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+            <Download size={14} />Excel
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-2 mb-6">
+        {[["comparativo","📊 Comparativo"],["tendencia","📈 Tendência"],["competencias","🎯 Competências"],["distribuicao","🥧 Distribuição"]].map(([id,label]) => (
+          <button key={id} onClick={() => setView(id)}
+            className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${view===id?"text-white":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+            style={view===id?{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }:{}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* KPI row */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <KpiCard title="Média Geral" value="75" subtitle="Todos os grupos" icon={BarChart3} colorClass="bg-purple-500" trend="+4 pts" />
+        <KpiCard title="Melhor Grupo" value="Gestores" subtitle="Score: 82/100" icon={Award} colorClass="bg-green-500" />
+        <KpiCard title="Evolução NPS" value="+17 pts" subtitle="Jan → Jun 2025" icon={TrendingUp} colorClass="bg-blue-500" trend="+24%" />
+        <KpiCard title="Pesquisas" value="5" subtitle="Neste relatório" icon={ClipboardList} colorClass="bg-amber-500" />
+      </div>
+
+      {view === "comparativo" && (
+        <div className="grid grid-cols-2 gap-5">
+          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+            <h3 className="font-semibold text-slate-800 text-sm mb-4">Score Médio por Grupo</h3>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={COMP_BAR_DATA} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <XAxis type="number" domain={[0,100]} tick={{ fontSize:11,fill:"#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="grupo" tick={{ fontSize:12,fill:"#64748b" }} axisLine={false} tickLine={false} width={90} />
+                <Tooltip contentStyle={{ borderRadius:10,border:"none",boxShadow:"0 4px 20px rgba(0,0,0,0.08)",fontSize:12 }} />
+                <Bar dataKey="score" radius={[0,6,6,0]}>
+                  {COMP_BAR_DATA.map((_,i) => <Cell key={i} fill={["#5B21B6","#3B82F6","#10B981"][i]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+            <h3 className="font-semibold text-slate-800 text-sm mb-4">Satisfação Acumulada</h3>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={SATISFACTION_DATA} cx="50%" cy="50%" outerRadius={80} dataKey="value" stroke="none" label={({ name,value }) => `${name} ${value}%`} labelLine={false}>
+                  {SATISFACTION_DATA.map((e,i) => <Cell key={i} fill={e.color} />)}
+                </Pie>
+                <Tooltip contentStyle={{ borderRadius:10,border:"none",fontSize:12 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {view === "tendencia" && (
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <h3 className="font-semibold text-slate-800 text-sm mb-4">Evolução de Scores por Grupo — 2025</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={TREND_DATA}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="mes" tick={{ fontSize:11,fill:"#94a3b8" }} axisLine={false} tickLine={false} />
+              <YAxis domain={[55,90]} tick={{ fontSize:11,fill:"#94a3b8" }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ borderRadius:10,border:"none",boxShadow:"0 4px 20px rgba(0,0,0,0.08)",fontSize:12 }} />
+              <Line type="monotone" dataKey="gestores"     stroke="#5B21B6" strokeWidth={2.5} dot={{ fill:"#5B21B6",r:4 }} name="Gestores" />
+              <Line type="monotone" dataKey="subordinados" stroke="#10B981" strokeWidth={2.5} dot={{ fill:"#10B981",r:4 }} name="Subordinados" />
+              <Line type="monotone" dataKey="fornecedores" stroke="#F59E0B" strokeWidth={2.5} dot={{ fill:"#F59E0B",r:4 }} name="Fornecedores" />
+            </LineChart>
+          </ResponsiveContainer>
+          <div className="flex items-center justify-center gap-6 mt-3">
+            {[["#5B21B6","Gestores"],["#10B981","Subordinados"],["#F59E0B","Fornecedores"]].map(([color,label]) => (
+              <div key={label} className="flex items-center gap-2 text-xs text-slate-600">
+                <div className="w-3 h-3 rounded-full" style={{ background:color }} />{label}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {view === "competencias" && (
+        <div className="grid grid-cols-2 gap-5">
+          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+            <h3 className="font-semibold text-slate-800 text-sm mb-4">Radar de Competências — Gestores</h3>
+            <ResponsiveContainer width="100%" height={280}>
+              <RadarChart data={RADAR_DATA}>
+                <PolarGrid stroke="#f1f5f9" />
+                <PolarAngleAxis dataKey="subject" tick={{ fontSize:11,fill:"#94a3b8" }} />
+                <Radar dataKey="score" stroke="#5B21B6" fill="#5B21B6" fillOpacity={0.25} strokeWidth={2} name="Score" />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+            <h3 className="font-semibold text-slate-800 text-sm mb-4">Ranking de Competências</h3>
+            <div className="space-y-3 mt-2">
+              {RADAR_DATA.sort((a,b) => b.score-a.score).map((d,i) => (
+                <div key={i}>
+                  <div className="flex justify-between text-xs text-slate-600 mb-1">
+                    <span className="flex items-center gap-2">
+                      <span className={`w-5 h-5 rounded-full text-white text-xs font-bold flex items-center justify-center ${i===0?"bg-amber-400":i===1?"bg-slate-400":i===2?"bg-amber-700":"bg-slate-200 text-slate-500"}`}>{i+1}</span>
+                      {d.subject}
+                    </span>
+                    <span className="font-semibold text-slate-700">{d.score}/100</span>
+                  </div>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width:`${d.score}%`, background:i===0?"linear-gradient(90deg,#F59E0B,#FCD34D)":i<3?"linear-gradient(90deg,#5B21B6,#7C3AED)":"linear-gradient(90deg,#10B981,#34D399)" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {view === "distribuicao" && (
+        <div className="grid grid-cols-3 gap-5">
+          {SATISFACTION_DATA.map((d,i) => (
+            <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm text-center">
+              <div className="text-4xl font-bold mb-2" style={{ color:d.color }}>{d.value}%</div>
+              <div className="text-sm font-semibold text-slate-700 mb-1">{d.name}</div>
+              <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{ width:`${d.value}%`,background:d.color }} />
+              </div>
+              <div className="text-xs text-slate-400 mt-2">{Math.round(d.value*202/100)} respondentes</div>
+            </div>
+          ))}
+          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+            <h3 className="font-semibold text-slate-800 text-sm mb-3">Por Canal de Resposta</h3>
+            <div className="space-y-3">
+              {[["E-mail","📧",68],["WhatsApp","💬",22],["Link direto","🔗",10]].map(([lbl,icon,pct],i) => (
+                <div key={i}>
+                  <div className="flex justify-between text-xs text-slate-600 mb-1">
+                    <span>{icon} {lbl}</span><span className="font-semibold">{pct}%</span>
+                  </div>
+                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width:`${pct}%`,background:"linear-gradient(90deg,#5B21B6,#7C3AED)" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SETTINGS PAGE ─────────────────────────────────────────────────────────────
+function SettingsPage() {
+  const items = [
+    { title:"Perfil da Empresa",   desc:"Nome, logo e dados da organização",          Icon:Building2  },
+    { title:"Integrações",         desc:"WhatsApp, e-mail SMTP, APIs externas",       Icon:Link2      },
+    { title:"Notificações",        desc:"Alertas automáticos e lembretes",            Icon:Bell       },
+    { title:"Equipe & Acesso",     desc:"Usuários, permissões e papéis",              Icon:Users      },
+    { title:"Marca & Aparência",   desc:"Cores, logo e personalização da plataforma", Icon:Eye        },
+    { title:"Exportação de Dados", desc:"Formatos, criptografia e agendamento",       Icon:Download   },
+  ];
+
+  return (
+    <div className="p-8">
+      <div className="mb-7">
+        <h1 className="text-2xl font-bold text-slate-800">Configurações</h1>
+        <p className="text-sm text-slate-500 mt-1">Gerencie as preferências da plataforma RH Survey.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        {items.map(({ title,desc,Icon },i) => (
+          <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-start gap-4 hover:shadow-md transition-all cursor-pointer group">
+            <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-100 transition-colors">
+              <Icon size={18} style={{ color:"#5B21B6" }} />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-slate-800 text-sm">{title}</h3>
+              <p className="text-xs text-slate-400 mt-0.5">{desc}</p>
+            </div>
+            <ChevronRight size={15} className="text-slate-300 mt-0.5 group-hover:text-slate-400 transition-colors" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN APP ──────────────────────────────────────────────────────────────────
+const PAGE_LABELS = {
+  dashboard:"Dashboard", surveys:"Pesquisas", respondents:"Respondentes",
+  evaluation360:"Avaliação 360°", results:"Resultados",
+  formulario:"Formulário de Resposta", distribuicao:"Central de Distribuição",
+  templates:"Biblioteca de Templates", relatorios:"Relatórios Avançados",
+  equipe:"Equipe & Acesso", notificacoes:"Notificações",
+  insights:"Insights com IA",
+  lgpd:"LGPD & Privacidade", security:"Segurança", settings:"Configurações",
+};
+
+export default function RHSurvey() {
+  const [page,     setPage]    = useState("dashboard");
+  const [creating, setCreating]= useState(false);
+  const [lgpdOk,       setLgpdOk]       = useState(false);
+  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const handleNav = p => { setCreating(false); setPage(p); };
+
+  const renderContent = () => {
+    if (creating) return <SurveyBuilder onBack={() => setCreating(false)} />;
+    switch (page) {
+      case "dashboard":     return <Dashboard     setPage={handleNav} />;
+      case "surveys":       return <SurveyList    onCreateNew={() => setCreating(true)} />;
+      case "respondents":   return <RespondentManager />;
+      case "evaluation360": return <Evaluation360 />;
+      case "results":       return <ResultsDashboard />;
+      case "formulario":    return <SurveyForm    onBack={() => handleNav("surveys")} />;
+      case "templates":     return <TemplatesLibrary onUseTemplate={() => setCreating(true)} />;
+      case "relatorios":    return <AdvancedReports />;
+      case "equipe":        return <TeamManagement />;
+      case "notificacoes":  return <NotificationCenter notifications={notifications} setNotifications={setNotifications} />;
+      case "distribuicao":  return <DistributionCenter />;
+      case "insights":      return <AIInsights />;
+      case "lgpd":          return <LGPDPage />;
+      case "security":      return <SecurityPage />;
+      case "settings":      return <SettingsPage />;
+      default:              return <Dashboard setPage={handleNav} />;
+    }
+  };
+
+  return (
+    <div style={{ display:"flex", height:"100vh", overflow:"hidden", background:"#F8FAFC", fontFamily:"system-ui,-apple-system,sans-serif" }}>
+      <Sidebar page={creating?"surveys":page} setPage={handleNav} />
+      <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+        <TopBar title={creating?"Nova Pesquisa":PAGE_LABELS[page]} unreadCount={unreadCount} onBell={() => handleNav("notificacoes")} />
+        <main style={{ flex:1, overflowY:"auto" }}>{renderContent()}</main>
+      </div>
+      {!lgpdOk && <LGPDBanner onAccept={() => setLgpdOk(true)} />}
+    </div>
+  );
+}
