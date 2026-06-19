@@ -1,0 +1,163 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  plan        String   @default("free")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  users       User[]
+  surveys     Survey[]
+  respondents Respondent[]
+  auditLogs   AuditLog[]
+}
+
+model User {
+  id            String    @id @default(uuid())
+  tenantId      String
+  name          String
+  email         String    @unique
+  passwordHash  String
+  role          String    @default("viewer")
+  twoFaSecret   String?
+  twoFaEnabled  Boolean   @default(false)
+  lastLogin     DateTime?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  tenant        Tenant    @relation(fields:[tenantId], references:[id], onDelete:Cascade)
+  surveys       Survey[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields:[userId], references:[id], onDelete:Cascade)
+}
+
+model Survey {
+  id          String     @id @default(uuid())
+  tenantId    String
+  createdById String
+  name        String
+  description String?
+  category    String?
+  targetGroup String?
+  status      String     @default("rascunho")
+  anonymous   Boolean    @default(true)
+  deadline    DateTime?
+  lgpdBasis   String     @default("consentimento")
+  publicToken String     @unique @default(uuid())
+  createdAt   DateTime   @default(now())
+  publishedAt DateTime?
+  tenant      Tenant     @relation(fields:[tenantId], references:[id], onDelete:Cascade)
+  createdBy   User       @relation(fields:[createdById], references:[id])
+  questions   Question[]
+  responses   Response[]
+  campaigns   Campaign[]
+}
+
+model Question {
+  id        String   @id @default(uuid())
+  surveyId  String
+  orderNum  Int
+  type      String
+  text      String
+  options   String?
+  required  Boolean  @default(true)
+  survey    Survey   @relation(fields:[surveyId], references:[id], onDelete:Cascade)
+  answers   Answer[]
+}
+
+model Respondent {
+  id                  String        @id @default(uuid())
+  tenantId            String
+  name                String
+  email               String
+  groupType           String?
+  department          String?
+  role                String?
+  consentGiven        Boolean       @default(false)
+  consentDate         DateTime?
+  consentChannel      String?
+  dataRetentionUntil  DateTime?
+  anonymized          Boolean       @default(false)
+  createdAt           DateTime      @default(now())
+  tenant              Tenant        @relation(fields:[tenantId], references:[id], onDelete:Cascade)
+  responses           Response[]
+  lgpdConsents        LGPDConsent[]
+}
+
+model Response {
+  id              String      @id @default(uuid())
+  surveyId        String
+  respondentId    String?
+  anonymousToken  String?     @unique @default(uuid())
+  startedAt       DateTime    @default(now())
+  completedAt     DateTime?
+  ipHash          String?
+  survey          Survey      @relation(fields:[surveyId], references:[id])
+  respondent      Respondent? @relation(fields:[respondentId], references:[id])
+  answers         Answer[]
+}
+
+model Answer {
+  id          String    @id @default(uuid())
+  responseId  String
+  questionId  String
+  valueText   String?
+  valueNum    Float?
+  valueJson   String?
+  createdAt   DateTime  @default(now())
+  response    Response  @relation(fields:[responseId], references:[id], onDelete:Cascade)
+  question    Question  @relation(fields:[questionId], references:[id])
+}
+
+model LGPDConsent {
+  id            String     @id @default(uuid())
+  respondentId  String
+  surveyId      String?
+  action        String
+  ipHash        String?
+  channel       String?
+  createdAt     DateTime   @default(now())
+  respondent    Respondent @relation(fields:[respondentId], references:[id])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String?
+  userId     String?
+  action     String
+  resource   String?
+  resourceId String?
+  ipHash     String?
+  meta       String?
+  createdAt  DateTime @default(now())
+  tenant     Tenant?  @relation(fields:[tenantId], references:[id])
+  user       User?    @relation(fields:[userId], references:[id])
+}
+
+model Campaign {
+  id          String    @id @default(uuid())
+  surveyId    String
+  name        String
+  channel     String
+  status      String    @default("rascunho")
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+  survey      Survey    @relation(fields:[surveyId], references:[id])
+}
