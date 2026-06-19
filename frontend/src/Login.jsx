@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Eye, EyeOff, Loader2, Shield, Mail, Lock, Star } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
@@ -70,11 +70,11 @@ export default function Login({ onLogin }) {
   const [remember, setRemember] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 900);
 
-  useState(() => {
+  useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 900);
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
-  });
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
