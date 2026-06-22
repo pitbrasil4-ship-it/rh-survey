@@ -67,6 +67,14 @@ export const api = {
     dashboard: ()         => request('GET', '/results/dashboard'),
     insights:  (surveyId) => request('POST', '/results/insights', { surveyId }),
   },
+  eval: {
+    cycles:           ()               => request('GET', '/eval/cycles'),
+    createCycle:      (name, surveyId) => request('POST', '/eval/cycles', { name, surveyId }),
+    cycle:            (id)             => request('GET', `/eval/cycles/${id}`),
+    addAssignment:    (cycleId, data)  => request('POST', `/eval/cycles/${cycleId}/assignments`, data),
+    removeAssignment: (id)             => request('DELETE', `/eval/assignments/${id}`),
+    results:          (cycleId)        => request('GET', `/eval/results/${cycleId}`),
+  },
   auth: {
     changePassword: (currentPassword, newPassword) => request('POST', '/auth/change-password', { currentPassword, newPassword }),
   },
