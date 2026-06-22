@@ -2849,6 +2849,70 @@ function AdvancedReports() {
 }
 
 // ─── SETTINGS PAGE ─────────────────────────────────────────────────────────────
+function ChangePasswordCard() {
+  const [cur,     setCur]     = useState("");
+  const [nw,      setNw]      = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [saving,  setSaving]  = useState(false);
+  const [msg,     setMsg]     = useState(null);   // {type:'ok'|'err', text}
+
+  async function submit() {
+    setMsg(null);
+    if (!cur || !nw)            { setMsg({ type:"err", text:"Preencha a senha atual e a nova." }); return; }
+    if (nw.length < 8)          { setMsg({ type:"err", text:"A nova senha deve ter no mínimo 8 caracteres." }); return; }
+    if (nw !== confirm)         { setMsg({ type:"err", text:"A confirmação não confere com a nova senha." }); return; }
+    if (nw === cur)             { setMsg({ type:"err", text:"A nova senha deve ser diferente da atual." }); return; }
+    setSaving(true);
+    try {
+      await api.auth.changePassword(cur, nw);
+      setMsg({ type:"ok", text:"Senha alterada com sucesso!" });
+      setCur(""); setNw(""); setConfirm("");
+    } catch (e) {
+      setMsg({ type:"err", text:e.message || "Erro ao alterar a senha." });
+    }
+    setSaving(false);
+  }
+
+  const field = (label, val, set, ph) => (
+    <div>
+      <label className="text-xs font-medium text-slate-600 block mb-1">{label}</label>
+      <input type="password" value={val} onChange={e => set(e.target.value)} placeholder={ph}
+        className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400 bg-white" />
+    </div>
+  );
+
+  return (
+    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-5">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
+          <Key size={18} style={{ color:"#5B21B6" }} />
+        </div>
+        <div>
+          <h3 className="font-semibold text-slate-800 text-sm">Trocar Senha</h3>
+          <p className="text-xs text-slate-400 mt-0.5">Altere a senha da sua conta. Você será desconectado das outras sessões.</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {field("Senha atual", cur, setCur, "Sua senha atual")}
+        {field("Nova senha", nw, setNw, "Mínimo 8 caracteres")}
+        {field("Confirmar nova senha", confirm, setConfirm, "Repita a nova senha")}
+      </div>
+      {msg && (
+        <div className={`mt-3 text-sm rounded-xl px-4 py-2.5 flex items-center gap-2 ${msg.type==="ok"?"bg-green-50 border border-green-200 text-green-700":"bg-red-50 border border-red-200 text-red-700"}`}>
+          {msg.type==="ok" ? <CheckCircle size={15} /> : <AlertTriangle size={15} />}{msg.text}
+        </div>
+      )}
+      <div className="mt-3">
+        <button onClick={submit} disabled={saving}
+          className="px-4 py-2.5 text-white rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-60 flex items-center gap-2"
+          style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+          {saving ? <><Loader2 size={14} className="animate-spin" />Salvando...</> : <><Key size={14} />Alterar senha</>}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SettingsPage() {
   const items = [
     { title:"Perfil da Empresa",   desc:"Nome, logo e dados da organização",          Icon:Building2  },
@@ -2865,6 +2929,7 @@ function SettingsPage() {
         <h1 className="text-2xl font-bold text-slate-800">Configurações</h1>
         <p className="text-sm text-slate-500 mt-1">Gerencie as preferências da plataforma RH Survey.</p>
       </div>
+      <ChangePasswordCard />
       <div className="grid grid-cols-2 gap-4">
         {items.map(({ title,desc,Icon },i) => (
           <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-start gap-4 hover:shadow-md transition-all cursor-pointer group">
