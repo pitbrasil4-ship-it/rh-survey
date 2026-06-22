@@ -37,14 +37,19 @@ class ErrorBoundary extends Component {
 const Login    = React.lazy(() => import('./Login.jsx'));
 const MainApp  = React.lazy(() => import('./MainApp.jsx'));
 const PublicSurvey = React.lazy(() => import('./PublicSurvey.jsx'));
+const PublicEval = React.lazy(() => import('./PublicEval.jsx'));
 
-// Detecta o token público na URL: /r/<token> ou ?r=<token>
-function getPublicToken() {
+// Detecta rota pública: /eval/<token> (360°) ou /r/<token> (pesquisa); também ?eval= / ?r=
+function getPublicRoute() {
   try {
-    const m = window.location.pathname.match(/^\/r\/([^/?#]+)/);
-    if (m) return decodeURIComponent(m[1]);
-    const q = new URLSearchParams(window.location.search).get('r');
-    return q || null;
+    let m = window.location.pathname.match(/^\/eval\/([^/?#]+)/);
+    if (m) return { type:'eval', token: decodeURIComponent(m[1]) };
+    m = window.location.pathname.match(/^\/r\/([^/?#]+)/);
+    if (m) return { type:'survey', token: decodeURIComponent(m[1]) };
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('eval')) return { type:'eval', token: q.get('eval') };
+    if (q.get('r')) return { type:'survey', token: q.get('r') };
+    return null;
   } catch { return null; }
 }
 
@@ -64,12 +69,14 @@ function Root() {
     </div>
   );
 
-  const publicToken = getPublicToken();
-  if (publicToken) {
+  const route = getPublicRoute();
+  if (route) {
     return (
       <ErrorBoundary>
         <React.Suspense fallback={<Fallback />}>
-          <PublicSurvey token={publicToken} />
+          {route.type === 'eval'
+            ? <PublicEval token={route.token} />
+            : <PublicSurvey token={route.token} />}
         </React.Suspense>
       </ErrorBoundary>
     );
