@@ -271,7 +271,7 @@ function LGPDBanner({ onAccept }) {
             Esta plataforma coleta e processa dados pessoais em conformidade com a <strong>Lei nº 13.709/2018 (LGPD)</strong>. 
             As informações coletadas são utilizadas exclusivamente para fins de avaliação organizacional interna. 
             Você tem direito de acesso, correção, portabilidade e exclusão dos seus dados a qualquer momento. 
-            Ao continuar, você consente com nossa <span className="text-purple-600 cursor-pointer hover:underline">Política de Privacidade</span>.
+            Ao continuar, você consente com o tratamento dos seus dados nos termos descritos acima.
           </p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
@@ -2230,9 +2230,6 @@ function LGPDPage() {
 
 // ─── SECURITY PAGE ─────────────────────────────────────────────────────────────
 function SecurityPage() {
-  const [twoFactor, setTwoFactor] = useState(true);
-  const [ipFilter,  setIpFilter]  = useState(false);
-
   const auditTypeStyle = {
     auth:   "bg-blue-100 text-blue-700",
     create: "bg-purple-100 text-purple-700",
@@ -2281,33 +2278,25 @@ function SecurityPage() {
         </div>
       </div>
 
-      {/* Security score */}
+      {/* Medidas de segurança ativas */}
       <div className="bg-white rounded-2xl p-5 border border-green-200 shadow-sm mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-slate-800 text-sm">Pontuação de Segurança</h3>
-          <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full font-semibold">Excelente</span>
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="text-5xl font-bold text-emerald-500">92<span className="text-2xl text-slate-400">/100</span></div>
-          <div className="flex-1 space-y-2">
-            {[
-              ["Criptografia TLS 1.3",     100, true ],
-              ["Autenticação 2FA",          100, true ],
-              ["Senhas com hash bcrypt",    100, true ],
-              ["Filtro de IP",              0,   false],
-              ["Backups automáticos",       100, true ],
-              ["Rate limiting ativo",       100, true ],
-            ].map(([label,pct,ok],i) => (
-              <div key={i} className="flex items-center gap-3 text-xs">
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ok?"bg-green-500":"bg-amber-400"}`} />
-                <span className="text-slate-600 w-44">{label}</span>
-                <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width:`${pct}%`,background:ok?"#10B981":"#F59E0B" }} />
-                </div>
-                <span className={`font-semibold w-8 text-right ${ok?"text-green-600":"text-amber-500"}`}>{pct}%</span>
-              </div>
-            ))}
-          </div>
+        <h3 className="font-semibold text-slate-800 text-sm mb-4">Medidas de segurança ativas</h3>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
+          {[
+            "Conexão criptografada (HTTPS/TLS)",
+            "Senhas com hash bcrypt (custo 12)",
+            "Sessão com token JWT + token de atualização",
+            "Limite de requisições (proteção contra abuso)",
+            "Consultas parametrizadas ao banco de dados",
+            "Trilha de auditoria de ações sensíveis",
+            "Conformidade LGPD: consentimento e anonimização",
+            "Cabeçalhos de segurança (Helmet) e CORS restrito",
+          ].map((label,i) => (
+            <div key={i} className="flex items-center gap-2 text-xs text-slate-700">
+              <CheckCircle size={14} className="text-green-500 flex-shrink-0" />
+              <span>{label}</span>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -2315,23 +2304,16 @@ function SecurityPage() {
       <div className="grid grid-cols-2 gap-5 mb-6">
         <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
           <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2"><Key size={15} className="text-purple-500" />Controles de Acesso</h3>
-          <div className="space-y-4">
-            {[
-              { label:"Autenticação de 2 fatores (2FA)", desc:"Obrigatório para todos os usuários admin", val:twoFactor, set:setTwoFactor },
-              { label:"Filtro por IP permitido",          desc:"Restringe acesso a IPs cadastrados",       val:ipFilter,  set:setIpFilter  },
-            ].map(({ label,desc,val,set },i) => (
-              <div key={i} className="flex items-center justify-between py-3 border-b border-slate-50 last:border-0">
-                <div>
-                  <div className="text-sm font-medium text-slate-800">{label}</div>
-                  <div className="text-xs text-slate-400 mt-0.5">{desc}</div>
-                </div>
-                <div onClick={() => set(!val)}
-                  className={`w-10 h-5 rounded-full relative transition-colors cursor-pointer ${val?"bg-green-500":"bg-slate-300"}`}>
-                  <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${val?"translate-x-5":"translate-x-0.5"}`} />
-                </div>
-              </div>
-            ))}
-            <div className="pt-2">
+          <div className="space-y-1">
+            <div className="py-2 border-b border-slate-50">
+              <div className="text-sm font-medium text-slate-800 mb-1">Perfis de acesso</div>
+              <div className="text-xs text-slate-500 leading-relaxed">Administrador, Gestor e Colaborador — cada ação é liberada conforme o papel do usuário.</div>
+            </div>
+            <div className="py-2 border-b border-slate-50">
+              <div className="text-sm font-medium text-slate-800 mb-1">Sessões autenticadas</div>
+              <div className="text-xs text-slate-500 leading-relaxed">Acesso por token JWT com expiração e renovação por token de atualização.</div>
+            </div>
+            <div className="py-2">
               <div className="text-sm font-medium text-slate-800 mb-1">Política de Senha</div>
               <div className="text-xs text-slate-500 leading-relaxed">Mínimo 12 caracteres · Letras maiúsculas e minúsculas · Números · Símbolos · Hash bcrypt (custo 12)</div>
             </div>
@@ -2342,13 +2324,13 @@ function SecurityPage() {
           <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2"><Database size={15} className="text-blue-500" />Proteção de Dados</h3>
           <div className="space-y-3">
             {[
-              ["Criptografia em trânsito",  "TLS 1.3 com HSTS habilitado",         "green"],
-              ["Criptografia em repouso",   "AES-256 para dados sensíveis",         "green"],
-              ["Anonymização automática",   "Ativa em pesquisas configuradas",      "green"],
-              ["Retenção de dados",         "Exclusão automática após 12 meses",    "green"],
-              ["Backup automatizado",       "Diário com retenção de 30 dias",       "green"],
-              ["SQL Injection / XSS",       "Sanitização e validação ativas",       "green"],
-            ].map(([label,value,color],i) => (
+              ["Criptografia em trânsito", "HTTPS/TLS em toda a aplicação"],
+              ["Senhas",                   "Hash bcrypt (custo 12)"],
+              ["Banco de dados",           "Consultas parametrizadas (anti-SQL injection)"],
+              ["Validação de entrada",     "Aplicada nas requisições da API"],
+              ["Persistência",             "Banco em volume dedicado (Railway)"],
+              ["Anonimização",             "Disponível em pesquisas anônimas"],
+            ].map(([label,value],i) => (
               <div key={i} className="flex items-start justify-between text-xs py-2 border-b border-slate-50 last:border-0 gap-3">
                 <span className="text-slate-600">{label}</span>
                 <span className="font-medium text-green-700 text-right">{value}</span>
@@ -3461,26 +3443,28 @@ function ChangePasswordCard() {
   );
 }
 
-function SettingsPage() {
-  const items = [
-    { title:"Perfil da Empresa",   desc:"Nome, logo e dados da organização",          Icon:Building2  },
-    { title:"Integrações",         desc:"WhatsApp, e-mail SMTP, APIs externas",       Icon:Link2      },
-    { title:"Notificações",        desc:"Alertas automáticos e lembretes",            Icon:Bell       },
-    { title:"Equipe & Acesso",     desc:"Usuários, permissões e papéis",              Icon:Users      },
-    { title:"Marca & Aparência",   desc:"Cores, logo e personalização da plataforma", Icon:Eye        },
-    { title:"Exportação de Dados", desc:"Formatos, criptografia e agendamento",       Icon:Download   },
+function SettingsPage({ setPage }) {
+  const shortcuts = [
+    { title:"Equipe & Acesso",         desc:"Usuários, papéis e permissões",             Icon:Users,     dest:"equipe"       },
+    { title:"Notificações",            desc:"Alertas e lembretes gerados do sistema",    Icon:Bell,      dest:"notificacoes" },
+    { title:"Central de Distribuição", desc:"Envio de pesquisas por e-mail e WhatsApp",   Icon:Send,      dest:"distribuicao" },
+    { title:"Relatórios Avançados",    desc:"Indicadores, comparativos e exportação",    Icon:BarChart3, dest:"relatorios"   },
+    { title:"LGPD & Privacidade",      desc:"Consentimentos e direitos do titular",      Icon:Shield,    dest:"lgpd"         },
+    { title:"Segurança",               desc:"Medidas de proteção e trilha de auditoria", Icon:Lock,      dest:"security"     },
   ];
 
   return (
     <div className="p-8">
       <div className="mb-7">
         <h1 className="text-2xl font-bold text-slate-800">Configurações</h1>
-        <p className="text-sm text-slate-500 mt-1">Gerencie as preferências da plataforma RH Survey.</p>
+        <p className="text-sm text-slate-500 mt-1">Altere sua senha e acesse rapidamente as áreas da plataforma.</p>
       </div>
       <ChangePasswordCard />
+      <h3 className="text-sm font-semibold text-slate-700 mb-3">Atalhos</h3>
       <div className="grid grid-cols-2 gap-4">
-        {items.map(({ title,desc,Icon },i) => (
-          <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-start gap-4 hover:shadow-md transition-all cursor-pointer group">
+        {shortcuts.map(({ title,desc,Icon,dest },i) => (
+          <div key={i} onClick={() => setPage(dest)}
+            className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-start gap-4 hover:shadow-md transition-all cursor-pointer group">
             <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-100 transition-colors">
               <Icon size={18} style={{ color:"#5B21B6" }} />
             </div>
@@ -3545,7 +3529,7 @@ export default function RHSurvey() {
       case "insights":      return <AIInsights />;
       case "lgpd":          return <LGPDPage />;
       case "security":      return <SecurityPage />;
-      case "settings":      return <SettingsPage />;
+      case "settings":      return <SettingsPage setPage={setPage} />;
       default:              return <Dashboard setPage={handleNav} />;
     }
   };
