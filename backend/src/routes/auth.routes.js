@@ -10,4 +10,5 @@ router.post('/login',    authLimiter, auditLog('user.login','auth'), ctrl.login)
 router.post('/refresh',  ctrl.refresh);
 router.post('/logout',   ctrl.logout);
 router.get('/me',        authenticate, ctrl.me);
+router.post('/change-password', authenticate, auditLog('user.password_change','auth'), ctrl.changePassword);
 module.exports = router;
