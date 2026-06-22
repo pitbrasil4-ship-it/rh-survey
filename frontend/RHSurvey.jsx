@@ -1029,6 +1029,68 @@ function RespondentManager() {
     setSaving(false);
   };
 
+  const [showImport,   setShowImport]   = useState(false);
+  const [csvText,      setCsvText]      = useState("");
+  const [importing,    setImporting]    = useState(false);
+  const [importError,  setImportError]  = useState("");
+  const [importResult, setImportResult] = useState("");
+
+  const mapRow = (r) => ({
+    id: r.id, name: r.name || "—", email: r.email || "—", group: r.group_type || "subordinados",
+    department: r.department || "—", role: r.role || "", consent: !!r.consent_given,
+    status: r.consent_given ? "ativo" : "pendente",
+  });
+
+  const handleConsent = async (r) => {
+    try {
+      await api.respondents.registerConsent(r.id);
+      setRespondents(prev => prev.map(x => x.id===r.id ? { ...x, consent:true, status:"ativo" } : x));
+    } catch (e) { alert(e.message || "Erro ao registrar consentimento."); }
+  };
+
+  const handleAnonymize = async (r) => {
+    if (!window.confirm(`Anonimizar os dados de "${r.name}"? Conforme a LGPD (Art. 18), os dados pessoais serão removidos e o respondente sairá da lista. A ação é irreversível.`)) return;
+    try {
+      await api.respondents.remove(r.id);
+      setRespondents(prev => prev.filter(x => x.id !== r.id));
+    } catch (e) { alert(e.message || "Erro ao anonimizar."); }
+  };
+
+  const parseCSV = (text) => text.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => l.split(/[;,]/).map(c => c.trim().replace(/^"|"$/g, "")));
+
+  const handleImport = async () => {
+    setImportError(""); setImportResult("");
+    const rows = parseCSV(csvText);
+    if (rows.length === 0) { setImportError("Cole o conteúdo do CSV ou selecione um arquivo."); return; }
+    let data = rows;
+    const head = rows[0].map(c => c.toLowerCase());
+    if (head.some(c => c === "nome" || c === "name") || head.some(c => c.includes("mail"))) data = rows.slice(1);
+    const GMAP = { gestor:"gestores", gestores:"gestores", fornecedor:"fornecedores", fornecedores:"fornecedores", subordinado:"subordinados", subordinados:"subordinados" };
+    const list = data.map(c => ({
+      name: c[0] || "", email: c[1] || undefined,
+      groupType: GMAP[(c[2] || "").toLowerCase()] || "subordinados",
+      department: c[3] || undefined, role: c[4] || undefined,
+    })).filter(x => x.name);
+    if (list.length === 0) { setImportError("Nenhuma linha válida — cada linha precisa de um nome na 1ª coluna."); return; }
+    setImporting(true);
+    try {
+      const res = await api.respondents.import(list);
+      const fresh = await api.respondents.list();
+      setRespondents((fresh.respondents || []).map(mapRow));
+      setImportResult(`${res.imported} respondente(s) importado(s) com sucesso.`);
+      setCsvText("");
+    } catch (e) { setImportError(e.message || "Erro ao importar."); }
+    setImporting(false);
+  };
+
+  const onCsvFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setCsvText(String(reader.result || ""));
+    reader.readAsText(file);
+  };
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -1078,7 +1140,7 @@ function RespondentManager() {
           <p className="text-sm text-slate-500 mt-1">Gerencie participantes e consentimentos LGPD por grupo.</p>
         </div>
         <div className="flex gap-3">
-          <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+          <button onClick={() => { setShowImport(s => !s); setImportError(""); setImportResult(""); }} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
             <Download size={14} />Importar CSV
           </button>
           <button onClick={() => { setShowForm(s => !s); setFormError(""); }} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}>
@@ -1124,6 +1186,31 @@ function RespondentManager() {
             <button onClick={() => { setShowForm(false); resetForm(); }} className="px-4 py-2.5 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">Cancelar</button>
           </div>
           <p className="text-xs text-slate-400 mt-3">O consentimento LGPD é registrado à parte — novos respondentes entram como "Pendente".</p>
+        </div>
+      )}
+
+      {showImport && (
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm mb-5">
+          <h3 className="font-semibold text-slate-800 text-sm mb-2">Importar respondentes (CSV)</h3>
+          <p className="text-xs text-slate-500 mb-3">Colunas na ordem: <strong>Nome, E-mail, Grupo, Departamento, Cargo</strong>. Separador vírgula ou ponto-e-vírgula. Grupo aceita: gestores, fornecedores, subordinados. Uma linha de cabeçalho é detectada e ignorada automaticamente.</p>
+          <div className="flex items-center gap-3 mb-3">
+            <label className="text-xs font-medium text-slate-600 px-3 py-2 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 inline-flex items-center gap-2">
+              <Download size={13} />Selecionar arquivo .csv
+              <input type="file" accept=".csv,text/csv" onChange={onCsvFile} className="hidden" />
+            </label>
+            <span className="text-xs text-slate-400">ou cole o conteúdo abaixo</span>
+          </div>
+          <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={6}
+            placeholder={"Nome,E-mail,Grupo,Departamento,Cargo\nJoão Silva,joao@rgis.com,gestores,Vendas,Gerente\nMaria Souza,maria@rgis.com,subordinados,RH,Analista"}
+            className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-purple-400 resize-none" />
+          {importError  && <div className="mt-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm flex items-center gap-2"><AlertTriangle size={14} />{importError}</div>}
+          {importResult && <div className="mt-3 bg-green-50 border border-green-200 text-green-700 rounded-xl px-3 py-2 text-sm flex items-center gap-2"><CheckCircle size={14} />{importResult}</div>}
+          <div className="flex gap-2 mt-4">
+            <button onClick={handleImport} disabled={importing} className="px-4 py-2.5 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-60 flex items-center gap-2" style={{ background:GRAD }}>
+              {importing ? <><Loader2 size={14} className="animate-spin" />Importando...</> : <><Download size={14} />Importar</>}
+            </button>
+            <button onClick={() => { setShowImport(false); setCsvText(""); setImportError(""); setImportResult(""); }} className="px-4 py-2.5 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">Fechar</button>
+          </div>
         </div>
       )}
 
@@ -1198,11 +1285,12 @@ function RespondentManager() {
                 </td>
                 <td className="px-4 py-3.5">
                   <div className="flex items-center gap-1">
-                    {[[Send,false],[Edit,false],[Trash2,true]].map(([Ic,danger],j) => (
-                      <button disabled title="Recurso em desenvolvimento" key={j} className={`p-1.5 rounded-lg transition-colors ${danger?"text-slate-400 hover:text-red-500 hover:bg-red-50":"text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}>
-                        <Ic size={13} />
-                      </button>
-                    ))}
+                    {!r.consent && (
+                      <button onClick={() => handleConsent(r)} title="Registrar consentimento LGPD"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 transition-colors"><Shield size={13} /></button>
+                    )}
+                    <button onClick={() => handleAnonymize(r)} title="Anonimizar dados (LGPD Art. 18)"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 size={13} /></button>
                   </div>
                 </td>
               </tr>
