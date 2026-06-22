@@ -100,29 +100,8 @@ function rowsToQuestions(rows, delim) {
 }
 
 // ─── MOCK DATA ─────────────────────────────────────────────────────────────────
-const MOCK_SURVEYS = [
-  { id:1, name:"Avaliação de Gestores Q2 2025",  type:"gestores",     status:"ativo",    responses:47,  total:60,  created:"10/05/2025", category:"360°",    nps:72, anonymous:true  },
-  { id:2, name:"Satisfação de Fornecedores",      type:"fornecedores", status:"ativo",    responses:23,  total:35,  created:"15/05/2025", category:"NPS",     nps:65, anonymous:false },
-  { id:3, name:"Clima Organizacional",            type:"subordinados", status:"encerrado",responses:120, total:120, created:"01/04/2025", category:"Clima",   nps:81, anonymous:true  },
-  { id:4, name:"Avaliação 360° Liderança",        type:"gestores",     status:"rascunho", responses:0,   total:0,   created:"20/05/2025", category:"360°",    nps:0,  anonymous:true  },
-  { id:5, name:"Feedback Subordinados TI",        type:"subordinados", status:"ativo",    responses:12,  total:25,  created:"18/05/2025", category:"Feedback",nps:58, anonymous:true  },
-];
 
-const MOCK_RESPONDENTS = [
-  { id:1, name:"Carlos Silva",       email:"carlos@empresa.com",  group:"gestores",     department:"Vendas",    status:"respondeu", role:"Gerente",     consent:true  },
-  { id:2, name:"Ana Rodrigues",      email:"ana@empresa.com",     group:"gestores",     department:"TI",        status:"pendente",  role:"Diretora",    consent:true  },
-  { id:3, name:"Fornecedor ABC",     email:"contato@abc.com",     group:"fornecedores", department:"Logística", status:"respondeu", role:"Parceiro",    consent:true  },
-  { id:4, name:"João Pereira",       email:"joao@empresa.com",    group:"subordinados", department:"Financeiro",status:"pendente",  role:"Analista",    consent:false },
-  { id:5, name:"Maria Santos",       email:"maria@empresa.com",   group:"subordinados", department:"RH",        status:"respondeu", role:"Coordenadora",consent:true  },
-  { id:6, name:"Fornecedor XYZ",     email:"xyz@tech.com",        group:"fornecedores", department:"Tecnologia",status:"pendente",  role:"Parceiro",    consent:true  },
-  { id:7, name:"Pedro Alves",        email:"pedro@empresa.com",   group:"gestores",     department:"Marketing", status:"respondeu", role:"Gerente",     consent:true  },
-  { id:8, name:"Lucia Ferreira",     email:"lucia@empresa.com",   group:"subordinados", department:"Operações", status:"pendente",  role:"Técnica",     consent:false },
-];
 
-const RESPONSE_DATA    = [{ mes:"Jan",respostas:45},{ mes:"Fev",respostas:62},{ mes:"Mar",respostas:78},{ mes:"Abr",respostas:95},{ mes:"Mai",respostas:110},{ mes:"Jun",respostas:87}];
-const SATISFACTION_DATA= [{ name:"Ótimo",value:45,color:"#10B981"},{ name:"Bom",value:30,color:"#5B21B6"},{ name:"Regular",value:18,color:"#F59E0B"},{ name:"Ruim",value:7,color:"#EF4444"}];
-const RADAR_DATA       = [{ subject:"Liderança",score:85},{ subject:"Comunicação",score:72},{ subject:"Inovação",score:90},{ subject:"Equipe",score:78},{ subject:"Resultados",score:88},{ subject:"Desenvolv.",score:65}];
-const NPS_HISTORY      = [{ mes:"Jan",nps:55},{ mes:"Fev",nps:62},{ mes:"Mar",nps:58},{ mes:"Abr",nps:71},{ mes:"Mai",nps:75},{ mes:"Jun",nps:72}];
 
 const QUESTION_TYPES = [
   { id:"nps",      label:"NPS (0–10)",      icon:"📊", desc:"Probabilidade de recomendar" },
@@ -135,70 +114,74 @@ const QUESTION_TYPES = [
 
 
 
-const MOCK_USERS = [
-  { id:1, name:"Admin RH",        email:"admin@empresa.com",    role:"admin",   lastLogin:"Hoje 08:41",  active:true  },
-  { id:2, name:"Fernanda Lima",   email:"fernanda@empresa.com", role:"manager", lastLogin:"Hoje 10:22",  active:true  },
-  { id:3, name:"Bruno Carvalho",  email:"bruno@empresa.com",    role:"viewer",  lastLogin:"Ontem 16:00", active:true  },
-  { id:4, name:"Rafael Moreira",  email:"rafael@empresa.com",   role:"manager", lastLogin:"3 dias atrás",active:false },
+
+const SURVEY_TEMPLATES = [
+  { id:1, name:"Avaliação 360° de Liderança", category:"360°", tags:["Liderança","Desempenho","LGPD"], questions:[
+    { text:"De 0 a 10, qual a probabilidade de você recomendar esta liderança a um colega?", type:"nps" },
+    { text:"Como você avalia a clareza de comunicação desta liderança?", type:"scale", options:["Muito ruim","Ruim","Regular","Boa","Excelente"] },
+    { text:"Avalie a capacidade de desenvolver e motivar a equipe.", type:"rating" },
+    { text:"Quais competências esta liderança demonstra de forma consistente?", type:"multiple", options:["Comunicação","Tomada de decisão","Desenvolvimento de pessoas","Foco em resultados","Empatia","Visão estratégica"] },
+    { text:"Esta liderança dá feedback de forma construtiva e frequente?", type:"yesno" },
+    { text:"Descreva um ponto forte e uma oportunidade de melhoria desta liderança.", type:"text" },
+  ] },
+  { id:2, name:"NPS Interno Rápido", category:"NPS", tags:["NPS","Pulso"], questions:[
+    { text:"De 0 a 10, qual a probabilidade de você recomendar a empresa como um bom lugar para trabalhar?", type:"nps" },
+    { text:"Qual o principal motivo da sua nota?", type:"text" },
+  ] },
+  { id:3, name:"Clima Organizacional", category:"Clima", tags:["Engajamento","Cultura"], questions:[
+    { text:"Sinto orgulho de trabalhar nesta empresa.", type:"scale", options:["Discordo totalmente","Discordo","Neutro","Concordo","Concordo totalmente"] },
+    { text:"Tenho clareza sobre o que é esperado do meu trabalho.", type:"scale", options:["Discordo totalmente","Discordo","Neutro","Concordo","Concordo totalmente"] },
+    { text:"Recebo reconhecimento quando faço um bom trabalho.", type:"scale", options:["Discordo totalmente","Discordo","Neutro","Concordo","Concordo totalmente"] },
+    { text:"Vejo oportunidades de crescimento para mim aqui.", type:"scale", options:["Discordo totalmente","Discordo","Neutro","Concordo","Concordo totalmente"] },
+    { text:"Você recomendaria esta empresa a um amigo?", type:"yesno" },
+    { text:"O que mais contribui para o seu bem-estar no trabalho?", type:"text" },
+  ] },
+  { id:4, name:"Avaliação de Fornecedor", category:"Fornecedores", tags:["B2B","Qualidade"], questions:[
+    { text:"Avalie a qualidade geral dos produtos/serviços entregues.", type:"rating" },
+    { text:"Como você avalia o cumprimento de prazos?", type:"scale", options:["Muito ruim","Ruim","Regular","Bom","Excelente"] },
+    { text:"A comunicação com o fornecedor é clara e ágil?", type:"yesno" },
+    { text:"De 0 a 10, qual a probabilidade de você continuar trabalhando com este fornecedor?", type:"nps" },
+    { text:"Deixe comentários ou pontos de melhoria.", type:"text" },
+  ] },
+  { id:5, name:"Onboarding — 30 dias", category:"Integração", tags:["Onboarding","Novo Colaborador"], questions:[
+    { text:"Como você avalia sua experiência de integração nos primeiros 30 dias?", type:"scale", options:["Muito ruim","Ruim","Regular","Boa","Excelente"] },
+    { text:"Recebi as ferramentas e acessos necessários para começar bem?", type:"yesno" },
+    { text:"Meu gestor e equipe me deram o apoio necessário.", type:"scale", options:["Discordo totalmente","Discordo","Neutro","Concordo","Concordo totalmente"] },
+    { text:"O que poderia tornar a integração de novos colaboradores melhor?", type:"text" },
+  ] },
+  { id:6, name:"Pesquisa Pulso Semanal", category:"Pulso", tags:["Ágil","Semanal"], questions:[
+    { text:"Como você se sentiu em relação ao trabalho nesta semana?", type:"scale", options:["Muito mal","Mal","Neutro","Bem","Muito bem"] },
+    { text:"Você teve clareza das prioridades nesta semana?", type:"yesno" },
+    { text:"Algo está te bloqueando ou preocupando? (opcional)", type:"text" },
+  ] },
 ];
 
-const MOCK_TEMPLATES = [
-  { id:1, name:"Avaliação 360° Completa",   category:"360°",        questions:18, uses:142, rating:4.9, tags:["Liderança","Desempenho","LGPD"] },
-  { id:2, name:"NPS Interno Rápido",        category:"NPS",         questions:3,  uses:89,  rating:4.7, tags:["NPS","Pulso","Quick"]           },
-  { id:3, name:"Clima Organizacional",      category:"Clima",       questions:25, uses:67,  rating:4.8, tags:["Engajamento","Cultura"]         },
-  { id:4, name:"Avaliação de Fornecedor",   category:"Fornecedores",questions:12, uses:54,  rating:4.6, tags:["B2B","Qualidade"]               },
-  { id:5, name:"Onboarding — 30 dias",      category:"Integração",  questions:8,  uses:38,  rating:4.5, tags:["Onboarding","Novo Colaborador"] },
-  { id:6, name:"Feedback de Desligamento",  category:"Turnover",    questions:15, uses:31,  rating:4.8, tags:["Exit Interview","Turnover"]     },
-  { id:7, name:"Avaliação de Treinamento",  category:"T&D",         questions:10, uses:28,  rating:4.4, tags:["Treinamento","Capacitação"]     },
-  { id:8, name:"Pesquisa Pulso Semanal",    category:"Pulso",       questions:5,  uses:125, rating:4.9, tags:["Ágil","Semanal","Quick"]        },
-];
+// Gera notificações REAIS a partir dos dados (consentimento, prazos, rascunhos, atividade).
+function deriveNotifications(surveys, respondents) {
+  const out = [];
+  const noConsent = (respondents || []).filter(r => !r.consent_given).length;
+  if (noConsent > 0) out.push({ id:"consent", type:"alert", time:"agora", read:false, text:`${noConsent} respondente(s) sem consentimento LGPD registrado.` });
+  const drafts = (surveys || []).filter(s => s.status === "rascunho").length;
+  if (drafts > 0) out.push({ id:"drafts", type:"alert", time:"agora", read:false, text:`${drafts} pesquisa(s) em rascunho aguardando publicação.` });
+  const now = new Date();
+  (surveys || []).filter(s => s.status === "ativo" && s.deadline).forEach(s => {
+    const d = new Date(s.deadline);
+    if (!isNaN(d.getTime())) {
+      const days = Math.ceil((d - now) / 86400000);
+      if (days >= 0 && days <= 7) out.push({ id:`deadline-${s.id}`, type:"deadline", time:`encerra ${d.toLocaleDateString("pt-BR")}`, read:false, text:`A pesquisa "${s.name}" encerra em ${days} dia(s).` });
+    }
+  });
+  const active = (surveys || []).filter(s => s.status === "ativo").length;
+  const totalResp = (surveys || []).reduce((a, s) => a + (s.response_count || 0), 0);
+  if (active > 0) out.push({ id:"active", type:"response", time:"agora", read:false, text:`${active} pesquisa(s) ativa(s) · ${totalResp} resposta(s) recebida(s) no total.` });
+  return out;
+}
 
-const MOCK_NOTIFICATIONS = [
-  { id:1, type:"response", text:"Ana Rodrigues respondeu a pesquisa Gestores Q2",    time:"5 min",      read:false },
-  { id:2, type:"alert",    text:"2 respondentes sem consentimento LGPD registrado",  time:"1h",         read:false },
-  { id:3, type:"ai",       text:"Insights gerados para Clima Organizacional",        time:"3h",         read:true  },
-  { id:4, type:"deadline", text:"Pesquisa Fornecedores encerra em 5 dias",           time:"Hoje 09:00", read:false },
-  { id:5, type:"success",  text:"Exportação de relatório PDF concluída",             time:"Hoje 11:30", read:true  },
-  { id:6, type:"security", text:"Tentativa de login bloqueada — IP desconhecido",   time:"Hoje 12:00", read:false },
-];
 
-const COMP_BAR_DATA = [
-  { grupo:"Gestores",     score:82 },
-  { grupo:"Fornecedores", score:68 },
-  { grupo:"Subordinados", score:75 },
-];
 
-const TREND_DATA = [
-  { mes:"Jan",gestores:74,subordinados:70,fornecedores:60 },
-  { mes:"Fev",gestores:76,subordinados:72,fornecedores:62 },
-  { mes:"Mar",gestores:78,subordinados:71,fornecedores:63 },
-  { mes:"Abr",gestores:80,subordinados:74,fornecedores:65 },
-  { mes:"Mai",gestores:82,subordinados:75,fornecedores:68 },
-  { mes:"Jun",gestores:84,subordinados:76,fornecedores:70 },
-];
 
-const SAMPLE_QUESTIONS = [
-  { id:1, type:"nps",      text:"De 0 a 10, qual a probabilidade de você recomendar este gestor a um colega?",             opts:[] },
-  { id:2, type:"scale",    text:"Como você avalia a capacidade de comunicação deste gestor?",                               opts:["Muito ruim","Ruim","Regular","Bom","Excelente"] },
-  { id:3, type:"rating",   text:"Avalie a liderança e motivação da equipe promovidas por este gestor.",                    opts:[] },
-  { id:4, type:"multiple", text:"Quais competências este gestor demonstra de forma consistente?",                           opts:["Comunicação clara","Tomada de decisão","Desenvolv. de pessoas","Foco em resultados","Inovação","Empatia"] },
-  { id:5, type:"text",     text:"Descreva uma situação em que este gestor demonstrou liderança exemplar.",                  opts:[] },
-  { id:6, type:"yesno",    text:"Você se sente apoiado e ouvido por este gestor em suas demandas?",                       opts:[] },
-];
 
-const MOCK_CAMPAIGNS = [
-  { id:1, name:"Gestores Q2 — E-mail",        channel:"email",    status:"enviado",  sent:60, opened:47, responded:47, survey:"Avaliação de Gestores Q2 2025", date:"10/05/2025" },
-  { id:2, name:"NPS Fornecedores — WhatsApp", channel:"whatsapp", status:"enviado",  sent:35, opened:28, responded:23, survey:"Satisfação de Fornecedores",    date:"15/05/2025" },
-  { id:3, name:"Feedback TI — E-mail",        channel:"email",    status:"agendado", sent:0,  opened:0,  responded:0,  survey:"Feedback Subordinados TI",      date:"25/05/2025" },
-];
 
-const AUDIT_LOG = [
-  { id:1, user:"admin@empresa.com", action:"Login efetuado",               time:"Hoje 08:41", type:"auth"   },
-  { id:2, user:"admin@empresa.com", action:"Pesquisa criada: Gestores Q2", time:"Hoje 09:12", type:"create" },
-  { id:3, user:"carlos@empresa.com",action:"Respondeu pesquisa #1",         time:"Hoje 10:05", type:"data"   },
-  { id:4, user:"admin@empresa.com", action:"Exportação de relatório PDF",   time:"Hoje 11:30", type:"export" },
-  { id:5, user:"ana@empresa.com",   action:"Tentativa de acesso negada",    time:"Hoje 12:00", type:"alert"  },
-];
 
 // ─── CONSTANTS ─────────────────────────────────────────────────────────────────
 const GRAD        = "linear-gradient(135deg,#5B21B6,#7C3AED)";
@@ -322,7 +305,6 @@ function Sidebar({ page, setPage }) {
     { id:"respondents",   label:"Respondentes",    Icon:Users           },
     { id:"evaluation360", label:"Avaliação 360°",  Icon:Target          },
     { id:"results",       label:"Resultados",      Icon:BarChart3       },
-    { id:"formulario",    label:"Formulário",       Icon:FileText        },
     { id:"templates",     label:"Templates",        Icon:FileCheck       },
     { id:"relatorios",    label:"Relatórios Avanç.", Icon:BarChart2       },
     { id:"equipe",        label:"Equipe & Acesso",  Icon:UserCheck       },
@@ -696,6 +678,20 @@ function SurveyList({ onCreateNew, onView }) {
     setTimeout(() => setCopiedId(c => (c === s.id ? null : c)), 2000);
   };
 
+  const handleEmail = (s) => {
+    if (!s.token) return;
+    const url = `${window.location.origin}/r/${s.token}`;
+    const subject = `Convite para responder: ${s.name}`;
+    const body = `Olá,\n\nVocê foi convidado(a) a participar da pesquisa "${s.name}". Sua opinião é muito importante.\n\nResponda aqui (leva poucos minutos):\n${url}\n\nEm conformidade com a LGPD (Lei nº 13.709/2018).\n\nObrigado pela participação.`;
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+  const handleWhatsApp = (s) => {
+    if (!s.token) return;
+    const url = `${window.location.origin}/r/${s.token}`;
+    const text = `Olá! 👋 Você foi convidado(a) para a pesquisa "${s.name}". Responda em poucos minutos: ${url}  🔒 Em conformidade com a LGPD.`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+  };
+
   if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />Carregando pesquisas...</div>;
   if (error)   return <div className="p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
 
@@ -751,8 +747,6 @@ function SurveyList({ onCreateNew, onView }) {
                     <div className="flex items-center gap-1.5">
                       <button onClick={() => onView && onView(s)} title="Ver resultados"
                         className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><Eye size={14} /></button>
-                      <button disabled title="Edição de pesquisa — em desenvolvimento"
-                        className="p-2 rounded-lg text-slate-300 cursor-not-allowed"><Edit size={14} /></button>
                       <button onClick={() => handleDelete(s)} title="Excluir pesquisa"
                         className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 size={14} /></button>
                     </div>
@@ -781,13 +775,13 @@ function SurveyList({ onCreateNew, onView }) {
                   <div className="flex items-center gap-4 mt-4 pt-3.5 border-t border-slate-50">
                     <span className="text-xs text-slate-400 flex items-center gap-1"><Clock size={11} />{s.created}</span>
                     <div className="flex gap-3 ml-auto">
-                      <button disabled title="Envio por e-mail — em desenvolvimento" className="flex items-center gap-1 text-xs text-slate-300 cursor-not-allowed font-medium"><Mail size={11} />E-mail</button>
+                      <button onClick={() => handleEmail(s)} disabled={!s.token || s.status!=="ativo"} title={s.status!=="ativo" ? "Publique a pesquisa para enviar" : "Abrir e-mail com o link da pesquisa"} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"><Mail size={11} />E-mail</button>
                       <button onClick={() => handleCopyLink(s)} disabled={!s.token || s.status!=="ativo"}
                         title={s.status!=="ativo" ? "Publique a pesquisa para gerar o link" : "Copiar link público de resposta"}
                         className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed">
                         {copiedId===s.id ? <><CheckCircle size={11} />Copiado!</> : <><Link2 size={11} />Copiar link</>}
                       </button>
-                      <button disabled title="Envio por WhatsApp — em desenvolvimento" className="flex items-center gap-1 text-xs text-slate-300 cursor-not-allowed font-medium"><Send size={11} />WhatsApp</button>
+                      <button onClick={() => handleWhatsApp(s)} disabled={!s.token || s.status!=="ativo"} title={s.status!=="ativo" ? "Publique a pesquisa para enviar" : "Abrir WhatsApp com o link da pesquisa"} className="flex items-center gap-1 text-xs text-slate-500 hover:text-green-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"><Send size={11} />WhatsApp</button>
                     </div>
                   </div>
                 </div>
@@ -801,10 +795,14 @@ function SurveyList({ onCreateNew, onView }) {
 }
 
 // ─── SURVEY BUILDER ────────────────────────────────────────────────────────────
-function SurveyBuilder({ onBack }) {
+function SurveyBuilder({ onBack, initial }) {
   const [tab,       setTab]       = useState("builder");
-  const [surveyName,setSurveyName]= useState("");
-  const [questions, setQuestions] = useState([]);
+  const [surveyName,setSurveyName]= useState(initial?.name || "");
+  const [questions, setQuestions] = useState(
+    Array.isArray(initial?.questions)
+      ? initial.questions.map((q, i) => ({ id: Date.now() + i, text: q.text, type: q.type, ...(q.options ? { options: q.options } : {}) }))
+      : []
+  );
   const [aiContext, setAiContext]  = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiQs,      setAiQs]      = useState([]);
@@ -1295,6 +1293,14 @@ function RespondentManager() {
     subordinados: respondents.filter(r => r.group==="subordinados").length,
   };
 
+  const handleConsentRequest = () => {
+    const emails = respondents.filter(r => !r.consent && r.email && r.email !== "—" && r.email.includes("@")).map(r => r.email);
+    if (emails.length === 0) { alert("Nenhum respondente pendente possui e-mail cadastrado para enviar a solicitação."); return; }
+    const subject = "Solicitação de consentimento (LGPD) — RGIS Brasil";
+    const body = `Olá,\n\nPara participar das nossas pesquisas internas de avaliação, precisamos do seu consentimento para o tratamento dos seus dados, conforme a LGPD (Lei nº 13.709/2018).\n\nPor favor, responda este e-mail confirmando que você concorda em participar, ou entre em contato com o RH em caso de dúvidas.\n\nObrigado.`;
+    window.location.href = `mailto:?bcc=${encodeURIComponent(emails.join(","))}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
   const filtered = respondents.filter(r => {
     const mg = activeGroup==="todos" || r.group===activeGroup;
     const ms = r.name.toLowerCase().includes(search.toLowerCase()) || r.email.toLowerCase().includes(search.toLowerCase());
@@ -1398,7 +1404,7 @@ function RespondentManager() {
             <p className="text-sm font-semibold text-amber-800">Consentimento pendente para {pending} respondente{pending>1?"s":""}</p>
             <p className="text-xs text-amber-700 mt-0.5">Não é possível enviar pesquisas para respondentes sem consentimento LGPD registrado.</p>
           </div>
-          <button disabled title="Recurso em desenvolvimento" className="ml-auto text-xs font-semibold text-amber-700 border border-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed">
+          <button onClick={handleConsentRequest} title="Abrir e-mail para solicitar consentimento aos pendentes" className="ml-auto text-xs font-semibold text-amber-700 border border-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-100">
             Enviar solicitação
           </button>
         </div>
@@ -2085,6 +2091,32 @@ function ResultsDashboard() {
 // ─── LGPD PAGE ─────────────────────────────────────────────────────────────────
 function LGPDPage() {
   const [expandedRight, setExpandedRight] = useState(null);
+  const [respondents, setRespondents] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try { const r = await api.respondents.list(); setRespondents(r.respondents || []); } catch {}
+      setLoading(false);
+    })();
+  }, []);
+
+  const fmtDate = (s) => {
+    if (!s) return "—";
+    try { return new Date(String(s).replace(" ", "T") + "Z").toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }); }
+    catch { return s; }
+  };
+  const CH_LABEL = { email:"E-mail", whatsapp:"WhatsApp", presencial:"Presencial", link:"Link", web:"Web" };
+  const exportConsentLog = () => {
+    const rows = [["Respondente","E-mail","Consentimento","Data","Canal"]];
+    respondents.forEach(r => rows.push([
+      r.name, r.email && r.email !== "—" ? r.email : "",
+      r.consent_given ? "Coletado" : "Pendente",
+      r.consent_given && r.consent_date ? fmtDate(r.consent_date) : "",
+      r.consent_given ? (CH_LABEL[r.consent_channel] || r.consent_channel || "") : "",
+    ]));
+    downloadCSV(`registro-consentimentos-${new Date().toISOString().slice(0,10)}.csv`, rows);
+  };
 
   const rights = [
     { icon:"👁️", title:"Acesso",         desc:"O titular pode solicitar confirmação da existência do tratamento e acesso aos dados.",   art:"Art. 18, I e II" },
@@ -2158,7 +2190,7 @@ function LGPDPage() {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h3 className="font-semibold text-slate-800 text-sm">Registro de Consentimentos</h3>
-          <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>
+          <button onClick={exportConsentLog} disabled={respondents.length===0} title="Baixar o registro de consentimentos em CSV" className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>
             <Download size={12} />Exportar log
           </button>
         </div>
@@ -2171,18 +2203,22 @@ function LGPDPage() {
             </tr>
           </thead>
           <tbody>
-            {MOCK_RESPONDENTS.map((r,i) => (
-              <tr key={r.id} className={`hover:bg-slate-50 ${i<MOCK_RESPONDENTS.length-1?"border-b border-slate-50":""}`}>
+            {loading ? (
+              <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">Carregando...</td></tr>
+            ) : respondents.length === 0 ? (
+              <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">Nenhum respondente cadastrado ainda.</td></tr>
+            ) : respondents.map((r,i) => (
+              <tr key={r.id} className={`hover:bg-slate-50 ${i<respondents.length-1?"border-b border-slate-50":""}`}>
                 <td className="px-5 py-3 text-sm font-medium text-slate-800">{r.name}</td>
-                <td className="px-5 py-3 text-sm text-slate-600">{r.email}</td>
+                <td className="px-5 py-3 text-sm text-slate-600">{r.email && r.email!=="—" ? r.email : "—"}</td>
                 <td className="px-5 py-3">
-                  {r.consent
+                  {r.consent_given
                     ? <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full"><CheckCircle size={10} />Coletado</span>
                     : <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full"><Clock size={10} />Pendente</span>
                   }
                 </td>
-                <td className="px-5 py-3 text-xs text-slate-500">{r.consent?"10/05/2025 09:14":"—"}</td>
-                <td className="px-5 py-3 text-xs text-slate-500">{r.consent?"E-mail":"—"}</td>
+                <td className="px-5 py-3 text-xs text-slate-500">{r.consent_given && r.consent_date ? fmtDate(r.consent_date) : "—"}</td>
+                <td className="px-5 py-3 text-xs text-slate-500">{r.consent_given ? (CH_LABEL[r.consent_channel]||r.consent_channel||"—") : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -2205,6 +2241,33 @@ function SecurityPage() {
     alert:  "bg-red-100 text-red-700",
   };
   const auditTypeLabel = { auth:"Autenticação",create:"Criação",data:"Dados",export:"Exportação",alert:"Alerta" };
+
+  const [logs, setLogs] = useState([]);
+  const [loadingLog, setLoadingLog] = useState(true);
+  const [logErr, setLogErr] = useState("");
+  const loadAudit = async () => {
+    setLoadingLog(true); setLogErr("");
+    try { const r = await api.audit.list(); setLogs(r.logs || []); }
+    catch (e) { setLogErr(e.status===403 ? "Apenas administradores podem ver a trilha de auditoria." : (e.message || "Erro ao carregar a auditoria.")); }
+    setLoadingLog(false);
+  };
+  useEffect(() => { loadAudit(); }, []);
+  const fmtDate = (s) => { if(!s) return "—"; try { return new Date(String(s).replace(" ","T")+"Z").toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); } catch { return s; } };
+  const ACT_LABEL = {
+    "auth.login":"Login realizado","auth.logout":"Logout","auth.change_password":"Senha alterada",
+    "respondent.create":"Respondente cadastrado","respondent.import":"Respondentes importados","respondent.consent":"Consentimento registrado","respondent.anonymize":"Respondente anonimizado",
+    "survey.create":"Pesquisa criada","survey.publish":"Pesquisa publicada","survey.delete":"Pesquisa excluída",
+    "results.view":"Resultados visualizados","results.insights":"Insights gerados",
+    "eval.cycle_create":"Ciclo 360° criado","eval.assign":"Avaliador atribuído","eval.unassign":"Avaliador removido",
+    "user.create":"Usuário criado","user.update":"Usuário atualizado","user.delete":"Usuário removido",
+  };
+  const actLabel = (log) => ACT_LABEL[log.action] || ((log.action || "Ação") + (log.resource ? ` · ${log.resource}` : ""));
+  const actType = (a="") => a.startsWith("auth") ? "auth" : a.includes("export") ? "export" : (a.includes("delete")||a.includes("anonym")) ? "alert" : (a.includes("create")||a.includes("assign")||a.includes("publish")) ? "create" : "data";
+  const exportAudit = () => {
+    const rows = [["Data","Ação","Tipo","Usuário","Recurso"]];
+    logs.forEach(l => rows.push([fmtDate(l.created_at), actLabel(l), auditTypeLabel[actType(l.action)]||actType(l.action), l.user_name||l.user_email||"—", l.resource||""]));
+    downloadCSV(`trilha-auditoria-${new Date().toISOString().slice(0,10)}.csv`, rows);
+  };
 
   return (
     <div className="p-8">
@@ -2302,238 +2365,39 @@ function SecurityPage() {
             <Activity size={15} className="text-slate-500" />Trilha de Auditoria
           </h3>
           <div className="flex gap-2">
-            <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-1.5 text-xs border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
-              <RefreshCw size={11} />Atualizar
+            <button onClick={loadAudit} disabled={loadingLog} title="Recarregar a trilha de auditoria" className="flex items-center gap-1.5 text-xs border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+              <RefreshCw size={11} className={loadingLog?"animate-spin":""} />Atualizar
             </button>
-            <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>
+            <button onClick={exportAudit} disabled={logs.length===0} title="Baixar a trilha em CSV" className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>
               <Download size={11} />Exportar
             </button>
           </div>
         </div>
         <div className="divide-y divide-slate-50">
-          {AUDIT_LOG.map(log => (
-            <div key={log.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-slate-50 transition-colors">
-              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${auditTypeStyle[log.type]}`}>
-                {auditTypeLabel[log.type]}
-              </span>
-              <span className="text-sm text-slate-700 flex-1">{log.action}</span>
-              <span className="text-xs text-slate-400">{log.user}</span>
-              <span className="text-xs text-slate-400 flex-shrink-0">{log.time}</span>
-              {log.type==="alert" && <AlertTriangle size={14} className="text-red-500 flex-shrink-0" />}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-// ─── SURVEY FORM (formulário público para respondentes) ───────────────────────
-function SurveyForm({ onBack }) {
-  const SURVEY = { name:"Avaliação de Gestores Q2 2025", category:"360°", anonymous:true };
-  const [step,    setStep]   = useState("consent");
-  const [current, setCurrent]= useState(0);
-  const [answers, setAnswers]= useState({});
-  const [starHover,setStarHover]=useState(0);
-
-  const Q = SAMPLE_QUESTIONS;
-  const total = Q.length;
-  const pct   = Math.round((current / total) * 100);
-
-  const setAns = (id, val) => setAnswers(p => ({...p, [id]: val}));
-
-  const renderQuestion = (q) => {
-    const val = answers[q.id];
-    if (q.type === "nps") return (
-      <div>
-        <div className="flex gap-1.5 flex-wrap justify-center mb-3">
-          {Array.from({length:11},(_,i) => {
-            const color = i<=6?"bg-red-100 text-red-700 border-red-200 hover:bg-red-200":i<=8?"bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200":"bg-green-100 text-green-700 border-green-200 hover:bg-green-200";
-            const sel   = val===i?"ring-2 ring-offset-1 ring-purple-500 scale-110":"";
+          {loadingLog ? (
+            <div className="px-6 py-8 text-center text-sm text-slate-400">Carregando trilha...</div>
+          ) : logErr ? (
+            <div className="px-6 py-8 text-center text-sm text-slate-400">{logErr}</div>
+          ) : logs.length === 0 ? (
+            <div className="px-6 py-8 text-center text-sm text-slate-400">Nenhum evento registrado ainda.</div>
+          ) : logs.map(log => {
+            const type = actType(log.action);
             return (
-              <button key={i} onClick={() => setAns(q.id,i)}
-                className={`w-12 h-12 rounded-xl border-2 font-bold text-sm transition-all ${color} ${sel}`}>
-                {i}
-              </button>
+              <div key={log.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-slate-50 transition-colors">
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${auditTypeStyle[type]}`}>{auditTypeLabel[type]}</span>
+                <span className="text-sm text-slate-700 flex-1">{actLabel(log)}</span>
+                <span className="text-xs text-slate-400">{log.user_name || log.user_email || "—"}</span>
+                <span className="text-xs text-slate-400 flex-shrink-0">{fmtDate(log.created_at)}</span>
+                {type==="alert" && <AlertTriangle size={14} className="text-red-500 flex-shrink-0" />}
+              </div>
             );
           })}
         </div>
-        <div className="flex justify-between text-xs text-slate-400 px-1">
-          <span>Muito improvável</span><span>Neutro</span><span>Muito provável</span>
-        </div>
-      </div>
-    );
-    if (q.type === "scale") return (
-      <div className="flex gap-3 justify-center">
-        {q.opts.map((opt,i) => (
-          <button key={i} onClick={() => setAns(q.id, i)}
-            className={`flex-1 py-4 rounded-2xl border-2 text-sm font-medium transition-all ${val===i?"border-purple-500 bg-purple-50 text-purple-700":"border-slate-200 text-slate-600 hover:border-purple-300 hover:bg-purple-50"}`}>
-            <div className="text-xl font-bold mb-1">{i+1}</div>
-            <div className="text-xs">{opt}</div>
-          </button>
-        ))}
-      </div>
-    );
-    if (q.type === "rating") return (
-      <div className="flex gap-3 justify-center">
-        {[1,2,3,4,5].map(i => (
-          <button key={i} onMouseEnter={() => setStarHover(i)} onMouseLeave={() => setStarHover(0)}
-            onClick={() => setAns(q.id, i)}
-            className="transition-transform hover:scale-110">
-            <Star size={44} className={`transition-colors ${i<=(starHover||val||0)?"text-amber-400 fill-amber-400":"text-slate-200"}`} />
-          </button>
-        ))}
-      </div>
-    );
-    if (q.type === "multiple") return (
-      <div className="grid grid-cols-2 gap-3">
-        {q.opts.map((opt,i) => {
-          const sel = Array.isArray(val) && val.includes(i);
-          return (
-            <button key={i} onClick={() => {
-              const cur = Array.isArray(val) ? val : [];
-              setAns(q.id, sel ? cur.filter(x=>x!==i) : [...cur, i]);
-            }}
-            className={`p-4 rounded-2xl border-2 text-sm font-medium text-left transition-all ${sel?"border-purple-500 bg-purple-50 text-purple-700":"border-slate-200 text-slate-600 hover:border-purple-300"}`}>
-              <div className={`w-5 h-5 rounded-lg border-2 mb-2 flex items-center justify-center ${sel?"border-purple-500 bg-purple-500":"border-slate-300"}`}>
-                {sel && <span className="text-white text-xs font-bold">✓</span>}
-              </div>
-              {opt}
-            </button>
-          );
-        })}
-      </div>
-    );
-    if (q.type === "text") return (
-      <textarea className="w-full border-2 border-slate-200 rounded-2xl px-5 py-4 text-slate-700 placeholder-slate-400 focus:outline-none focus:border-purple-400 resize-none text-sm leading-relaxed"
-        placeholder="Digite sua resposta aqui..." rows={5} value={val||""}
-        onChange={e => setAns(q.id, e.target.value)} />
-    );
-    if (q.type === "yesno") return (
-      <div className="flex gap-4 justify-center">
-        {[["Sim","✅","bg-green-50 border-green-400 text-green-700","green"],["Não","❌","bg-red-50 border-red-400 text-red-700","red"]].map(([lbl,emoji,selCls,_],i) => {
-          const selected = (i===0 && val===true) || (i===1 && val===false);
-          return (
-            <button key={i} onClick={() => setAns(q.id, i===0)}
-              className={`w-48 py-8 rounded-2xl border-2 text-lg font-bold transition-all ${selected?selCls:"border-slate-200 text-slate-600 hover:border-slate-300"}`}>
-              <div className="text-4xl mb-2">{emoji}</div>{lbl}
-            </button>
-          );
-        })}
-      </div>
-    );
-    return null;
-  };
-
-  if (step === "consent") return (
-    <div className="p-8 max-w-2xl mx-auto">
-      <button onClick={onBack} className="mb-6 flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700">
-        <ChevronRight size={16} className="rotate-180" />Voltar
-      </button>
-      <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm text-center">
-        <div className="w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-          <ClipboardList size={28} className="text-white" />
-        </div>
-        <h1 className="text-2xl font-bold text-slate-800 mb-2">{SURVEY.name}</h1>
-        <div className="flex items-center justify-center gap-2 mb-6">
-          <LGPDBadge />
-          <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100 flex items-center gap-1"><EyeOff size={10} />Resposta Anônima</span>
-          <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{total} perguntas</span>
-        </div>
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 text-left">
-          <div className="flex items-center gap-2 mb-2"><Shield size={15} className="text-green-600" /><span className="text-sm font-semibold text-green-800">Aviso de Privacidade — LGPD</span></div>
-          <p className="text-xs text-green-700 leading-relaxed">
-            Suas respostas são <strong>completamente anônimas</strong> e protegidas conforme a Lei nº 13.709/2018 (LGPD). 
-            Os dados coletados serão utilizados exclusivamente para fins de avaliação organizacional. 
-            Você pode solicitar acesso, correção ou exclusão dos seus dados a qualquer momento.
-          </p>
-        </div>
-        <div className="mb-6">
-          <label className="flex items-start gap-3 text-left cursor-pointer" onClick={() => setStep("questions")}>
-            <div className="w-5 h-5 mt-0.5 rounded border-2 border-green-500 bg-green-500 flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-xs font-bold">✓</span>
-            </div>
-            <p className="text-sm text-slate-700 leading-relaxed">
-              Li e compreendo o aviso de privacidade. Consinto com a coleta das minhas respostas para a finalidade descrita.
-            </p>
-          </label>
-        </div>
-        <button onClick={() => setStep("questions")}
-          className="w-full py-4 rounded-2xl text-white font-semibold text-base hover:opacity-90 transition-opacity"
-          style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-          Começar Avaliação →
-        </button>
-      </div>
-    </div>
-  );
-
-  if (step === "done") return (
-    <div className="p-8 max-w-xl mx-auto text-center">
-      <div className="bg-white rounded-3xl p-12 border border-slate-100 shadow-sm">
-        <div className="text-6xl mb-4">🎉</div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Avaliação concluída!</h2>
-        <p className="text-slate-500 mb-6 text-sm leading-relaxed">
-          Suas respostas foram registradas com sucesso de forma anônima.<br />
-          Obrigado por contribuir para o desenvolvimento da nossa organização.
-        </p>
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6">
-          <div className="flex items-center justify-center gap-2 text-green-700 text-sm font-medium">
-            <Shield size={14} />{total} respostas registradas com proteção LGPD
-          </div>
-        </div>
-        <button onClick={onBack} className="px-8 py-3 text-white rounded-2xl font-medium hover:opacity-90" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-          Voltar ao início
-        </button>
-      </div>
-    </div>
-  );
-
-  const q = Q[current];
-  const answered = answers[q.id] !== undefined && answers[q.id] !== "";
-
-  return (
-    <div className="p-8 max-w-3xl mx-auto">
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-slate-500">{SURVEY.name}</span>
-          <span className="text-xs text-slate-400">{current+1} de {total}</span>
-        </div>
-        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-          <div className="h-full rounded-full transition-all duration-500" style={{ width:`${((current)/total)*100}%`, background:"linear-gradient(90deg,#5B21B6,#7C3AED)" }} />
-        </div>
-      </div>
-
-      <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm mb-5">
-        <div className="flex items-start gap-3 mb-7">
-          <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>{current+1}</span>
-          <h2 className="text-lg font-semibold text-slate-800 leading-snug">{q.text}</h2>
-        </div>
-        {renderQuestion(q)}
-      </div>
-
-      <div className="flex items-center justify-between">
-        <button disabled={current===0} onClick={() => setCurrent(p => p-1)}
-          className="flex items-center gap-2 px-5 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm disabled:opacity-40 hover:bg-slate-50">
-          <ChevronRight size={15} className="rotate-180" />Anterior
-        </button>
-        {current < total-1 ? (
-          <button disabled={!answered} onClick={() => setCurrent(p => p+1)}
-            className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm disabled:opacity-50 hover:opacity-90"
-            style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-            Próxima <ChevronRight size={15} />
-          </button>
-        ) : (
-          <button disabled={!answered} onClick={() => setStep("done")}
-            className="flex items-center gap-2 px-6 py-2.5 text-white rounded-xl text-sm font-semibold disabled:opacity-50 hover:opacity-90"
-            style={{ background:"linear-gradient(135deg,#059669,#10B981)" }}>
-            <CheckCircle size={15} />Enviar Avaliação
-          </button>
-        )}
       </div>
     </div>
   );
 }
+
 
 // ─── DISTRIBUTION CENTER ───────────────────────────────────────────────────────
 function DistributionCenter() {
@@ -2973,7 +2837,7 @@ function NotificationCenter({ notifications, setNotifications }) {
               <div className="flex-1 min-w-0">
                 <p className={`text-sm leading-relaxed ${n.read?"text-slate-600":"text-slate-800 font-medium"}`}>{n.text}</p>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-slate-400">{n.time} atrás</span>
+                  <span className="text-xs text-slate-400">{n.time}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${t.bg} text-slate-600`}>{t.label}</span>
                 </div>
               </div>
@@ -3243,9 +3107,9 @@ function TemplatesLibrary({ onUseTemplate }) {
   const [search,   setSearch]   = useState("");
   const [category, setCategory] = useState("Todos");
 
-  const cats = ["Todos", ...Array.from(new Set(MOCK_TEMPLATES.map(t => t.category)))];
+  const cats = ["Todos", ...Array.from(new Set(SURVEY_TEMPLATES.map(t => t.category)))];
 
-  const filtered = MOCK_TEMPLATES.filter(t => {
+  const filtered = SURVEY_TEMPLATES.filter(t => {
     const ms = t.name.toLowerCase().includes(search.toLowerCase()) || t.tags.some(g => g.toLowerCase().includes(search.toLowerCase()));
     const mc = category === "Todos" || t.category === category;
     return ms && mc;
@@ -3295,16 +3159,8 @@ function TemplatesLibrary({ onUseTemplate }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${catColors[t.category]||"bg-slate-100 text-slate-600"}`}>{t.category}</span>
-                  <span className="text-xs text-slate-400">{t.questions} perguntas</span>
+                  <span className="text-xs text-slate-400">{t.questions.length} perguntas</span>
                 </div>
-              </div>
-              <div className="text-right">
-                <div className="flex items-center gap-1 justify-end mb-0.5">
-                  {[...Array(5)].map((_,i) => (
-                    <Star key={i} size={11} className={i < Math.floor(t.rating) ? "text-amber-400 fill-amber-400":"text-slate-200"} />
-                  ))}
-                </div>
-                <div className="text-xs text-slate-400">{t.uses} usos</div>
               </div>
             </div>
             <div className="flex flex-wrap gap-1 mb-4">
@@ -3313,9 +3169,6 @@ function TemplatesLibrary({ onUseTemplate }) {
               ))}
             </div>
             <div className="flex gap-2 pt-3 border-t border-slate-50">
-              <button disabled title="Recurso em desenvolvimento" className="flex-1 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
-                <Eye size={11} />Visualizar
-              </button>
               <button onClick={() => onUseTemplate && onUseTemplate(t)}
                 className="flex-1 py-2 text-xs text-white rounded-xl font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1"
                 style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
@@ -3647,7 +3500,7 @@ function SettingsPage() {
 const PAGE_LABELS = {
   dashboard:"Dashboard", surveys:"Pesquisas", respondents:"Respondentes",
   evaluation360:"Avaliação 360°", results:"Resultados",
-  formulario:"Formulário de Resposta", distribuicao:"Central de Distribuição",
+  distribuicao:"Central de Distribuição",
   templates:"Biblioteca de Templates", relatorios:"Relatórios Avançados",
   equipe:"Equipe & Acesso", notificacoes:"Notificações",
   insights:"Insights com IA",
@@ -3657,22 +3510,34 @@ const PAGE_LABELS = {
 export default function RHSurvey() {
   const [page,     setPage]    = useState("dashboard");
   const [creating, setCreating]= useState(false);
+  const [tmpl,     setTmpl]    = useState(null);
   const [lgpdOk,       setLgpdOk]       = useState(false);
-  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState([]);
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const handleNav = p => { setCreating(false); setPage(p); };
+  useEffect(() => {
+    (async () => {
+      try {
+        const [sv, rp] = await Promise.all([
+          api.surveys.list().catch(() => ({ surveys: [] })),
+          api.respondents.list().catch(() => ({ respondents: [] })),
+        ]);
+        setNotifications(deriveNotifications(sv.surveys || [], rp.respondents || []));
+      } catch { /* silencioso */ }
+    })();
+  }, []);
+
+  const handleNav = p => { setCreating(false); setTmpl(null); setPage(p); };
 
   const renderContent = () => {
-    if (creating) return <SurveyBuilder onBack={() => setCreating(false)} />;
+    if (creating) return <SurveyBuilder onBack={() => { setCreating(false); setTmpl(null); }} initial={tmpl} />;
     switch (page) {
       case "dashboard":     return <Dashboard     setPage={handleNav} />;
       case "surveys":       return <SurveyList    onCreateNew={() => setCreating(true)} onView={() => handleNav("results")} />;
       case "respondents":   return <RespondentManager />;
       case "evaluation360": return <Evaluation360 />;
       case "results":       return <ResultsDashboard />;
-      case "formulario":    return <SurveyForm    onBack={() => handleNav("surveys")} />;
-      case "templates":     return <TemplatesLibrary onUseTemplate={() => setCreating(true)} />;
+      case "templates":     return <TemplatesLibrary onUseTemplate={(t) => { setTmpl(t); setCreating(true); }} />;
       case "relatorios":    return <AdvancedReports />;
       case "equipe":        return <TeamManagement />;
       case "notificacoes":  return <NotificationCenter notifications={notifications} setNotifications={setNotifications} />;
