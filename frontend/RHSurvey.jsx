@@ -13,6 +13,21 @@ import {
   LineChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, Radar
 } from "recharts";
 
+// ─── CSV EXPORT HELPER ─────────────────────────────────────────────────────────
+function downloadCSV(filename, rows) {
+  const esc = (v) => {
+    const s = (v === null || v === undefined) ? "" : String(v);
+    return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = "\uFEFF" + rows.map(r => r.map(esc).join(",")).join("\r\n"); // BOM p/ acentos no Excel
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // ─── MOCK DATA ─────────────────────────────────────────────────────────────────
 const MOCK_SURVEYS = [
   { id:1, name:"Avaliação de Gestores Q2 2025",  type:"gestores",     status:"ativo",    responses:47,  total:60,  created:"10/05/2025", category:"360°",    nps:72, anonymous:true  },
@@ -1109,6 +1124,17 @@ function RespondentManager() {
     reader.readAsText(file);
   };
 
+  const handleExportCSV = () => {
+    const GLAB = { gestores:"Gestores", fornecedores:"Fornecedores", subordinados:"Subordinados" };
+    const rows = [["Nome","E-mail","Grupo","Departamento","Cargo","Status","Consentimento LGPD"]];
+    filtered.forEach(r => rows.push([
+      r.name, r.email === "—" ? "" : r.email, GLAB[r.group] || r.group,
+      r.department === "—" ? "" : r.department, r.role,
+      r.consent ? "Ativo" : "Pendente", r.consent ? "Coletado" : "Pendente",
+    ]));
+    downloadCSV(`respondentes-${new Date().toISOString().slice(0,10)}.csv`, rows);
+  };
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -1158,6 +1184,9 @@ function RespondentManager() {
           <p className="text-sm text-slate-500 mt-1">Gerencie participantes e consentimentos LGPD por grupo.</p>
         </div>
         <div className="flex gap-3">
+          <button onClick={handleExportCSV} disabled={filtered.length===0} title="Baixar a lista atual em CSV" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+            <Download size={14} />Exportar CSV
+          </button>
           <button onClick={() => { setShowImport(s => !s); setImportError(""); setImportResult(""); }} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
             <Download size={14} />Importar CSV
           </button>
@@ -1603,6 +1632,22 @@ function ResultsDashboard() {
   const anon     = !!survey?.anonymous;
   const questions = result?.questions || [];
 
+  const handleExportCSV = () => {
+    if (!questions.length) return;
+    const rows = [["Pergunta","Tipo","Respostas","Resumo"]];
+    questions.forEach(q => {
+      let resumo = "";
+      if (q.type === "nps") resumo = `NPS ${q.nps} (${q.classification||""}) · ${q.promoters||0}% prom / ${q.detractors||0}% detr`;
+      else if (q.type === "scale" || q.type === "rating") resumo = `Média ${q.average ?? "—"}`;
+      else if (q.type === "yesno") resumo = `Sim ${q.yesPct ?? 0}% (${q.yes||0} de ${(q.yes||0)+(q.no||0)})`;
+      else if (q.type === "multiple") resumo = (q.frequency||[]).map(f => `${f.value}: ${f.pct}%`).join(" | ");
+      else if (q.type === "text") resumo = `${(q.responses||[]).length} resposta(s) aberta(s)`;
+      rows.push([q.text, q.type, q.responseCount ?? 0, resumo]);
+    });
+    const nm = (survey?.name || "resultados").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "resultados";
+    downloadCSV(`resultados-${nm}.csv`, rows);
+  };
+
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
@@ -1610,9 +1655,14 @@ function ResultsDashboard() {
           <h1 className="text-2xl font-bold text-slate-800">Resultados & Relatórios</h1>
           <p className="text-sm text-slate-500 mt-1">Análise completa por pergunta, com proteção LGPD.</p>
         </div>
-        <button onClick={() => window.print()} title="Abrir a janela de impressão (salve como PDF)" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
-          <Download size={14} />Exportar PDF
-        </button>
+        <div className="flex gap-3">
+          <button onClick={handleExportCSV} disabled={!questions.length} title="Baixar o resumo por pergunta em CSV" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+            <Download size={14} />Exportar CSV
+          </button>
+          <button onClick={() => window.print()} title="Abrir a janela de impressão (salve como PDF)" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+            <Download size={14} />Exportar PDF
+          </button>
+        </div>
       </div>
 
       {surveys.length === 0 ? (
