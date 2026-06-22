@@ -12,6 +12,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, Radar
 } from "recharts";
+import * as XLSX from "xlsx";
 
 // ─── CSV EXPORT HELPER ─────────────────────────────────────────────────────────
 function downloadCSV(filename, rows) {
@@ -26,6 +27,76 @@ function downloadCSV(filename, rows) {
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ─── IMPORT DE PERGUNTAS (Excel/CSV) ────────────────────────────────────────────
+function mapTipoToType(raw) {
+  const t = (raw == null ? "" : String(raw)).trim().toLowerCase();
+  if (!t) return { type: "text", unknown: false };
+  if (t.includes("nps")) return { type: "nps", unknown: false };
+  if (t.includes("escala") || t.includes("likert")) return { type: "scale", unknown: false };
+  if (t.includes("estrela") || t.includes("nota") || t === "rating") return { type: "rating", unknown: false };
+  if (t.includes("sim") || t.includes("não") || t.includes("nao") || t.includes("boolean") || t.includes("yesno")) return { type: "yesno", unknown: false };
+  if (t.includes("múlt") || t.includes("mult") || t.includes("escolha") || t.includes("checkbox") || t.includes("seleç") || t.includes("selec")) return { type: "multiple", unknown: false };
+  if (t.includes("text") || t.includes("aberta") || t.includes("disserta") || t.includes("livre") || t.includes("coment")) return { type: "text", unknown: false };
+  return { type: "text", unknown: true };
+}
+function detectDelimiter(line) {
+  const counts = { ",": 0, ";": 0, "\t": 0 }; let inQ = false;
+  for (const c of line) { if (c === '"') inQ = !inQ; else if (!inQ && counts[c] !== undefined) counts[c]++; }
+  let best = ",", bestN = -1;
+  for (const d of [",", ";", "\t"]) if (counts[d] > bestN) { best = d; bestN = counts[d]; }
+  return best;
+}
+function parseCSVText(text) {
+  const firstLine = text.split(/\r?\n/).find(l => l.trim() !== "") || "";
+  const delim = detectDelimiter(firstLine);
+  const rows = []; let row = [], field = "", i = 0, inQ = false;
+  while (i < text.length) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i+1] === '"') { field += '"'; i += 2; continue; } inQ = false; i++; continue; }
+      field += c; i++; continue;
+    }
+    if (c === '"') { inQ = true; i++; continue; }
+    if (c === delim) { row.push(field); field = ""; i++; continue; }
+    if (c === '\r') { i++; continue; }
+    if (c === '\n') { row.push(field); rows.push(row); row = []; field = ""; i++; continue; }
+    field += c; i++;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return { rows: rows.filter(r => r.some(c => String(c).trim() !== "")), delim };
+}
+function rowsToQuestions(rows, delim) {
+  if (!rows || rows.length === 0) return { questions: [], skipped: 0, unknown: 0 };
+  const norm = s => (s == null ? "" : String(s)).trim().toLowerCase();
+  const header = rows[0].map(norm);
+  const looksHeader = header.some(h => h.includes("pergunta") || h.includes("tipo") || h.startsWith("op") || h.includes("texto") || h.includes("question"));
+  let pIdx = 0, tIdx = 1, oIdx = 2, start = 0;
+  if (looksHeader) {
+    start = 1;
+    const find = (keys, def) => { const idx = header.findIndex(h => keys.some(k => h.includes(k))); return idx >= 0 ? idx : def; };
+    pIdx = find(["pergunta", "texto", "question"], 0);
+    tIdx = find(["tipo", "type"], 1);
+    oIdx = find(["opç", "opc", "op", "alternativa", "escolha"], 2);
+  }
+  const out = []; let skipped = 0, unknown = 0;
+  for (let r = start; r < rows.length; r++) {
+    const cols = rows[r] || [];
+    const text = (cols[pIdx] == null ? "" : String(cols[pIdx])).trim();
+    if (!text) { skipped++; continue; }
+    const mapped = mapTipoToType(cols[tIdx]);
+    if (mapped.unknown) unknown++;
+    let options;
+    if (mapped.type === "scale" || mapped.type === "multiple") {
+      const rawOpts = cols[oIdx] == null ? "" : String(cols[oIdx]);
+      const sep = (delim !== ";" && rawOpts.includes(";")) ? ";" : (rawOpts.includes("|") ? "|" : (rawOpts.includes(";") ? ";" : ","));
+      const arr = rawOpts.split(sep).map(o => o.trim()).filter(Boolean);
+      if (arr.length) options = arr;
+    }
+    out.push({ id: Date.now() + r, text, type: mapped.type, ...(options ? { options } : {}) });
+  }
+  return { questions: out, skipped, unknown };
 }
 
 // ─── MOCK DATA ─────────────────────────────────────────────────────────────────
@@ -745,6 +816,8 @@ function SurveyBuilder({ onBack }) {
   const [category,    setCategory]    = useState("Avaliação 360°");
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState(null);
+  const [importErr,   setImportErr]   = useState("");
+  const [importInfo,  setImportInfo]  = useState("");
 
   const GROUP_MAP = { "Gestores":"gestores", "Fornecedores":"fornecedores", "Subordinados":"subordinados", "Todos":"todos" };
 
@@ -760,7 +833,7 @@ function SurveyBuilder({ onBack }) {
         category,
         targetGroup: GROUP_MAP[targetGroup] || "todos",
         anonymous,
-        questions: questions.map(q => ({ type: q.type, text: q.text })),
+        questions: questions.map(q => ({ type: q.type, text: q.text, options: q.options })),
         lgpdBasis: "consentimento",
       });
       const id = result && result.survey && result.survey.id;
@@ -788,6 +861,59 @@ function SurveyBuilder({ onBack }) {
       setAiQs([{ text:(e && e.message) || "Erro ao gerar. Verifique a conexão e tente novamente.", type:"text" }]);
     }
     setAiLoading(false);
+  };
+
+  const onImportFile = async (e) => {
+    setImportErr(""); setImportInfo("");
+    const file = e.target.files && e.target.files[0];
+    if (e.target) e.target.value = ""; // permite reimportar o mesmo arquivo
+    if (!file) return;
+    const name = (file.name || "").toLowerCase();
+    try {
+      let result;
+      if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: "" });
+        result = rowsToQuestions(rows, ",");
+      } else if (name.endsWith(".json")) {
+        const data = JSON.parse(await file.text());
+        const arr = Array.isArray(data) ? data : (data.questions || data.perguntas || []);
+        const qs = []; let skipped = 0, unknown = 0;
+        arr.forEach((q, i) => {
+          const t = (q.text ?? q.pergunta ?? q.texto ?? "").toString().trim();
+          if (!t) { skipped++; return; }
+          const m = mapTipoToType(q.type ?? q.tipo ?? "");
+          if (m.unknown) unknown++;
+          let options;
+          if (m.type === "scale" || m.type === "multiple") {
+            const raw = q.options ?? q.opcoes ?? q["opções"] ?? q.alternativas;
+            if (Array.isArray(raw)) options = raw.map(o => String(o).trim()).filter(Boolean);
+            else if (typeof raw === "string" && raw.trim()) options = raw.split(/[;|,]/).map(o => o.trim()).filter(Boolean);
+          }
+          qs.push({ id: Date.now() + i, text: t, type: m.type, ...(options && options.length ? { options } : {}) });
+        });
+        result = { questions: qs, skipped, unknown };
+      } else if (name.endsWith(".csv") || name.endsWith(".txt")) {
+        const { rows, delim } = parseCSVText(await file.text());
+        result = rowsToQuestions(rows, delim);
+      } else {
+        setImportErr("Formato não suportado. Use um arquivo .xlsx, .csv ou .json.");
+        return;
+      }
+      if (!result.questions.length) {
+        setImportErr("Nenhuma pergunta encontrada. Verifique se há uma coluna “Pergunta” preenchida.");
+        return;
+      }
+      setQuestions(p => [...p, ...result.questions]);
+      const bits = [`${result.questions.length} pergunta(s) importada(s)`];
+      if (result.skipped) bits.push(`${result.skipped} linha(s) vazia(s) ignorada(s)`);
+      if (result.unknown) bits.push(`${result.unknown} com tipo não reconhecido → tratada(s) como texto`);
+      setImportInfo(bits.join(" · "));
+    } catch (err) {
+      setImportErr("Não foi possível ler o arquivo. Confira se é um Excel/CSV válido." + (err && err.message ? ` (${err.message})` : ""));
+    }
   };
 
   const tabs = [
@@ -963,20 +1089,24 @@ function SurveyBuilder({ onBack }) {
           {tab==="import" && (
             <>
               <h3 className="font-semibold text-slate-800 text-sm mb-4">Importar Perguntas</h3>
-              <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center mb-4">
+              <label className="block border-2 border-dashed border-slate-200 rounded-xl p-6 text-center mb-4 cursor-pointer hover:border-purple-300 transition-colors">
                 <div className="text-3xl mb-2">📄</div>
-                <p className="text-sm text-slate-600 mb-1">Arraste ou clique para selecionar</p>
+                <p className="text-sm text-slate-600 mb-1">Clique para selecionar o arquivo</p>
                 <p className="text-xs text-slate-400">.xlsx, .csv ou .json</p>
-                <button disabled title="Recurso em desenvolvimento" className="mt-3 px-4 py-2 border border-slate-300 text-slate-600 text-xs rounded-xl hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">Selecionar Arquivo</button>
-              </div>
+                <span className="inline-block mt-3 px-4 py-2 text-white text-xs rounded-xl" style={{ background:GRAD }}>Selecionar Arquivo</span>
+                <input type="file" accept=".xlsx,.xls,.csv,.json,text/csv,application/json" onChange={onImportFile} className="hidden" />
+              </label>
+              {importErr  && <div className="mb-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm flex items-center gap-2"><AlertTriangle size={14} />{importErr}</div>}
+              {importInfo && <div className="mb-3 bg-green-50 border border-green-200 text-green-700 rounded-xl px-3 py-2 text-sm flex items-center gap-2"><CheckCircle size={14} />{importInfo}</div>}
               <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold text-slate-600 mb-3">Modelos prontos (LGPD):</p>
-                {["Avaliação de Gestores (Padrão)","Pesquisa de Clima","NPS Interno","Avaliação de Fornecedores"].map((t,i) => (
-                  <button disabled title="Recurso em desenvolvimento" key={i} className="w-full text-left p-3 rounded-xl hover:bg-slate-50 border border-slate-100 text-xs text-slate-700 flex items-center justify-between mb-2 disabled:opacity-40 disabled:cursor-not-allowed">
-                    <span className="flex items-center gap-2"><LGPDBadge />{t}</span>
-                    <ChevronRight size={13} className="text-slate-400" />
-                  </button>
-                ))}
+                <p className="text-xs font-semibold text-slate-600 mb-2">Formato da planilha</p>
+                <p className="text-xs text-slate-500 mb-2 leading-relaxed">Uma pergunta por linha, com estas colunas:</p>
+                <ul className="text-xs text-slate-600 space-y-1.5 mb-3 list-disc pl-4">
+                  <li><strong>Pergunta</strong> — o texto da pergunta (obrigatório).</li>
+                  <li><strong>Tipo</strong> — nps, escala, estrelas, sim/não, múltipla ou texto.</li>
+                  <li><strong>Opções</strong> — apenas para escala e múltipla; separadas por “;”.</li>
+                </ul>
+                <p className="text-xs text-slate-400">As perguntas importadas aparecem ao lado para você revisar antes de publicar.</p>
               </div>
             </>
           )}
