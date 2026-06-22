@@ -71,4 +71,75 @@ function getDashboard(req, res) {
   } catch (e) { return err(res, 'Erro ao carregar dashboard', 500, e.message); }
 }
 
-module.exports = { getSurveyResults, getDashboard };
+
+/* POST /results/insights  — gera relatório executivo a partir de resultados REAIS */
+async function getInsights(req, res) {
+  try {
+    const db     = getDB();
+    const id     = req.body.surveyId || req.params.surveyId;
+    const survey = db.prepare('SELECT * FROM surveys WHERE id = ? AND tenant_id = ?').get(id, req.user.tenant_id);
+    if (!survey) return notFound(res, 'Pesquisa');
+
+    const questions = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
+    const totalResp = db.prepare("SELECT COUNT(*) c FROM responses WHERE survey_id=? AND completed_at IS NOT NULL").get(survey.id).c;
+    const started   = db.prepare("SELECT COUNT(*) c FROM responses WHERE survey_id=?").get(survey.id).c;
+
+    let overallNps = null;
+    const perguntas = questions.map(q => {
+      const answers = db.prepare('SELECT value_text, value_num FROM answers WHERE question_id=?').all(q.id);
+      if (q.type === 'nps') {
+        const sc = answers.map(a => a.value_num).filter(v => v !== null);
+        const n  = calculateNPS(sc);
+        if (overallNps === null) overallNps = n.nps;
+        return { pergunta: q.text, tipo: 'nps', nps: n.nps, promotores: n.promoters, detratores: n.detractors };
+      }
+      if (q.type === 'scale' || q.type === 'rating') {
+        const v = answers.map(a => a.value_num).filter(x => x !== null);
+        return { pergunta: q.text, tipo: q.type, media: calculateAverage(v) };
+      }
+      if (q.type === 'yesno') {
+        const v = answers.map(a => a.value_text);
+        const yes = v.filter(x => x === 'true' || x === 'sim' || x === '1').length;
+        return { pergunta: q.text, tipo: 'yesno', simPct: v.length ? Math.round(yes / v.length * 100) : 0 };
+      }
+      if (q.type === 'text') {
+        return { pergunta: q.text, tipo: 'text', respostasAbertas: answers.map(a => a.value_text).filter(Boolean).slice(0, 15) };
+      }
+      return { pergunta: q.text, tipo: q.type };
+    });
+
+    const taxaConclusao = started > 0 ? Math.round((totalResp / started) * 100) : 0;
+    const npsClass = overallNps === null ? '—' : overallNps >= 75 ? 'Excelente' : overallNps >= 50 ? 'Bom' : overallNps >= 0 ? 'Neutro' : 'Ruim';
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey || apiKey === 'your-anthropic-key-here') {
+      // Modo demo — relatório a partir dos números reais, sem texto gerado por IA.
+      return ok(res, { insights: {
+        resumo: `A pesquisa "${survey.name}" recebeu ${totalResp} resposta(s) concluída(s), com taxa de conclusão de ${taxaConclusao}%.` + (overallNps !== null ? ` O NPS geral é ${overallNps} (${npsClass}).` : ''),
+        npsClassificacao: npsClass,
+        pontosFortesArr: ['Configure a ANTHROPIC_API_KEY no servidor para gerar a análise completa com IA.'],
+        pontosAtencaoArr: totalResp === 0 ? ['Esta pesquisa ainda não recebeu respostas.'] : ['Modo demo — recomendações detalhadas requerem IA ativa.'],
+        recomendacoesArr: ['Ativar a IA real para recomendações estratégicas.'],
+        temasAbertosArr: [],
+        prioridadeImediata: 'Configurar a chave de IA (ANTHROPIC_API_KEY) no Railway.',
+        benchmarkTexto: 'Comparação com benchmarks disponível com IA real.',
+      }, demo: true }, 'Insights em modo demo (configure ANTHROPIC_API_KEY)');
+    }
+
+    const summary = { nome: survey.name, categoria: survey.category, respostas: totalResp, taxaConclusao, npsGeral: overallNps, perguntas };
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6', max_tokens: 1200,
+        messages: [{ role: 'user', content: `Você é especialista em RH e People Analytics no Brasil. Analise os dados REAIS desta pesquisa organizacional e gere um relatório executivo.\n\nDados:\n${JSON.stringify(summary, null, 2)}\n\nRetorne APENAS JSON puro (sem markdown) neste formato exato:\n{"resumo":"2-3 frases","npsClassificacao":"Excelente|Bom|Neutro|Ruim","pontosFortesArr":["..."],"pontosAtencaoArr":["..."],"recomendacoesArr":["..."],"temasAbertosArr":["..."],"prioridadeImediata":"...","benchmarkTexto":"..."}` }]
+      })
+    });
+    const data = await resp.json();
+    const raw  = (data.content?.[0]?.text || '{}').replace(/```json|```/g, '').trim();
+    const insights = JSON.parse(raw);
+    return ok(res, { insights }, 'Insights gerados com IA');
+  } catch (e) { return err(res, 'Erro ao gerar insights', 500, e.message); }
+}
+
+module.exports = { getSurveyResults, getDashboard, getInsights };
