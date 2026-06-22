@@ -60,12 +60,21 @@ function getOne(req, res) {
 function update(req, res) {
   try {
     const db     = getDB();
-    const survey = db.prepare('SELECT id FROM surveys WHERE id = ? AND tenant_id = ?').get(req.params.id, req.user.tenant_id);
+    // Fetch full row so omitted fields are preserved (PATCH semantics) and
+    // no undefined is ever bound — node:sqlite rejects undefined parameters.
+    const survey = db.prepare('SELECT * FROM surveys WHERE id = ? AND tenant_id = ?').get(req.params.id, req.user.tenant_id);
     if (!survey) return notFound(res, 'Pesquisa');
 
     const { name, description, category, targetGroup, anonymous, deadline, status } = req.body;
     db.prepare(`UPDATE surveys SET name=?, description=?, category=?, target_group=?, anonymous=?, deadline=?, status=? WHERE id=?`).run(
-      name, description, category, targetGroup, anonymous ? 1 : 0, deadline, status, req.params.id
+      name        ?? survey.name,
+      description ?? survey.description,
+      category    ?? survey.category,
+      targetGroup ?? survey.target_group,
+      anonymous === undefined ? survey.anonymous : (anonymous ? 1 : 0),
+      deadline    ?? survey.deadline,
+      status      ?? survey.status,
+      req.params.id
     );
     return ok(res, { id: req.params.id }, 'Pesquisa atualizada');
   } catch (e) { return err(res, 'Erro ao atualizar pesquisa', 500, e.message); }
