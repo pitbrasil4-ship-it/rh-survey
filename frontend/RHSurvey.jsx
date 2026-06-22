@@ -674,22 +674,10 @@ function SurveyBuilder({ onBack }) {
     if (!aiContext.trim()) return;
     setAiLoading(true); setAiQs([]);
     try {
-      const res  = await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-6", max_tokens:1000,
-          messages:[{ role:"user",
-            content:`Você é especialista em RH e pesquisas organizacionais no Brasil. Gere 6 perguntas de avaliação para: "${aiContext}".
-Retorne APENAS JSON puro (sem markdown, sem explicação), exatamente neste formato:
-[{"text":"pergunta aqui","type":"nps"},{"text":"pergunta 2","type":"scale"}]
-Tipos disponíveis: nps, scale, multiple, text, rating, yesno. Use tipos variados. Perguntas em português, claras, objetivas, respeitando LGPD (sem dados pessoais desnecessários).`}]
-        })
-      });
-      const data = await res.json();
-      const raw  = (data.content?.[0]?.text||"[]").replace(/```json|```/g,"").trim();
-      setAiQs(JSON.parse(raw));
-    } catch {
-      setAiQs([{ text:"Erro ao gerar. Verifique a conexão e tente novamente.", type:"text" }]);
+      const data = await api.surveys.generateAI(aiContext, 6);
+      setAiQs(data.questions || []);
+    } catch (e) {
+      setAiQs([{ text:(e && e.message) || "Erro ao gerar. Verifique a conexão e tente novamente.", type:"text" }]);
     }
     setAiLoading(false);
   };
@@ -2086,52 +2074,36 @@ function DistributionCenter() {
 
 // ─── AI INSIGHTS ──────────────────────────────────────────────────────────────
 function AIInsights() {
-  const [selected, setSelected] = useState(MOCK_SURVEYS[0]);
-  const [loading,  setLoading]  = useState(false);
-  const [insights, setInsights] = useState(null);
-  const [error,    setError]    = useState("");
+  const [surveys,     setSurveys]     = useState([]);
+  const [selectedId,  setSelectedId]  = useState(null);
+  const [loadingList, setLoadingList] = useState(true);
+  const [loading,     setLoading]     = useState(false);
+  const [insights,    setInsights]    = useState(null);
+  const [error,       setError]       = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const sv = await api.surveys.list();
+        const list = sv.surveys || [];
+        setSurveys(list);
+        const pick = list.find(s => (s.response_count||0) > 0) || list[0];
+        if (pick) setSelectedId(pick.id);
+      } catch (e) { setError(e.message || "Erro ao carregar pesquisas."); }
+      setLoadingList(false);
+    })();
+  }, []);
+
+  const selected = surveys.find(s => s.id === selectedId) || null;
 
   const generateInsights = async () => {
+    if (!selectedId) return;
     setLoading(true); setInsights(null); setError("");
     try {
-      const surveyData = {
-        nome: selected.name,
-        categoria: selected.category,
-        respostas: selected.responses,
-        total: selected.total,
-        nps: selected.nps,
-        taxaConclusao: Math.round((selected.responses/selected.total)*100),
-        satisfacao: { otimo:45, bom:30, regular:18, ruim:7 },
-        competencias: { lideranca:85, comunicacao:72, inovacao:90, equipe:78, resultados:88, desenvolvimento:65 },
-      };
-      const res = await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-6", max_tokens:1200,
-          messages:[{ role:"user",
-            content:`Você é um especialista em RH e People Analytics no Brasil. Analise os dados desta pesquisa organizacional e gere um relatório executivo.
-
-Dados da Pesquisa:
-${JSON.stringify(surveyData, null, 2)}
-
-Retorne APENAS JSON puro (sem markdown, sem explicação) neste formato exato:
-{
-  "resumo": "2-3 frases resumindo o resultado geral",
-  "npsClassificacao": "Excelente|Bom|Neutro|Ruim",
-  "pontosFortesArr": ["ponto 1","ponto 2","ponto 3"],
-  "pontosAtencaoArr": ["ponto 1","ponto 2","ponto 3"],
-  "recomendacoesArr": ["ação 1","ação 2","ação 3","ação 4"],
-  "temasAbertosArr": ["tema 1","tema 2","tema 3"],
-  "prioridadeImediata": "descrição da ação mais urgente",
-  "benchmarkTexto": "comparação com médias de mercado brasileiro"
-}`}]
-        })
-      });
-      const data = await res.json();
-      const raw  = (data.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim();
-      setInsights(JSON.parse(raw));
-    } catch {
-      setError("Erro ao conectar com a IA. Verifique a conexão e tente novamente.");
+      const data = await api.results.insights(selectedId);
+      setInsights(data.insights);
+    } catch (e) {
+      setError(e.message || "Erro ao gerar a análise. Tente novamente.");
     }
     setLoading(false);
   };
@@ -2152,24 +2124,34 @@ Retorne APENAS JSON puro (sem markdown, sem explicação) neste formato exato:
 
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-6">
         <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-3">Selecione a pesquisa para analisar</label>
-        <div className="flex gap-2 flex-wrap mb-4">
-          {MOCK_SURVEYS.filter(s=>s.responses>0).map(s => (
-            <button key={s.id} onClick={() => { setSelected(s); setInsights(null); }}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${selected.id===s.id?"text-white":"border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-              style={selected.id===s.id?{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }:{}}>
-              {s.name}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl mb-4">
-          {[["Respostas",`${selected.responses}/${selected.total}`],["NPS",selected.nps],["Conclusão",`${Math.round((selected.responses/selected.total)*100)}%`],["Categoria",selected.category]].map(([lbl,val],i) => (
-            <div key={i} className={`flex-1 text-center ${i<3?"border-r border-slate-200":""}`}>
-              <div className="text-sm font-bold text-slate-800">{val}</div>
-              <div className="text-xs text-slate-400">{lbl}</div>
+        {loadingList ? (
+          <div className="flex items-center gap-2 text-slate-400 text-sm py-3"><Loader2 size={16} className="animate-spin" />Carregando pesquisas...</div>
+        ) : surveys.length === 0 ? (
+          <div className="text-slate-400 text-sm py-3">Nenhuma pesquisa criada ainda.</div>
+        ) : (
+          <>
+          <div className="flex gap-2 flex-wrap mb-4">
+            {surveys.map(s => (
+              <button key={s.id} onClick={() => { setSelectedId(s.id); setInsights(null); }}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${selectedId===s.id?"text-white":"border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                style={selectedId===s.id?{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }:{}}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+          {selected && (
+            <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl mb-4">
+              {[["Respostas",String(selected.response_count||0)],["Categoria",selected.category||"—"],["Status",selected.status||"—"]].map(([lbl,val],i) => (
+                <div key={i} className={`flex-1 text-center ${i<2?"border-r border-slate-200":""}`}>
+                  <div className="text-sm font-bold text-slate-800">{val}</div>
+                  <div className="text-xs text-slate-400">{lbl}</div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <button onClick={generateInsights} disabled={loading}
+          )}
+          </>
+        )}
+        <button onClick={generateInsights} disabled={loading || !selectedId}
           className="w-full py-3 text-white rounded-xl font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-60 hover:opacity-90"
           style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
           {loading ? <><Loader2 size={16} className="animate-spin" />Analisando com IA...</> : <><Sparkles size={16} />Gerar Análise Completa</>}
