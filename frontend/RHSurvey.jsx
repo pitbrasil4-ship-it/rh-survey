@@ -307,6 +307,68 @@ function TopBar({ title, unreadCount, onBell }) {
 
 // ─── DASHBOARD ─────────────────────────────────────────────────────────────────
 function Dashboard({ setPage }) {
+  const [data,    setData]    = useState(null);
+  const [surveys, setSurveys] = useState([]);
+  const [resp,    setResp]    = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState("");
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true); setError("");
+      try {
+        const [dash, surv, people] = await Promise.all([
+          api.results.dashboard(),
+          api.surveys.list().catch(() => ({ surveys: [] })),
+          api.respondents.list().catch(() => ({ respondents: [] })),
+        ]);
+        setData(dash);
+        setSurveys(surv.surveys || []);
+        setResp(people.respondents || []);
+      } catch (e) {
+        setError(e.message || "Não foi possível carregar o painel.");
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  if (loading) return (
+    <div className="p-8 flex items-center justify-center" style={{ minHeight:"60vh" }}>
+      <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 size={18} className="animate-spin" />Carregando painel...</div>
+    </div>
+  );
+  if (error) return (
+    <div className="p-8">
+      <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2">
+        <AlertTriangle size={15} />{error}
+      </div>
+    </div>
+  );
+
+  const totalSurveys = data?.totalSurveys ?? 0;
+  const active       = data?.active ?? 0;
+  const totalResp    = data?.totalResponses ?? 0;
+  const recent       = data?.recentSurveys || [];
+
+  // LGPD — consentimentos reais
+  const consentTotal = resp.length;
+  const consentOk    = resp.filter(r => r.consent_given).length;
+  const consentPct   = consentTotal ? Math.round((consentOk / consentTotal) * 100) : 0;
+  const anonCount    = surveys.filter(s => s.anonymous).length;
+
+  // Gráfico honesto 1: respostas por pesquisa (top 6 com respostas)
+  const byResponses = [...surveys]
+    .map(s => ({ name: (s.name || "").length > 16 ? s.name.slice(0,15) + "…" : (s.name || "—"), respostas: s.response_count || 0 }))
+    .sort((a,b) => b.respostas - a.respostas)
+    .slice(0, 6);
+
+  // Gráfico honesto 2: pesquisas por status
+  const statusColors = { ativo:"#10B981", encerrado:"#94A3B8", rascunho:"#F59E0B" };
+  const statusLabels = { ativo:"Ativas", encerrado:"Encerradas", rascunho:"Rascunhos" };
+  const byStatus = ["ativo","encerrado","rascunho"]
+    .map(st => ({ name: statusLabels[st], value: surveys.filter(s => s.status === st).length, color: statusColors[st] }))
+    .filter(d => d.value > 0);
+
   return (
     <div className="p-8">
       <div className="mb-7">
@@ -315,73 +377,83 @@ function Dashboard({ setPage }) {
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <KpiCard title="Pesquisas Ativas"   value="5"   subtitle="2 encerradas no mês"    icon={ClipboardList} colorClass="bg-purple-500" trend="+2 este mês" />
-        <KpiCard title="Total de Respostas" value="202" subtitle="Todos os questionários"  icon={CheckCircle}   colorClass="bg-emerald-500" trend="+18%"       />
-        <KpiCard title="Taxa de Conclusão"  value="79%" subtitle="Média da plataforma"     icon={TrendingUp}    colorClass="bg-blue-500"    trend="+5%"        />
-        <KpiCard title="NPS Médio"          value="72"  subtitle="Net Promoter Score"      icon={Award}         colorClass="bg-amber-500"   trend="+7 pts"     />
+        <KpiCard title="Pesquisas Ativas"    value={String(active)}       subtitle={`${totalSurveys} no total`}        icon={ClipboardList} colorClass="bg-purple-500"  />
+        <KpiCard title="Total de Respostas"  value={String(totalResp)}    subtitle="Avaliações concluídas"             icon={CheckCircle}   colorClass="bg-emerald-500" />
+        <KpiCard title="Pesquisas Criadas"   value={String(totalSurveys)} subtitle="Em todos os status"                icon={TrendingUp}    colorClass="bg-blue-500"    />
+        <KpiCard title="Respondentes"        value={String(consentTotal)} subtitle={`${consentOk} com consentimento`}  icon={Users}         colorClass="bg-amber-500"   />
       </div>
 
-      {/* LGPD quick status */}
+      {/* LGPD quick status — dados reais */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-2xl p-4 border border-green-200 shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0"><Shield size={18} className="text-green-600" /></div>
           <div>
             <div className="text-sm font-semibold text-slate-800">Consentimentos</div>
-            <div className="text-xs text-slate-500 mt-0.5">6 de 8 coletados <span className="text-green-600 font-medium">(75%)</span></div>
+            <div className="text-xs text-slate-500 mt-0.5">{consentOk} de {consentTotal} coletados <span className="text-green-600 font-medium">({consentPct}%)</span></div>
           </div>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-blue-200 shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0"><Lock size={18} className="text-blue-600" /></div>
           <div>
             <div className="text-sm font-semibold text-slate-800">Dados Anonimizados</div>
-            <div className="text-xs text-slate-500 mt-0.5">4 pesquisas ativas protegidas</div>
+            <div className="text-xs text-slate-500 mt-0.5">{anonCount} pesquisa(s) com anonimato</div>
           </div>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-purple-200 shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0"><Activity size={18} style={{ color:"#5B21B6" }} /></div>
           <div>
-            <div className="text-sm font-semibold text-slate-800">Última Auditoria</div>
-            <div className="text-xs text-slate-500 mt-0.5">Hoje às 08:41 · Sem alertas</div>
+            <div className="text-sm font-semibold text-slate-800">Trilha de Auditoria</div>
+            <div className="text-xs text-slate-500 mt-0.5">Ativa · registros LGPD</div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-5 mb-6">
         <div className="col-span-2 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <h3 className="font-semibold text-slate-800 text-sm mb-1">Respostas por Mês</h3>
-          <p className="text-xs text-slate-400 mb-5">Evolução em 2025</p>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={RESPONSE_DATA}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="mes" tick={{ fontSize:11, fill:"#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize:11, fill:"#94a3b8" }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ borderRadius:10, border:"none", boxShadow:"0 4px 20px rgba(0,0,0,0.08)", fontSize:12 }} />
-              <Bar dataKey="respostas" fill="#5B21B6" radius={[5,5,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <h3 className="font-semibold text-slate-800 text-sm mb-1">Respostas por Pesquisa</h3>
+          <p className="text-xs text-slate-400 mb-5">Avaliações concluídas em cada pesquisa</p>
+          {byResponses.some(d => d.respostas > 0) ? (
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={byResponses}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="name" tick={{ fontSize:11, fill:"#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize:11, fill:"#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={{ borderRadius:10, border:"none", boxShadow:"0 4px 20px rgba(0,0,0,0.08)", fontSize:12 }} />
+                <Bar dataKey="respostas" fill="#5B21B6" radius={[5,5,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center text-slate-400 text-sm" style={{ height:180 }}>Ainda não há respostas registradas.</div>
+          )}
         </div>
         <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <h3 className="font-semibold text-slate-800 text-sm mb-1">Satisfação Geral</h3>
-          <p className="text-xs text-slate-400 mb-3">Distribuição dos resultados</p>
-          <ResponsiveContainer width="100%" height={130}>
-            <PieChart>
-              <Pie data={SATISFACTION_DATA} cx="50%" cy="50%" innerRadius={40} outerRadius={58} dataKey="value" stroke="none">
-                {SATISFACTION_DATA.map((e,i) => <Cell key={i} fill={e.color} />)}
-              </Pie>
-              <Tooltip contentStyle={{ borderRadius:10, border:"none", boxShadow:"0 4px 20px rgba(0,0,0,0.08)", fontSize:12 }} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="space-y-1.5 mt-1">
-            {SATISFACTION_DATA.map((d,i) => (
-              <div key={i} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ background:d.color }} />
-                  <span className="text-slate-600">{d.name}</span>
-                </div>
-                <span className="font-semibold text-slate-700">{d.value}%</span>
+          <h3 className="font-semibold text-slate-800 text-sm mb-1">Pesquisas por Status</h3>
+          <p className="text-xs text-slate-400 mb-3">Distribuição atual</p>
+          {byStatus.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={130}>
+                <PieChart>
+                  <Pie data={byStatus} cx="50%" cy="50%" innerRadius={40} outerRadius={58} dataKey="value" stroke="none">
+                    {byStatus.map((e,i) => <Cell key={i} fill={e.color} />)}
+                  </Pie>
+                  <Tooltip contentStyle={{ borderRadius:10, border:"none", boxShadow:"0 4px 20px rgba(0,0,0,0.08)", fontSize:12 }} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-1.5 mt-1">
+                {byStatus.map((d,i) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ background:d.color }} />
+                      <span className="text-slate-600">{d.name}</span>
+                    </div>
+                    <span className="font-semibold text-slate-700">{d.value}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center text-slate-400 text-sm" style={{ height:130 }}>Sem pesquisas ainda.</div>
+          )}
         </div>
       </div>
 
@@ -392,20 +464,22 @@ function Dashboard({ setPage }) {
             Ver todas <ChevronRight size={13} />
           </button>
         </div>
-        {MOCK_SURVEYS.slice(0,4).map((s,i) => (
-          <div key={s.id} className={`flex items-center gap-4 px-6 py-3.5 hover:bg-slate-50 transition-colors ${i<3?"border-b border-slate-50":""}`}>
+        {recent.length === 0 ? (
+          <div className="text-center py-10 text-slate-400 text-sm">Nenhuma pesquisa criada ainda.</div>
+        ) : recent.slice(0,4).map((s,i) => (
+          <div key={s.id} className={`flex items-center gap-4 px-6 py-3.5 hover:bg-slate-50 transition-colors ${i<Math.min(recent.length,4)-1?"border-b border-slate-50":""}`}>
             <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
               <ClipboardList size={14} style={{ color:"#5B21B6" }} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-slate-800 truncate">{s.name}</span>
-                {s.anonymous && <LGPDBadge />}
+                {s.anonymous ? <LGPDBadge /> : null}
               </div>
-              <div className="text-xs text-slate-400 mt-0.5">{s.responses}/{s.total} respostas · {s.created}</div>
+              <div className="text-xs text-slate-400 mt-0.5">{s.responses} resposta(s)</div>
             </div>
             <div className="flex items-center gap-2.5">
-              <Badge status={s.status} /><GroupBadge group={s.type} />
+              <Badge status={s.status} /><GroupBadge group={s.target_group} />
             </div>
           </div>
         ))}
@@ -432,16 +506,52 @@ function Dashboard({ setPage }) {
   );
 }
 
+
 // ─── SURVEY LIST ───────────────────────────────────────────────────────────────
 function SurveyList({ onCreateNew }) {
   const [search,  setSearch]  = useState("");
   const [filter,  setFilter]  = useState("todos");
+  const [surveys, setSurveys] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState("");
 
-  const filtered = MOCK_SURVEYS.filter(s => {
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [sv, rs] = await Promise.all([
+          api.surveys.list(),
+          api.respondents.list().catch(() => ({ respondents: [] })),
+        ]);
+        const audience = (rs.respondents || []).length;
+        const mapped = (sv.surveys || []).map(s => ({
+          id:         s.id,
+          name:       s.name,
+          type:       s.target_group || "subordinados",
+          status:     s.status,
+          responses:  s.response_count || 0,
+          total:      audience || s.response_count || 0,
+          created:    s.created_at ? new Date(s.created_at).toLocaleDateString("pt-BR") : "—",
+          category:   s.category || "—",
+          nps:        0,
+          anonymous:  !!s.anonymous,
+        }));
+        if (alive) { setSurveys(mapped); setLoading(false); }
+      } catch (e) {
+        if (alive) { setError(e.message || "Erro ao carregar pesquisas."); setLoading(false); }
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const filtered = surveys.filter(s => {
     const ms = s.name.toLowerCase().includes(search.toLowerCase());
     const mf = filter === "todos" || s.status === filter;
     return ms && mf;
   });
+
+  if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />Carregando pesquisas...</div>;
+  if (error)   return <div className="p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
 
   return (
     <div className="p-8">
@@ -808,21 +918,50 @@ Tipos disponíveis: nps, scale, multiple, text, rating, yesno. Use tipos variado
 function RespondentManager() {
   const [activeGroup, setActiveGroup] = useState("todos");
   const [search,      setSearch]      = useState("");
+  const [respondents, setRespondents] = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await api.respondents.list();
+        const mapped = (data.respondents || []).map(r => ({
+          id:         r.id,
+          name:       r.name || "—",
+          email:      r.email || "—",
+          group:      r.group_type || "subordinados",
+          department: r.department || "—",
+          role:       r.role || "",
+          consent:    !!r.consent_given,
+          status:     r.consent_given ? "ativo" : "pendente",
+        }));
+        if (alive) { setRespondents(mapped); setLoading(false); }
+      } catch (e) {
+        if (alive) { setError(e.message || "Erro ao carregar respondentes."); setLoading(false); }
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   const counts = {
-    todos:        MOCK_RESPONDENTS.length,
-    gestores:     MOCK_RESPONDENTS.filter(r => r.group==="gestores").length,
-    fornecedores: MOCK_RESPONDENTS.filter(r => r.group==="fornecedores").length,
-    subordinados: MOCK_RESPONDENTS.filter(r => r.group==="subordinados").length,
+    todos:        respondents.length,
+    gestores:     respondents.filter(r => r.group==="gestores").length,
+    fornecedores: respondents.filter(r => r.group==="fornecedores").length,
+    subordinados: respondents.filter(r => r.group==="subordinados").length,
   };
 
-  const filtered = MOCK_RESPONDENTS.filter(r => {
+  const filtered = respondents.filter(r => {
     const mg = activeGroup==="todos" || r.group===activeGroup;
     const ms = r.name.toLowerCase().includes(search.toLowerCase()) || r.email.toLowerCase().includes(search.toLowerCase());
     return mg && ms;
   });
 
-  const pending = MOCK_RESPONDENTS.filter(r => !r.consent).length;
+  const pending = respondents.filter(r => !r.consent).length;
+
+  if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />Carregando respondentes...</div>;
+  if (error)   return <div className="p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
 
   return (
     <div className="p-8">
@@ -1042,83 +1181,231 @@ function Evaluation360() {
 }
 
 // ─── RESULTS ───────────────────────────────────────────────────────────────────
+function QuestionResult({ q }) {
+  // NPS
+  if (q.type === "nps") {
+    const parts = [
+      { label:"Promotores", pct:q.promoters||0, color:"#10B981" },
+      { label:"Neutros",    pct:q.passives||0,  color:"#94A3B8" },
+      { label:"Detratores", pct:q.detractors||0,color:"#EF4444" },
+    ];
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-start justify-between mb-4">
+          <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{q.responseCount} resposta(s)</span>
+        </div>
+        <div className="flex items-center gap-5">
+          <div className="text-center">
+            <div className="text-3xl font-bold" style={{ color:"#5B21B6" }}>{q.nps}</div>
+            <div className="text-xs text-slate-400 mt-0.5">NPS · {q.classification}</div>
+          </div>
+          <div className="flex-1 space-y-2">
+            {parts.map((p,i) => (
+              <div key={i} className="flex items-center gap-3">
+                <span className="text-xs text-slate-500 w-20">{p.label}</span>
+                <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${p.pct}%`,background:p.color }} /></div>
+                <span className="text-xs font-semibold text-slate-700 w-9 text-right">{p.pct}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // Escala / Estrelas
+  if (q.type === "scale" || q.type === "rating") {
+    const dist = q.distribution || [];
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-start justify-between mb-4">
+          <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{q.responseCount} resposta(s)</span>
+        </div>
+        <div className="flex items-center gap-5">
+          <div className="text-center">
+            <div className="text-3xl font-bold" style={{ color:"#5B21B6" }}>{q.average ?? "—"}</div>
+            <div className="text-xs text-slate-400 mt-0.5">média</div>
+          </div>
+          <div className="flex-1 space-y-1.5">
+            {dist.length === 0 ? <span className="text-xs text-slate-400">Sem respostas.</span> : dist.map((d,i) => (
+              <div key={i} className="flex items-center gap-3">
+                <span className="text-xs text-slate-500 w-8">{d.value}</span>
+                <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${d.pct}%`,background:"#5B21B6" }} /></div>
+                <span className="text-xs font-semibold text-slate-700 w-9 text-right">{d.pct}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // Sim / Não
+  if (q.type === "yesno") {
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-start justify-between mb-4">
+          <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{(q.yes||0)+(q.no||0)} resposta(s)</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500 w-12">Sim</span>
+              <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${q.yesPct||0}%`,background:"#10B981" }} /></div>
+              <span className="text-xs font-semibold text-slate-700 w-9 text-right">{q.yesPct||0}%</span>
+            </div>
+            <div className="flex items-center gap-3 mt-2">
+              <span className="text-xs text-slate-500 w-12">Não</span>
+              <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${100-(q.yesPct||0)}%`,background:"#EF4444" }} /></div>
+              <span className="text-xs font-semibold text-slate-700 w-9 text-right">{100-(q.yesPct||0)}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // Múltipla escolha
+  if (q.type === "multiple") {
+    const freq = q.frequency || [];
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-start justify-between mb-4">
+          <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{q.responseCount} resposta(s)</span>
+        </div>
+        <div className="space-y-1.5">
+          {freq.length === 0 ? <span className="text-xs text-slate-400">Sem respostas.</span> : freq.map((d,i) => (
+            <div key={i} className="flex items-center gap-3">
+              <span className="text-xs text-slate-500 flex-1 truncate">{d.value}</span>
+              <div className="w-32 h-2.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${d.pct}%`,background:"#5B21B6" }} /></div>
+              <span className="text-xs font-semibold text-slate-700 w-9 text-right">{d.pct}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  // Texto aberto
+  if (q.type === "text") {
+    const arr = q.responses || [];
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-start justify-between mb-3">
+          <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{arr.length} resposta(s)</span>
+        </div>
+        {arr.length === 0 ? <span className="text-xs text-slate-400">Sem respostas.</span> : (
+          <div className="space-y-2 max-h-44 overflow-y-auto">
+            {arr.map((t,i) => <div key={i} className="text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">{t}</div>)}
+          </div>
+        )}
+      </div>
+    );
+  }
+  return null;
+}
+
 function ResultsDashboard() {
-  const [selected, setSelected] = useState(MOCK_SURVEYS[0]);
-  const valid = MOCK_SURVEYS.filter(s => s.responses>0);
+  const [surveys,       setSurveys]       = useState([]);
+  const [selectedId,    setSelectedId]    = useState(null);
+  const [result,        setResult]        = useState(null);
+  const [loadingList,   setLoadingList]   = useState(true);
+  const [loadingResult, setLoadingResult] = useState(false);
+  const [error,         setError]         = useState("");
+
+  useEffect(() => {
+    (async () => {
+      setLoadingList(true); setError("");
+      try {
+        const sv = await api.surveys.list();
+        const list = sv.surveys || [];
+        setSurveys(list);
+        const pick = list.find(s => (s.response_count||0) > 0) || list[0];
+        if (pick) setSelectedId(pick.id);
+      } catch (e) { setError(e.message || "Erro ao carregar pesquisas."); }
+      setLoadingList(false);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) { setResult(null); return; }
+    let alive = true;
+    (async () => {
+      setLoadingResult(true);
+      try { const r = await api.get(`/results/${selectedId}`); if (alive) setResult(r); }
+      catch (e) { if (alive) setError(e.message || "Erro ao carregar resultados."); }
+      if (alive) setLoadingResult(false);
+    })();
+    return () => { alive = false; };
+  }, [selectedId]);
+
+  if (loadingList) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />Carregando resultados...</div>;
+  if (error)       return <div className="p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
+
+  const survey   = result?.survey;
+  const totalR   = survey?.totalResponses ?? 0;
+  const compRate = result?.completionRate ?? 0;
+  const nps      = result?.overallNPS;
+  const anon     = !!survey?.anonymous;
+  const questions = result?.questions || [];
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Resultados & Relatórios</h1>
-          <p className="text-sm text-slate-500 mt-1">Análise completa. Dados exportados com criptografia AES-256.</p>
+          <p className="text-sm text-slate-500 mt-1">Análise completa por pergunta, com proteção LGPD.</p>
         </div>
         <button className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
           <Download size={14} />Exportar PDF
         </button>
       </div>
 
+      {surveys.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 border border-slate-100 shadow-sm text-center text-slate-400 text-sm">Nenhuma pesquisa criada ainda.</div>
+      ) : (
+      <>
       <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm mb-6">
         <div className="flex gap-2 overflow-x-auto">
-          {valid.map(s => (
-            <button key={s.id} onClick={() => setSelected(s)}
-              className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${selected.id===s.id?"text-white":"border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-              style={selected.id===s.id?{ background:GRAD }:{}}>
+          {surveys.map(s => (
+            <button key={s.id} onClick={() => setSelectedId(s.id)}
+              className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${selectedId===s.id?"text-white":"border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+              style={selectedId===s.id?{ background:GRAD }:{}}>
               {s.name}
             </button>
           ))}
         </div>
       </div>
 
+      {loadingResult ? (
+        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />Carregando...</div>
+      ) : !result ? null : (
+      <>
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <KpiCard title="Respostas"         value={selected.responses}                                          subtitle={`de ${selected.total} convidados`} icon={MessageSquare} colorClass="bg-purple-500" />
-        <KpiCard title="Taxa de Conclusão" value={`${Math.round((selected.responses/selected.total)*100)}%`}  subtitle="Média de resposta"                 icon={CheckCircle}   colorClass="bg-emerald-500" />
-        <KpiCard title="NPS Score"         value={selected.nps}                                               subtitle="Net Promoter Score"                icon={TrendingUp}    colorClass="bg-blue-500" />
-        <KpiCard title="Anonimato"         value={selected.anonymous?"Ativo":"Inativo"}                       subtitle="Proteção LGPD"                     icon={Shield}        colorClass={selected.anonymous?"bg-green-500":"bg-slate-400"} />
+        <KpiCard title="Respostas"         value={String(totalR)}                  subtitle="Avaliações concluídas"  icon={MessageSquare} colorClass="bg-purple-500" />
+        <KpiCard title="Taxa de Conclusão" value={`${compRate}%`}                   subtitle="Iniciadas vs concluídas" icon={CheckCircle}  colorClass="bg-emerald-500" />
+        <KpiCard title="NPS Score"         value={nps ? String(nps.nps) : "—"}     subtitle={nps ? nps.classification : "Sem pergunta NPS"} icon={TrendingUp} colorClass="bg-blue-500" />
+        <KpiCard title="Anonimato"         value={anon?"Ativo":"Inativo"}          subtitle="Proteção LGPD"          icon={Shield}        colorClass={anon?"bg-green-500":"bg-slate-400"} />
       </div>
 
-      <div className="grid grid-cols-2 gap-5 mb-5">
-        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <h3 className="font-semibold text-slate-800 text-sm mb-4">Evolução do NPS</h3>
-          <ResponsiveContainer width="100%" height={170}>
-            <LineChart data={NPS_HISTORY}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="mes" tick={{ fontSize:11,fill:"#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis domain={[40,90]} tick={{ fontSize:11,fill:"#94a3b8" }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ borderRadius:10,border:"none",boxShadow:"0 4px 20px rgba(0,0,0,0.08)",fontSize:12 }} />
-              <Line type="monotone" dataKey="nps" stroke="#5B21B6" strokeWidth={2.5} dot={{ fill:"#5B21B6",r:4 }} activeDot={{ r:6 }} />
-            </LineChart>
-          </ResponsiveContainer>
+      {totalR === 0 ? (
+        <div className="bg-white rounded-2xl p-10 border border-slate-100 shadow-sm text-center text-slate-400 text-sm">
+          Esta pesquisa ainda não recebeu respostas. Os resultados aparecerão aqui assim que os participantes responderem.
         </div>
-        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <h3 className="font-semibold text-slate-800 text-sm mb-4">Competências Avaliadas</h3>
-          <ResponsiveContainer width="100%" height={170}>
-            <RadarChart data={RADAR_DATA}>
-              <PolarGrid stroke="#f1f5f9" />
-              <PolarAngleAxis dataKey="subject" tick={{ fontSize:10,fill:"#94a3b8" }} />
-              <Radar dataKey="score" stroke="#5B21B6" fill="#5B21B6" fillOpacity={0.25} strokeWidth={2} />
-            </RadarChart>
-          </ResponsiveContainer>
+      ) : (
+        <div className="space-y-4">
+          {questions.map((q,i) => <QuestionResult key={q.questionId || i} q={q} />)}
         </div>
-      </div>
-
-      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-        <h3 className="font-semibold text-slate-800 text-sm mb-5">Distribuição de Satisfação</h3>
-        <div className="space-y-3">
-          {SATISFACTION_DATA.map((d,i) => (
-            <div key={i} className="flex items-center gap-4">
-              <span className="text-sm text-slate-600 w-14">{d.name}</span>
-              <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full rounded-full" style={{ width:`${d.value}%`,background:d.color }} />
-              </div>
-              <span className="text-sm font-semibold text-slate-700 w-10 text-right">{d.value}%</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
+      </>
+      )}
+      </>
+      )}
     </div>
   );
 }
+
 
 // ─── LGPD PAGE ─────────────────────────────────────────────────────────────────
 function LGPDPage() {
