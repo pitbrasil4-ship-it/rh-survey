@@ -13,7 +13,7 @@ function list(req, res) {
              (SELECT COUNT(*) FROM questions WHERE survey_id = s.id) as question_count,
              (SELECT COUNT(*) FROM responses WHERE survey_id = s.id AND completed_at IS NOT NULL) as response_count
       FROM surveys s LEFT JOIN users u ON s.created_by_id = u.id
-      WHERE s.tenant_id = ? ORDER BY s.created_at DESC
+      WHERE s.tenant_id = ? AND s.status != 'excluido' ORDER BY s.created_at DESC
     `).all(req.user.tenant_id);
     return ok(res, { surveys, total: surveys.length });
   } catch (e) { return err(res, 'Erro ao listar pesquisas', 500, e.message); }
