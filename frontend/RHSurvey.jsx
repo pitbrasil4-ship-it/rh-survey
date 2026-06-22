@@ -3247,159 +3247,213 @@ function TemplatesLibrary({ onUseTemplate }) {
 
 // ─── ADVANCED REPORTS ──────────────────────────────────────────────────────────
 function AdvancedReports() {
-  const [view, setView] = useState("comparativo");
+  const [view, setView]               = useState("comparativo"); // comparativo | participacao
+  const [surveys, setSurveys]         = useState([]);
+  const [reports, setReports]         = useState({});            // surveyId -> { nps, completion, responses }
+  const [respondents, setRespondents] = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState("");
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true); setError("");
+      try {
+        const [sv, rp] = await Promise.all([
+          api.surveys.list(),
+          api.respondents.list().catch(() => ({ respondents: [] })),
+        ]);
+        const list = sv.surveys || [];
+        setSurveys(list);
+        setRespondents(rp.respondents || []);
+        const withResp = list.filter(s => (s.response_count || 0) > 0);
+        const results = await Promise.all(
+          withResp.map(s => api.get(`/results/${s.id}`).then(r => ({ id:s.id, r })).catch(() => null))
+        );
+        const map = {};
+        results.forEach(x => { if (x) map[x.id] = { nps:(x.r.overallNPS ? x.r.overallNPS.nps : null), completion:x.r.completionRate, responses:x.r.survey?.totalResponses }; });
+        setReports(map);
+      } catch (e) { setError(e.message || "Erro ao carregar relatórios."); }
+      setLoading(false);
+    })();
+  }, []);
+
+  const totalSurveys   = surveys.length;
+  const activeSurveys  = surveys.filter(s => s.status === "ativo").length;
+  const totalResponses = surveys.reduce((a, s) => a + (s.response_count || 0), 0);
+  const npsVals  = Object.values(reports).map(r => r.nps).filter(v => v != null);
+  const avgNps   = npsVals.length ? Math.round(npsVals.reduce((a,b)=>a+b,0)/npsVals.length) : null;
+  const compVals = Object.values(reports).map(r => r.completion).filter(v => v != null);
+  const avgComp  = compVals.length ? Math.round(compVals.reduce((a,b)=>a+b,0)/compVals.length) : null;
+
+  const totalResp  = respondents.length;
+  const consented  = respondents.filter(r => r.consent_given).length;
+  const consentPct = totalResp ? Math.round(consented/totalResp*100) : 0;
+  const GROUPS = [["gestores","Gestores"],["fornecedores","Fornecedores"],["subordinados","Subordinados"]];
+  const byGroup = GROUPS.map(([key,label]) => ({ key, label, count: respondents.filter(r => r.group_type === key).length }));
+  const otherCount = respondents.filter(r => !GROUPS.some(([k]) => k === r.group_type)).length;
+  const maxGroup = Math.max(1, ...byGroup.map(g => g.count), otherCount);
+
+  const compRows = surveys.map(s => {
+    const r = reports[s.id] || {};
+    return { id:s.id, name:s.name, status:s.status, responses: s.response_count||0, completion: r.completion, nps: r.nps };
+  });
+  const chartData = compRows.filter(r => r.responses > 0).map(r => ({ name: r.name.length>16 ? r.name.slice(0,15)+"…" : r.name, Respostas: r.responses }));
+  const npsColor = (n) => n==null ? "text-slate-300" : n>=50 ? "text-green-600" : n>=0 ? "text-blue-600" : "text-red-500";
+
+  const exportComparativo = () => {
+    const rows = [["Pesquisa","Status","Respostas","Conclusão %","NPS"]];
+    compRows.forEach(r => rows.push([r.name, r.status, r.responses, r.completion==null?"":r.completion, r.nps==null?"":r.nps]));
+    downloadCSV(`relatorio-comparativo-${new Date().toISOString().slice(0,10)}.csv`, rows);
+  };
+  const exportParticipacao = () => {
+    const rows = [["Grupo","Respondentes"]];
+    byGroup.forEach(g => rows.push([g.label, g.count]));
+    if (otherCount) rows.push(["Outros", otherCount]);
+    rows.push(["", ""]);
+    rows.push(["Total de respondentes ativos", totalResp]);
+    rows.push(["Com consentimento LGPD", consented]);
+    rows.push(["% de consentimento", consentPct + "%"]);
+    downloadCSV(`relatorio-participacao-${new Date().toISOString().slice(0,10)}.csv`, rows);
+  };
+
+  const Kpi = ({ label, value, sub, color }) => (
+    <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+      <div className="text-xs text-slate-400 mb-1">{label}</div>
+      <div className="text-2xl font-bold" style={{ color: color || "#1E293B" }}>{value}</div>
+      {sub ? <div className="text-xs text-slate-400 mt-0.5">{sub}</div> : null}
+    </div>
+  );
+  const Tab = ({ id, children }) => (
+    <button onClick={() => setView(id)}
+      className={`px-4 py-2 text-sm rounded-xl ${view===id ? "text-white" : "text-slate-600 hover:bg-slate-50 border border-slate-200"}`}
+      style={view===id ? { background:GRAD } : {}}>{children}</button>
+  );
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Relatórios Avançados</h1>
-          <p className="text-sm text-slate-500 mt-1">Análise comparativa entre grupos, períodos e competências.</p>
+          <p className="text-sm text-slate-500 mt-1">Visão consolidada das pesquisas e da participação, com proteção LGPD.</p>
         </div>
         <div className="flex gap-2">
-          <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
-            <Download size={14} />Exportar PDF
+          <button onClick={() => (view==="comparativo" ? exportComparativo() : exportParticipacao())} disabled={loading || (view==="comparativo" ? compRows.length===0 : totalResp===0)}
+            title="Baixar este relatório em CSV" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+            <Download size={14} />Exportar CSV
           </button>
-          <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
-            <Download size={14} />Excel
+          <button onClick={() => window.print()} title="Abrir a janela de impressão (salve como PDF)" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+            <FileText size={14} />Exportar PDF
           </button>
         </div>
       </div>
 
-      <div className="flex gap-2 mb-6">
-        {[["comparativo","📊 Comparativo"],["tendencia","📈 Tendência"],["competencias","🎯 Competências"],["distribuicao","🥧 Distribuição"]].map(([id,label]) => (
-          <button key={id} onClick={() => setView(id)}
-            className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${view===id?"text-white":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-            style={view===id?{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }:{}}>
-            {label}
-          </button>
-        ))}
-      </div>
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2 mb-5"><AlertTriangle size={15} />{error}</div>}
 
-      {/* KPI row */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <KpiCard title="Média Geral" value="75" subtitle="Todos os grupos" icon={BarChart3} colorClass="bg-purple-500" trend="+4 pts" />
-        <KpiCard title="Melhor Grupo" value="Gestores" subtitle="Score: 82/100" icon={Award} colorClass="bg-green-500" />
-        <KpiCard title="Evolução NPS" value="+17 pts" subtitle="Jan → Jun 2025" icon={TrendingUp} colorClass="bg-blue-500" trend="+24%" />
-        <KpiCard title="Pesquisas" value="5" subtitle="Neste relatório" icon={ClipboardList} colorClass="bg-amber-500" />
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />Carregando relatórios...</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            <Kpi label="Pesquisas" value={totalSurveys} sub={`${activeSurveys} ativa${activeSurveys!==1?"s":""}`} />
+            <Kpi label="Total de respostas" value={totalResponses} color="#5B21B6" />
+            <Kpi label="NPS médio" value={avgNps==null ? "—" : avgNps} sub={npsVals.length ? `de ${npsVals.length} pesquisa(s)` : "sem dados"} />
+            <Kpi label="Conclusão média" value={avgComp==null ? "—" : `${avgComp}%`} sub={compVals.length ? `de ${compVals.length} pesquisa(s)` : "sem dados"} />
+          </div>
 
-      {view === "comparativo" && (
-        <div className="grid grid-cols-2 gap-5">
-          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-            <h3 className="font-semibold text-slate-800 text-sm mb-4">Score Médio por Grupo</h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={COMP_BAR_DATA} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                <XAxis type="number" domain={[0,100]} tick={{ fontSize:11,fill:"#94a3b8" }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="grupo" tick={{ fontSize:12,fill:"#64748b" }} axisLine={false} tickLine={false} width={90} />
-                <Tooltip contentStyle={{ borderRadius:10,border:"none",boxShadow:"0 4px 20px rgba(0,0,0,0.08)",fontSize:12 }} />
-                <Bar dataKey="score" radius={[0,6,6,0]}>
-                  {COMP_BAR_DATA.map((_,i) => <Cell key={i} fill={["#5B21B6","#3B82F6","#10B981"][i]} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="flex gap-2 mb-5">
+            <Tab id="comparativo">Comparativo de pesquisas</Tab>
+            <Tab id="participacao">Participação &amp; LGPD</Tab>
           </div>
-          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-            <h3 className="font-semibold text-slate-800 text-sm mb-4">Satisfação Acumulada</h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={SATISFACTION_DATA} cx="50%" cy="50%" outerRadius={80} dataKey="value" stroke="none" label={({ name,value }) => `${name} ${value}%`} labelLine={false}>
-                  {SATISFACTION_DATA.map((e,i) => <Cell key={i} fill={e.color} />)}
-                </Pie>
-                <Tooltip contentStyle={{ borderRadius:10,border:"none",fontSize:12 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
 
-      {view === "tendencia" && (
-        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <h3 className="font-semibold text-slate-800 text-sm mb-4">Evolução de Scores por Grupo — 2025</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={TREND_DATA}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="mes" tick={{ fontSize:11,fill:"#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis domain={[55,90]} tick={{ fontSize:11,fill:"#94a3b8" }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ borderRadius:10,border:"none",boxShadow:"0 4px 20px rgba(0,0,0,0.08)",fontSize:12 }} />
-              <Line type="monotone" dataKey="gestores"     stroke="#5B21B6" strokeWidth={2.5} dot={{ fill:"#5B21B6",r:4 }} name="Gestores" />
-              <Line type="monotone" dataKey="subordinados" stroke="#10B981" strokeWidth={2.5} dot={{ fill:"#10B981",r:4 }} name="Subordinados" />
-              <Line type="monotone" dataKey="fornecedores" stroke="#F59E0B" strokeWidth={2.5} dot={{ fill:"#F59E0B",r:4 }} name="Fornecedores" />
-            </LineChart>
-          </ResponsiveContainer>
-          <div className="flex items-center justify-center gap-6 mt-3">
-            {[["#5B21B6","Gestores"],["#10B981","Subordinados"],["#F59E0B","Fornecedores"]].map(([color,label]) => (
-              <div key={label} className="flex items-center gap-2 text-xs text-slate-600">
-                <div className="w-3 h-3 rounded-full" style={{ background:color }} />{label}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {view === "competencias" && (
-        <div className="grid grid-cols-2 gap-5">
-          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-            <h3 className="font-semibold text-slate-800 text-sm mb-4">Radar de Competências — Gestores</h3>
-            <ResponsiveContainer width="100%" height={280}>
-              <RadarChart data={RADAR_DATA}>
-                <PolarGrid stroke="#f1f5f9" />
-                <PolarAngleAxis dataKey="subject" tick={{ fontSize:11,fill:"#94a3b8" }} />
-                <Radar dataKey="score" stroke="#5B21B6" fill="#5B21B6" fillOpacity={0.25} strokeWidth={2} name="Score" />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-            <h3 className="font-semibold text-slate-800 text-sm mb-4">Ranking de Competências</h3>
-            <div className="space-y-3 mt-2">
-              {RADAR_DATA.sort((a,b) => b.score-a.score).map((d,i) => (
-                <div key={i}>
-                  <div className="flex justify-between text-xs text-slate-600 mb-1">
-                    <span className="flex items-center gap-2">
-                      <span className={`w-5 h-5 rounded-full text-white text-xs font-bold flex items-center justify-center ${i===0?"bg-amber-400":i===1?"bg-slate-400":i===2?"bg-amber-700":"bg-slate-200 text-slate-500"}`}>{i+1}</span>
-                      {d.subject}
-                    </span>
-                    <span className="font-semibold text-slate-700">{d.score}/100</span>
-                  </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width:`${d.score}%`, background:i===0?"linear-gradient(90deg,#F59E0B,#FCD34D)":i<3?"linear-gradient(90deg,#5B21B6,#7C3AED)":"linear-gradient(90deg,#10B981,#34D399)" }} />
+          {view === "comparativo" && (
+            <>
+              {chartData.length > 0 && (
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-6">
+                  <h3 className="font-semibold text-slate-800 text-sm mb-4">Respostas por pesquisa</h3>
+                  <div style={{ width:"100%", height:280 }}>
+                    <ResponsiveContainer>
+                      <BarChart data={chartData} margin={{ top:5, right:10, left:-10, bottom:5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+                        <XAxis dataKey="name" tick={{ fontSize:11, fill:"#94A3B8" }} interval={0} angle={-15} textAnchor="end" height={50} />
+                        <YAxis tick={{ fontSize:11, fill:"#94A3B8" }} allowDecimals={false} />
+                        <Tooltip />
+                        <Bar dataKey="Respostas" fill="#7C3AED" radius={[6,6,0,0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+              )}
 
-      {view === "distribuicao" && (
-        <div className="grid grid-cols-3 gap-5">
-          {SATISFACTION_DATA.map((d,i) => (
-            <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm text-center">
-              <div className="text-4xl font-bold mb-2" style={{ color:d.color }}>{d.value}%</div>
-              <div className="text-sm font-semibold text-slate-700 mb-1">{d.name}</div>
-              <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full rounded-full" style={{ width:`${d.value}%`,background:d.color }} />
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-semibold text-slate-800 text-sm">Comparativo por pesquisa</h3></div>
+                {compRows.length === 0 ? (
+                  <div className="px-6 py-8 text-center text-sm text-slate-400">Nenhuma pesquisa cadastrada ainda.</div>
+                ) : (
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        {["Pesquisa","Status","Respostas","Conclusão","NPS"].map(h => (
+                          <th key={h} className={`text-xs font-semibold text-slate-500 px-5 py-3 ${h==="Pesquisa"?"text-left":"text-center"}`}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {compRows.map((r,i) => (
+                        <tr key={r.id} className={`hover:bg-slate-50 transition-colors ${i<compRows.length-1?"border-b border-slate-50":""}`}>
+                          <td className="px-5 py-3.5 text-sm font-medium text-slate-800">{r.name}</td>
+                          <td className="px-5 py-3.5 text-center"><Badge status={r.status} /></td>
+                          <td className="px-5 py-3.5 text-center text-sm text-slate-700">{r.responses}</td>
+                          <td className="px-5 py-3.5 text-center text-sm text-slate-700">{r.completion==null?"—":`${r.completion}%`}</td>
+                          <td className={`px-5 py-3.5 text-center text-sm font-bold ${npsColor(r.nps)}`}>{r.nps==null?"—":r.nps}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
-              <div className="text-xs text-slate-400 mt-2">{Math.round(d.value*202/100)} respondentes</div>
-            </div>
-          ))}
-          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-            <h3 className="font-semibold text-slate-800 text-sm mb-3">Por Canal de Resposta</h3>
-            <div className="space-y-3">
-              {[["E-mail","📧",68],["WhatsApp","💬",22],["Link direto","🔗",10]].map(([lbl,icon,pct],i) => (
-                <div key={i}>
-                  <div className="flex justify-between text-xs text-slate-600 mb-1">
-                    <span>{icon} {lbl}</span><span className="font-semibold">{pct}%</span>
-                  </div>
-                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width:`${pct}%`,background:"linear-gradient(90deg,#5B21B6,#7C3AED)" }} />
-                  </div>
+            </>
+          )}
+
+          {view === "participacao" && (
+            <>
+              <div className="grid grid-cols-3 gap-5 mb-6">
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 col-span-2">
+                  <h3 className="font-semibold text-slate-800 text-sm mb-4">Respondentes por grupo</h3>
+                  {totalResp === 0 ? (
+                    <p className="text-sm text-slate-400">Nenhum respondente ativo cadastrado.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {byGroup.map(g => (
+                        <div key={g.key}>
+                          <div className="flex justify-between text-xs text-slate-600 mb-1"><span>{g.label}</span><span className="font-semibold">{g.count}</span></div>
+                          <div className="h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${Math.round(g.count/maxGroup*100)}%`, background:GRAD }} /></div>
+                        </div>
+                      ))}
+                      {otherCount > 0 && (
+                        <div>
+                          <div className="flex justify-between text-xs text-slate-600 mb-1"><span>Outros</span><span className="font-semibold">{otherCount}</span></div>
+                          <div className="h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full bg-slate-300" style={{ width:`${Math.round(otherCount/maxGroup*100)}%` }} /></div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                  <div className="flex items-center gap-2 mb-3"><Shield size={16} className="text-green-600" /><h3 className="font-semibold text-slate-800 text-sm">Consentimento LGPD</h3></div>
+                  <div className="text-3xl font-bold text-slate-800">{consentPct}%</div>
+                  <p className="text-xs text-slate-400 mt-1 mb-3">{consented} de {totalResp} respondente(s) com consentimento registrado</p>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${consentPct}%`, background:"linear-gradient(90deg,#059669,#10B981)" }} /></div>
+                  {consented < totalResp && <p className="text-xs text-amber-600 mt-3">{totalResp - consented} respondente(s) ainda sem consentimento. Registre em “Respondentes”.</p>}
+                </div>
+              </div>
+
+              <div className="rounded-2xl p-4 border border-purple-100 flex items-center gap-2 text-xs text-purple-700" style={{ background:"linear-gradient(135deg,#f5f3ff,#ede9fe)" }}>
+                <Info size={14} />
+                Respondentes anonimizados (direito ao esquecimento) não entram nesta contagem, conforme a LGPD.
+              </div>
+            </>
+          )}
+        </>
       )}
     </div>
   );
