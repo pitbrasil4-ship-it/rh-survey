@@ -59,6 +59,9 @@ export const api = {
   respondents: {
     list:   ()     => request('GET', '/respondents'),
     create: (data) => request('POST', '/respondents', data),
+    registerConsent: (id, channel) => request('POST', `/respondents/${id}/consent`, { channel: channel || 'platform' }),
+    remove: (id)   => request('DELETE', `/respondents/${id}`),
+    import: (respondents) => request('POST', '/respondents/import', { respondents }),
   },
   results: {
     dashboard: ()         => request('GET', '/results/dashboard'),
