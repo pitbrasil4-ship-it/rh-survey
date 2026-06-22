@@ -186,6 +186,7 @@ export default function Login({ onLogin }) {
 
           <div style={{ textAlign:'right', marginBottom:20 }}>
             <button type="button"
+              onClick={() => setError('Para redefinir sua senha, contate o administrador do sistema: admin@empresa.com')}
               style={{ fontSize:12, color:'#DC2626', fontWeight:700, background:'none', border:'none', cursor:'pointer' }}>
               Esqueceu sua senha?
             </button>
@@ -356,6 +357,7 @@ export default function Login({ onLogin }) {
           {/* Esqueceu */}
           <div style={{ textAlign:'right', marginBottom:22 }}>
             <button type="button"
+              onClick={() => setError('Para redefinir sua senha, contate o administrador do sistema: admin@empresa.com')}
               style={{ fontSize:12, color:'#DC2626', fontWeight:700,
                 background:'none', border:'none', cursor:'pointer' }}>
               Esqueceu sua senha?
