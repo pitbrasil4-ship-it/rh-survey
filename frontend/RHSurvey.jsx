@@ -2407,223 +2407,177 @@ function SurveyForm({ onBack }) {
 
 // ─── DISTRIBUTION CENTER ───────────────────────────────────────────────────────
 function DistributionCenter() {
-  const [tab,      setTab]     = useState("campanhas");
-  const [channel,  setChannel] = useState("email");
+  const [surveys, setSurveys]         = useState([]);
+  const [respondents, setRespondents] = useState([]);
+  const [selectedId, setSelectedId]   = useState("");
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState("");
+  const [channel, setChannel]         = useState("email"); // email | whatsapp | link
+  const [subject, setSubject]         = useState("");
+  const [emailBody, setEmailBody]     = useState("");
+  const [waBody, setWaBody]           = useState("");
+  const [includeEmails, setIncludeEmails] = useState(false);
+  const [copied, setCopied]           = useState("");
 
-  const chStatus = { enviado:"bg-green-100 text-green-700", agendado:"bg-amber-100 text-amber-700", rascunho:"bg-slate-100 text-slate-600" };
-  const chIcon   = { email:"📧", whatsapp:"💬" };
+  useEffect(() => {
+    (async () => {
+      setLoading(true); setError("");
+      try {
+        const [sv, rp] = await Promise.all([
+          api.surveys.list(),
+          api.respondents.list().catch(() => ({ respondents: [] })),
+        ]);
+        const list = sv.surveys || [];
+        setSurveys(list);
+        setRespondents(rp.respondents || []);
+        const pick = list.find(s => s.status === "ativo") || list[0];
+        if (pick) setSelectedId(pick.id);
+      } catch (e) { setError(e.message || "Erro ao carregar pesquisas."); }
+      setLoading(false);
+    })();
+  }, []);
+
+  const survey   = surveys.find(s => s.id === selectedId);
+  const isActive = survey?.status === "ativo";
+  const link     = survey?.public_token ? `${window.location.origin}/r/${survey.public_token}` : "";
+  const anon     = !!survey?.anonymous;
+
+  const tplEmail = (s, l) => `Olá,\n\nVocê foi convidado(a) a participar da pesquisa "${s?.name || ""}". Sua opinião é muito importante para o desenvolvimento da nossa organização.\n\nResponda aqui (leva poucos minutos):\n${l}\n\n${(s?.anonymous ? "Esta pesquisa é anônima e está" : "Esta pesquisa está")} em conformidade com a LGPD (Lei nº 13.709/2018).\n\nObrigado pela participação.`;
+  const tplWa    = (s, l) => `Olá! 👋 Você foi convidado(a) para a pesquisa "${s?.name || ""}". Responda em poucos minutos: ${l}  🔒 Em conformidade com a LGPD.`;
+
+  useEffect(() => {
+    if (!survey) return;
+    setSubject(`Convite para responder: ${survey.name}`);
+    setEmailBody(tplEmail(survey, link));
+    setWaBody(tplWa(survey, link));
+    setIncludeEmails(false);
+  }, [selectedId]); // eslint-disable-line
+
+  const emailRecipients = respondents.filter(r => r.consent_given && r.email && r.email.includes("@")).map(r => r.email);
+
+  const fallbackCopy = (text, id) => { try { const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); setCopied(id); setTimeout(()=>setCopied(""),1500); } catch {} };
+  const copy = (text, id) => { try { navigator.clipboard.writeText(text).then(() => { setCopied(id); setTimeout(()=>setCopied(""),1500); }, () => fallbackCopy(text, id)); } catch { fallbackCopy(text, id); } };
+
+  const openEmail = () => {
+    const parts = [];
+    if (includeEmails && emailRecipients.length) parts.push(`bcc=${encodeURIComponent(emailRecipients.join(","))}`);
+    parts.push(`subject=${encodeURIComponent(subject)}`);
+    parts.push(`body=${encodeURIComponent(emailBody)}`);
+    window.location.href = `mailto:?${parts.join("&")}`;
+  };
+  const openWa = () => { window.open(`https://wa.me/?text=${encodeURIComponent(waBody)}`, "_blank", "noopener"); };
+
+  const ChannelBtn = ({ id, icon:Icon, label }) => (
+    <button onClick={() => setChannel(id)}
+      className={`flex-1 py-3 rounded-xl border-2 text-xs font-medium transition-all flex flex-col items-center gap-1 ${channel===id?"border-purple-400 bg-purple-50 text-purple-700":"border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+      <Icon size={18} />{label}
+    </button>
+  );
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-between mb-7">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Central de Distribuição</h1>
-          <p className="text-sm text-slate-500 mt-1">Envie pesquisas por e-mail, WhatsApp ou link seguro com rastreamento.</p>
+      <div className="mb-7">
+        <h1 className="text-2xl font-bold text-slate-800">Central de Distribuição</h1>
+        <p className="text-sm text-slate-500 mt-1">Monte o convite e dispare pelo seu e-mail ou WhatsApp, com o link já preenchido.</p>
+      </div>
+
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2 mb-5"><AlertTriangle size={15} />{error}</div>}
+
+      {loading ? (
+        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />Carregando...</div>
+      ) : surveys.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 text-center">
+          <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background:"#F5F3FF" }}><Send size={20} style={{ color:"#7C3AED" }} /></div>
+          <h3 className="font-semibold text-slate-800 text-sm">Nenhuma pesquisa para distribuir</h3>
+          <p className="text-sm text-slate-500 mt-1">Crie e publique uma pesquisa em “Pesquisas” para gerar o link de distribuição.</p>
         </div>
-        <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-          <Plus size={15} />Nova Campanha
-        </button>
-      </div>
-
-      <div className="flex gap-2 mb-6">
-        {[["campanhas","📋 Campanhas"],["nova","✉️ Nova Campanha"],["templates","🎨 Templates"]].map(([id,label]) => (
-          <button key={id} onClick={() => setTab(id)}
-            className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${tab===id?"text-white":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-            style={tab===id?{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }:{}}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab==="campanhas" && (
+      ) : (
         <>
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            {[
-              { label:"Campanhas Enviadas", value:"2",   icon:Send,         color:"bg-purple-500" },
-              { label:"Taxa de Abertura",   value:"81%", icon:Eye,          color:"bg-blue-500"   },
-              { label:"Taxa de Resposta",   value:"72%", icon:CheckCircle,  color:"bg-green-500"  },
-            ].map(({ label,value,icon:Icon,color },i) => (
-              <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center gap-4">
-                <div className={`w-11 h-11 rounded-xl ${color} flex items-center justify-center flex-shrink-0`}><Icon size={20} className="text-white" /></div>
-                <div>
-                  <div className="text-2xl font-bold text-slate-800">{value}</div>
-                  <div className="text-xs text-slate-500">{label}</div>
-                </div>
+          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-5">
+            <label className="text-xs font-medium text-slate-600 block mb-1.5">Pesquisa a distribuir</label>
+            <select value={selectedId} onChange={e => setSelectedId(e.target.value)}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-purple-200">
+              {surveys.map(s => <option key={s.id} value={s.id}>{s.name} {s.status!=="ativo"?`— ${s.status}`:""}</option>)}
+            </select>
+            {!isActive && (
+              <div className="mt-3 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                <AlertTriangle size={13} />Esta pesquisa não está ativa — o link só funciona após publicá-la em “Pesquisas”.
               </div>
-            ))}
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
+              <span>{respondents.length} respondente(s) cadastrado(s)</span>
+              <span>·</span>
+              <span>{emailRecipients.length} com e-mail e consentimento</span>
+            </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h3 className="font-semibold text-slate-800 text-sm">Campanhas</h3>
+          {/* Link sempre visível */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-5">
+            <div className="flex items-center gap-2 mb-2"><Link2 size={16} style={{ color:"#5B21B6" }} /><h3 className="font-semibold text-slate-800 text-sm">Link público</h3></div>
+            {link ? (
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
+                <span className="text-xs text-slate-600 truncate flex-1">{link}</span>
+                <button onClick={() => copy(link, "link")} className="text-xs font-semibold flex-shrink-0 px-2 py-1 rounded-lg hover:bg-slate-100" style={{ color:"#5B21B6" }}>{copied==="link"?"Copiado!":"Copiar"}</button>
+              </div>
+            ) : <p className="text-xs text-slate-400">Publique a pesquisa para gerar o link.</p>}
+          </div>
+
+          <div className="flex gap-2 mb-5">
+            <ChannelBtn id="email" icon={Mail} label="E-mail" />
+            <ChannelBtn id="whatsapp" icon={MessageCircle} label="WhatsApp" />
+            <ChannelBtn id="link" icon={Link2} label="Só o link" />
+          </div>
+
+          {channel === "email" && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <h3 className="font-semibold text-slate-800 text-sm mb-4">Mensagem de e-mail</h3>
+              <label className="text-xs font-medium text-slate-600 block mb-1.5">Assunto</label>
+              <input value={subject} onChange={e => setSubject(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-purple-200" />
+              <label className="text-xs font-medium text-slate-600 block mb-1.5">Corpo da mensagem</label>
+              <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)} rows={9} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-purple-200" style={{ resize:"vertical" }} />
+              <label className={`flex items-center gap-2.5 mt-3 py-2 px-3 rounded-xl cursor-pointer ${emailRecipients.length?"bg-slate-50 hover:bg-slate-100":"bg-slate-50 opacity-60"}`}>
+                <input type="checkbox" disabled={emailRecipients.length===0} checked={includeEmails} onChange={e => setIncludeEmails(e.target.checked)} className="w-4 h-4 accent-purple-600" />
+                <span className="text-sm text-slate-700">Preencher destinatários em cópia oculta (Cco) — {emailRecipients.length} respondente(s) com consentimento</span>
+              </label>
+              <div className="flex gap-2 mt-4">
+                <button onClick={openEmail} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}><Send size={14} />Abrir no meu e-mail</button>
+                <button onClick={() => copy(emailBody, "ebody")} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50"><FileText size={14} />{copied==="ebody"?"Copiado!":"Copiar mensagem"}</button>
+              </div>
+              <p className="text-xs text-slate-400 mt-3">Abre o seu programa de e-mail com tudo preenchido — você confere e envia. Para listas grandes, prefira “Copiar mensagem” e colar, ou distribuir só o link.</p>
             </div>
-            {MOCK_CAMPAIGNS.map((c,i) => {
-              const openRate     = c.sent>0 ? Math.round((c.opened/c.sent)*100)    : 0;
-              const respondRate  = c.sent>0 ? Math.round((c.responded/c.sent)*100) : 0;
-              return (
-                <div key={c.id} className={`px-6 py-5 hover:bg-slate-50 transition-colors ${i<MOCK_CAMPAIGNS.length-1?"border-b border-slate-50":""}`}>
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{chIcon[c.channel]}</span>
-                      <div>
-                        <div className="font-semibold text-slate-800 text-sm">{c.name}</div>
-                        <div className="text-xs text-slate-400 mt-0.5">{c.survey} · {c.date}</div>
-                      </div>
-                    </div>
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${chStatus[c.status]}`}>{c.status}</span>
-                  </div>
-                  {c.sent>0 && (
-                    <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-slate-50">
-                      {[["Enviados",c.sent,"text-slate-700"],["Abertos",`${openRate}%`,"text-blue-600"],["Respondidos",`${respondRate}%`,"text-green-600"]].map(([lbl,val,cls],j) => (
-                        <div key={j} className="text-center">
-                          <div className={`text-lg font-bold ${cls}`}>{val}</div>
-                          <div className="text-xs text-slate-400">{lbl}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+          )}
+
+          {channel === "whatsapp" && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <h3 className="font-semibold text-slate-800 text-sm mb-4">Mensagem de WhatsApp</h3>
+              <textarea value={waBody} onChange={e => setWaBody(e.target.value)} rows={5} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-purple-200" style={{ resize:"vertical" }} />
+              <div className="flex gap-2 mt-4">
+                <button onClick={openWa} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:"linear-gradient(135deg,#059669,#10B981)" }}><MessageCircle size={14} />Abrir no WhatsApp</button>
+                <button onClick={() => copy(waBody, "wabody")} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50"><FileText size={14} />{copied==="wabody"?"Copiado!":"Copiar mensagem"}</button>
+              </div>
+              <p className="text-xs text-slate-400 mt-3">Abre o WhatsApp com a mensagem pronta — você escolhe o contato ou grupo e envia.</p>
+            </div>
+          )}
+
+          {channel === "link" && (
+            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm text-center">
+              <div className="w-16 h-16 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><Link2 size={28} style={{ color:"#5B21B6" }} /></div>
+              <p className="text-sm font-semibold text-slate-800 mb-3">Copie o link e distribua onde quiser</p>
+              {link ? (
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 max-w-md mx-auto">
+                  <span className="text-xs text-slate-600 truncate flex-1 text-left">{link}</span>
+                  <button onClick={() => copy(link, "link2")} className="text-xs font-semibold flex-shrink-0" style={{ color:"#5B21B6" }}>{copied==="link2"?"Copiado!":"Copiar"}</button>
                 </div>
-              );
-            })}
+              ) : <p className="text-xs text-slate-400">Publique a pesquisa para gerar o link.</p>}
+              <p className="text-xs text-slate-400 mt-3">Intranet, mural, e-mail, grupo de mensagens — o link leva direto à pesquisa.</p>
+            </div>
+          )}
+
+          <div className="rounded-2xl p-4 border border-green-100 flex items-center gap-2 text-xs text-green-700 mt-5" style={{ background:"#F0FDF4" }}>
+            <Shield size={14} />
+            {anon ? "Esta pesquisa é anônima. " : ""}As respostas são tratadas conforme a LGPD. Envie convites apenas a quem deu consentimento.
           </div>
         </>
-      )}
-
-      {tab==="nova" && (
-        <div className="grid grid-cols-5 gap-5">
-          <div className="col-span-2 space-y-5">
-            <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-              <h3 className="font-semibold text-slate-800 text-sm mb-4">Configurar Campanha</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-xs font-medium text-slate-600 block mb-1.5">Pesquisa</label>
-                  <select className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:outline-none bg-white">
-                    {MOCK_SURVEYS.filter(s=>s.status!=="encerrado").map(s => <option key={s.id}>{s.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 block mb-1.5">Canal de envio</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[["email","E-mail","📧"],["whatsapp","WhatsApp","💬"],["link","Link","🔗"]].map(([id,lbl,emoji]) => (
-                      <button key={id} onClick={() => setChannel(id)}
-                        className={`py-3 rounded-xl border-2 text-xs font-medium transition-all ${channel===id?"border-purple-400 bg-purple-50 text-purple-700":"border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                        <div className="text-lg mb-0.5">{emoji}</div>{lbl}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 block mb-1.5">Destinatários</label>
-                  <div className="space-y-2">
-                    {["Gestores (3)","Fornecedores (3)","Subordinados (3)","Todos (8)"].map((g,i) => (
-                      <label key={i} className="flex items-center gap-2.5 py-2 px-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100">
-                        <input type="checkbox" className="w-4 h-4 accent-purple-600" defaultChecked={i===3} />
-                        <span className="text-sm text-slate-700">{g}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 block mb-1.5">Agendamento</label>
-                  <input type="datetime-local" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:outline-none" />
-                </div>
-                <button disabled title="Recurso em desenvolvimento" className="w-full py-3 text-white rounded-xl font-medium text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-                  <Send size={14} className="inline mr-2" />Agendar Envio
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="col-span-3">
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-              <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50">
-                <span className="text-xs font-semibold text-slate-600">Pré-visualização — {channel === "email" ? "E-mail" : channel === "whatsapp" ? "WhatsApp" : "Link público"}</span>
-              </div>
-              {channel === "email" && (
-                <div className="p-6">
-                  <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                    <div className="p-4 text-white text-center" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-                      <div className="text-lg font-bold mb-1">RH Survey</div>
-                      <div className="text-xs opacity-80">Plataforma de Avaliação Organizacional</div>
-                    </div>
-                    <div className="p-6">
-                      <p className="text-sm text-slate-700 mb-3">Olá, <strong>Carlos Silva</strong>,</p>
-                      <p className="text-sm text-slate-600 mb-4 leading-relaxed">
-                        Você foi convidado(a) a participar da pesquisa <strong>Avaliação de Gestores Q2 2025</strong>. 
-                        Sua opinião é muito importante para o desenvolvimento da nossa organização.
-                      </p>
-                      <p className="text-xs text-slate-500 mb-4 p-3 bg-green-50 rounded-xl border border-green-100">
-                        🔒 Esta pesquisa é totalmente anônima e está em conformidade com a LGPD (Lei nº 13.709/2018).
-                      </p>
-                      <div className="text-center my-5">
-                        <span className="inline-block py-3 px-8 text-white text-sm font-semibold rounded-xl" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-                          Responder Pesquisa →
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 text-center">Prazo: 30/06/2025 · Tempo estimado: 5 min</p>
-                    </div>
-                    <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 text-center">
-                      <p className="text-xs text-slate-400">Para cancelar o recebimento de comunicações, <span className="text-purple-600 cursor-pointer">clique aqui</span>.</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {channel === "whatsapp" && (
-                <div className="p-6">
-                  <div className="bg-slate-100 rounded-2xl p-4 max-w-xs mx-auto">
-                    <div className="bg-white rounded-2xl rounded-tl-none p-4 shadow-sm">
-                      <p className="text-sm text-slate-700 leading-relaxed mb-3">
-                        Olá! 👋 Você foi convidado(a) para a avaliação <strong>Gestores Q2 2025</strong>.
-                      </p>
-                      <p className="text-xs text-slate-500 mb-3">🔒 Anônima · LGPD · 5 minutos</p>
-                      <div className="bg-purple-600 rounded-xl px-4 py-2 text-center">
-                        <span className="text-white text-xs font-semibold">Responder agora →</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {channel === "link" && (
-                <div className="p-6 text-center">
-                  <div className="w-16 h-16 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                    <Link2 size={28} style={{ color:"#5B21B6" }} />
-                  </div>
-                  <p className="text-sm font-semibold text-slate-800 mb-2">Link seguro gerado</p>
-                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 max-w-sm mx-auto">
-                    <span className="text-xs text-slate-600 truncate flex-1">https://rhsurvey.app/s/abc123x</span>
-                    <button disabled title="Recurso em desenvolvimento" className="text-xs font-semibold flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>Copiar</button>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-3">Link expira em 30/06/2025 · Proteção LGPD ativa</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {tab==="templates" && (
-        <div className="grid grid-cols-2 gap-4">
-          {[
-            { name:"Avaliação de Desempenho 360°",   type:"E-mail",    desc:"Template profissional com logo e aviso LGPD integrado",     tags:["RH","360°","Formal"]  },
-            { name:"NPS Rápido — WhatsApp",           type:"WhatsApp",  desc:"Mensagem curta e direta para alta taxa de resposta",        tags:["NPS","WhatsApp","Curto"] },
-            { name:"Pesquisa de Clima",               type:"E-mail",    desc:"Design acolhedor com foco em engajamento dos colaboradores", tags:["Clima","RH","Engaj."]  },
-            { name:"Feedback de Fornecedor",          type:"E-mail",    desc:"Tom formal com instruções claras de prazo e anonimato",     tags:["B2B","Formal","LGPD"]  },
-          ].map((t,i) => (
-            <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="font-semibold text-slate-800 text-sm">{t.name}</h3>
-                  <span className="text-xs text-slate-400 mt-0.5">{t.type}</span>
-                </div>
-                <button disabled title="Recurso em desenvolvimento" className="opacity-0 group-hover:opacity-100 text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>Usar</button>
-              </div>
-              <p className="text-xs text-slate-500 mb-3 leading-relaxed">{t.desc}</p>
-              <div className="flex gap-1.5 flex-wrap">
-                {t.tags.map((tag,j) => <span key={j} className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{tag}</span>)}
-              </div>
-            </div>
-          ))}
-        </div>
       )}
     </div>
   );
