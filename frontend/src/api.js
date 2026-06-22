@@ -64,6 +64,9 @@ export const api = {
     dashboard: ()         => request('GET', '/results/dashboard'),
     insights:  (surveyId) => request('POST', '/results/insights', { surveyId }),
   },
+  auth: {
+    changePassword: (currentPassword, newPassword) => request('POST', '/auth/change-password', { currentPassword, newPassword }),
+  },
 };
 
 export default api;
