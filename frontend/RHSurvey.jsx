@@ -1350,16 +1350,63 @@ function RespondentManager() {
 }
 
 // ─── 360° EVALUATION ──────────────────────────────────────────────────────────
+// ─── EVALUATION 360° ─────────────────────────────────────────────────────────
+const EVAL_RELS = [
+  { v:"auto",        label:"Autoavaliação" },
+  { v:"gestor",      label:"Gestor" },
+  { v:"par",         label:"Par (colega)" },
+  { v:"subordinado", label:"Subordinado" },
+];
+const EVAL_REL_LABEL = { auto:"Autoavaliação", gestor:"Gestor", par:"Par", subordinado:"Subordinado" };
+function score360Color(v) {
+  if (v === null || v === undefined) return "bg-slate-100 text-slate-400";
+  if (v >= 80) return "bg-green-100 text-green-700";
+  if (v >= 60) return "bg-blue-100 text-blue-700";
+  if (v >= 40) return "bg-amber-100 text-amber-700";
+  return "bg-red-100 text-red-700";
+}
+
 function Evaluation360() {
-  const cycles = [
-    { id:1, name:"Ciclo Q2 2025 — Liderança",  status:"ativo",    start:"01/05/2025", end:"30/06/2025", participants:24, completed:15 },
-    { id:2, name:"Avaliação Anual 2024",        status:"encerrado",start:"01/11/2024", end:"30/11/2024", participants:45, completed:45 },
-  ];
-  const matrix = [
-    { name:"Carlos Silva",  auto:82, gestores:78, pares:85, subordinados:80 },
-    { name:"Ana Rodrigues", auto:90, gestores:88, pares:92, subordinados:87 },
-    { name:"Pedro Alves",   auto:75, gestores:72, pares:78, subordinados:70 },
-  ];
+  const [view, setView]         = useState("list");   // "list" | "detail"
+  const [activeCycle, setActive]= useState(null);
+  const [cycles, setCycles]     = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState("");
+  const [creating, setCreating] = useState(false);
+  const [surveys, setSurveys]   = useState([]);
+  const [form, setForm]         = useState({ name:"", surveyId:"" });
+  const [saving, setSaving]     = useState(false);
+
+  const load = async () => {
+    setLoading(true); setError("");
+    try { const r = await api.eval.cycles(); setCycles(r.cycles || []); }
+    catch (e) { setError(e.message || "Erro ao carregar ciclos."); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const toggleCreate = async () => {
+    setCreating(c => !c); setError("");
+    if (surveys.length === 0) {
+      try { const s = await api.surveys.list(); setSurveys(s.surveys || []); } catch {}
+    }
+  };
+
+  const submitCreate = async () => {
+    if (!form.name.trim() || !form.surveyId) { setError("Informe o nome do ciclo e escolha o questionário."); return; }
+    setSaving(true); setError("");
+    try {
+      const r = await api.eval.createCycle(form.name.trim(), form.surveyId);
+      setForm({ name:"", surveyId:"" }); setCreating(false);
+      await load();
+      if (r.cycle) { setActive(r.cycle.id); setView("detail"); }
+    } catch (e) { setError(e.message || "Erro ao criar ciclo."); }
+    setSaving(false);
+  };
+
+  if (view === "detail" && activeCycle) {
+    return <CycleDetail cycleId={activeCycle} onBack={() => { setView("list"); setActive(null); load(); }} />;
+  }
 
   return (
     <div className="p-8">
@@ -1368,10 +1415,38 @@ function Evaluation360() {
           <h1 className="text-2xl font-bold text-slate-800">Avaliação 360°</h1>
           <p className="text-sm text-slate-500 mt-1">Ciclos de avaliação com múltiplas perspectivas e anonimização LGPD.</p>
         </div>
-        <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed" style={{ background:GRAD }}>
+        <button onClick={toggleCreate} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}>
           <Plus size={14} />Novo Ciclo
         </button>
       </div>
+
+      {creating && (
+        <div className="bg-white rounded-2xl p-5 mb-6 border border-purple-200 shadow-sm">
+          <h3 className="font-semibold text-slate-800 text-sm mb-3">Novo ciclo de avaliação</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Nome do ciclo</label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name:e.target.value }))} placeholder="Ex: Ciclo 360° Liderança Q3"
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Questionário (pesquisa)</label>
+              <select value={form.surveyId} onChange={e => setForm(f => ({ ...f, surveyId:e.target.value }))}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-200">
+                <option value="">Selecione...</option>
+                {surveys.map(s => <option key={s.id} value={s.id}>{s.name}{s.question_count!=null?` (${s.question_count} perguntas)`:""}</option>)}
+              </select>
+            </div>
+          </div>
+          <p className="text-xs text-slate-400 mt-2">O questionário deve ter perguntas de escala, nota/NPS ou estrelas para gerar a matriz. Crie-o antes em “Pesquisas”.</p>
+          <div className="flex gap-2 mt-3">
+            <button onClick={submitCreate} disabled={saving} className="px-4 py-2 text-white rounded-xl text-sm hover:opacity-90 disabled:opacity-50" style={{ background:GRAD }}>
+              {saving ? "Criando..." : "Criar ciclo"}
+            </button>
+            <button onClick={() => { setCreating(false); setError(""); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">Cancelar</button>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-2xl p-5 mb-6 border border-purple-100" style={{ background:"linear-gradient(135deg,#f5f3ff,#ede9fe)" }}>
         <h3 className="font-semibold text-purple-800 text-sm mb-3">Como funciona a Avaliação 360°</h3>
@@ -1386,78 +1461,245 @@ function Evaluation360() {
         </div>
         <div className="mt-3 flex items-center gap-2 text-xs text-purple-700 bg-white bg-opacity-70 px-3 py-2 rounded-xl border border-purple-100">
           <Shield size={12} className="text-green-600" />
-          Todas as avaliações deste ciclo são anônimas conforme a LGPD. Os avaliadores não são identificados nas respostas.
+          As avaliações são confidenciais e usadas de forma agregada, conforme a LGPD. Os avaliadores não são identificados nos resultados.
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-5 mb-6">
-        {cycles.map(c => {
-          const pct = Math.round((c.completed/c.participants)*100);
-          return (
-            <div key={c.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="font-semibold text-slate-800 text-sm">{c.name}</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">{c.start} → {c.end}</p>
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2 mb-5"><AlertTriangle size={15} />{error}</div>}
+
+      {loading ? (
+        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />Carregando ciclos...</div>
+      ) : cycles.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 text-center">
+          <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background:"#F5F3FF" }}><Target size={22} style={{ color:"#7C3AED" }} /></div>
+          <h3 className="font-semibold text-slate-800 text-sm">Nenhum ciclo de avaliação ainda</h3>
+          <p className="text-sm text-slate-500 mt-1 mb-4">Crie um ciclo, escolha o questionário e atribua avaliadores por relação.</p>
+          <button onClick={toggleCreate} className="inline-flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}><Plus size={14} />Criar primeiro ciclo</button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-5">
+          {cycles.map(c => {
+            const total = c.total_assignments || 0, done = c.completed_assignments || 0;
+            const pct = total ? Math.round((done/total)*100) : 0;
+            return (
+              <div key={c.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="font-semibold text-slate-800 text-sm">{c.name}</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">{c.survey_name || "Sem questionário"}</p>
+                  </div>
+                  <Badge status={c.status} />
                 </div>
-                <Badge status={c.status} />
-              </div>
-              <div className="flex items-center gap-5 mb-4">
-                <div><div className="text-xl font-bold text-slate-800">{c.participants}</div><div className="text-xs text-slate-400">Participantes</div></div>
-                <div><div className="text-xl font-bold" style={{ color:"#5B21B6" }}>{c.completed}</div><div className="text-xs text-slate-400">Concluídos</div></div>
-                <div className="flex-1">
-                  <div className="flex justify-between text-xs text-slate-500 mb-1"><span>Conclusão</span><span className="font-medium">{pct}%</span></div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width:`${pct}%`, background:GRAD }} />
+                <div className="flex items-center gap-5 mb-4">
+                  <div><div className="text-xl font-bold text-slate-800">{c.subjects||0}</div><div className="text-xs text-slate-400">Avaliados</div></div>
+                  <div><div className="text-xl font-bold" style={{ color:"#5B21B6" }}>{done}/{total}</div><div className="text-xs text-slate-400">Respostas</div></div>
+                  <div className="flex-1">
+                    <div className="flex justify-between text-xs text-slate-500 mb-1"><span>Conclusão</span><span className="font-medium">{pct}%</span></div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${pct}%`, background:GRAD }} /></div>
                   </div>
                 </div>
+                <button onClick={() => { setActive(c.id); setView("detail"); }} className="w-full py-2 text-xs border rounded-xl hover:opacity-80" style={{ borderColor:"#5B21B6", color:"#5B21B6" }}>Abrir ciclo</button>
               </div>
-              <div className="flex gap-2">
-                <button disabled title="Recurso em desenvolvimento" className="flex-1 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">Ver Detalhes</button>
-                <button disabled title="Recurso em desenvolvimento" className="flex-1 py-2 text-xs border rounded-xl hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ borderColor:"#5B21B6",color:"#5B21B6" }}>Relatório</button>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CycleDetail({ cycleId, onBack }) {
+  const [data, setData]         = useState(null);   // { cycle, assignments }
+  const [matrix, setMatrix]     = useState([]);
+  const [respondents, setResp]  = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState("");
+  const [form, setForm]         = useState({ subjectId:"", relationship:"auto", evaluatorName:"", evaluatorEmail:"" });
+  const [saving, setSaving]     = useState(false);
+  const [lastLink, setLastLink] = useState("");
+  const [copiedId, setCopiedId] = useState(null);
+
+  const load = async () => {
+    setLoading(true); setError("");
+    try {
+      const [d, res, rp] = await Promise.all([
+        api.eval.cycle(cycleId),
+        api.eval.results(cycleId).catch(() => ({ matrix:[] })),
+        api.respondents.list().catch(() => ({ respondents:[] })),
+      ]);
+      setData(d); setMatrix(res.matrix || []); setResp(rp.respondents || []);
+    } catch (e) { setError(e.message || "Erro ao carregar o ciclo."); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [cycleId]);
+
+  const linkFor = (token) => `${window.location.origin}/eval/${token}`;
+  const fallbackCopy = (url, id) => { try { const ta=document.createElement("textarea"); ta.value=url; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); setCopiedId(id); setTimeout(()=>setCopiedId(null),1500); } catch {} };
+  const copy = (token, id) => {
+    const url = linkFor(token);
+    try { navigator.clipboard.writeText(url).then(() => { setCopiedId(id); setTimeout(()=>setCopiedId(null),1500); }, () => fallbackCopy(url, id)); }
+    catch { fallbackCopy(url, id); }
+  };
+
+  const submitAssign = async () => {
+    if (!form.subjectId || !form.relationship) { setError("Escolha o avaliado e a relação."); return; }
+    setSaving(true); setError(""); setLastLink("");
+    try {
+      const r = await api.eval.addAssignment(cycleId, {
+        subjectId: form.subjectId, relationship: form.relationship,
+        evaluatorName: form.evaluatorName.trim() || undefined,
+        evaluatorEmail: form.evaluatorEmail.trim() || undefined,
+      });
+      if (r.assignment) setLastLink(linkFor(r.assignment.token));
+      setForm(f => ({ ...f, evaluatorName:"", evaluatorEmail:"" }));
+      await load();
+    } catch (e) { setError(e.message || "Erro ao atribuir avaliador."); }
+    setSaving(false);
+  };
+
+  const removeAssign = async (id) => {
+    if (!window.confirm("Remover esta atribuição?")) return;
+    try { await api.eval.removeAssignment(id); await load(); }
+    catch (e) { setError(e.message || "Erro ao remover."); }
+  };
+
+  const cycle = data?.cycle;
+  const assignments = data?.assignments || [];
+  const groups = {};
+  assignments.forEach(a => { (groups[a.subject_id] = groups[a.subject_id] || { name:a.subject_name, items:[] }).items.push(a); });
+
+  return (
+    <div className="p-8">
+      <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700 mb-4">← Voltar aos ciclos</button>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">{cycle?.name || "Ciclo"}</h1>
+          <p className="text-sm text-slate-500 mt-1">Questionário: {cycle?.survey_name || "—"}</p>
+        </div>
+        {cycle && <Badge status={cycle.status} />}
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-800 text-sm">Matriz de Resultados — Q2 2025</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Scores médios por perspectiva · Identidades protegidas por anonimização</p>
-        </div>
-        <table className="w-full">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-100">
-              {["Avaliado","👤 Auto","⬆️ Gestor","↔️ Pares","⬇️ Equipe","📊 Média"].map(h => (
-                <th key={h} className={`text-xs font-semibold text-slate-500 px-5 py-3 ${h==="Avaliado"?"text-left":"text-center"}`}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {matrix.map((row,i) => {
-              const avg   = Math.round((row.auto+row.gestores+row.pares+row.subordinados)/4);
-              const badge = avg>=85?"bg-green-100 text-green-700":avg>=75?"bg-blue-100 text-blue-700":"bg-amber-100 text-amber-700";
-              return (
-                <tr key={i} className={`hover:bg-slate-50 transition-colors ${i<matrix.length-1?"border-b border-slate-50":""}`}>
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full text-white text-xs font-bold flex items-center justify-center" style={{ background:GRAD }}>{row.name.charAt(0)}</div>
-                      <span className="text-sm font-medium text-slate-800">{row.name}</span>
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2 mb-5"><AlertTriangle size={15} />{error}</div>}
+
+      {loading ? (
+        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />Carregando...</div>
+      ) : (
+        <>
+          <div className="bg-white rounded-2xl p-5 mb-6 border border-slate-100 shadow-sm">
+            <h3 className="font-semibold text-slate-800 text-sm mb-3">Atribuir avaliador</h3>
+            <div className="grid grid-cols-4 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Avaliado</label>
+                <select value={form.subjectId} onChange={e => setForm(f => ({ ...f, subjectId:e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-200">
+                  <option value="">Selecione...</option>
+                  {respondents.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Relação</label>
+                <select value={form.relationship} onChange={e => setForm(f => ({ ...f, relationship:e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-200">
+                  {EVAL_RELS.map(r => <option key={r.v} value={r.v}>{r.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Nome do avaliador <span className="text-slate-300">(opcional)</span></label>
+                <input value={form.evaluatorName} onChange={e => setForm(f => ({ ...f, evaluatorName:e.target.value }))} placeholder="Para sua referência"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">E-mail <span className="text-slate-300">(opcional)</span></label>
+                <input value={form.evaluatorEmail} onChange={e => setForm(f => ({ ...f, evaluatorEmail:e.target.value }))} placeholder="email@empresa.com"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
+              </div>
+            </div>
+            {respondents.length === 0 && <p className="text-xs text-amber-600 mt-2">Você ainda não tem respondentes cadastrados. Adicione-os em “Respondentes” para escolher o avaliado.</p>}
+            <div className="mt-3">
+              <button onClick={submitAssign} disabled={saving} className="px-4 py-2 text-white rounded-xl text-sm hover:opacity-90 disabled:opacity-50" style={{ background:GRAD }}>
+                {saving ? "Gerando link..." : "Atribuir e gerar link"}
+              </button>
+            </div>
+            {lastLink && (
+              <div className="mt-3 flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                <CheckCircle size={15} className="text-green-600 flex-shrink-0" />
+                <input readOnly value={lastLink} className="flex-1 bg-transparent text-xs text-slate-600 focus:outline-none" />
+                <button onClick={() => copy(lastLink.split("/eval/")[1], "last")} className="text-xs font-medium px-2 py-1 rounded-lg hover:bg-green-100" style={{ color:"#16A34A" }}>{copiedId==="last"?"Copiado!":"Copiar"}</button>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm mb-6 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-semibold text-slate-800 text-sm">Avaliadores atribuídos</h3></div>
+            {Object.keys(groups).length === 0 ? (
+              <div className="px-6 py-8 text-center text-sm text-slate-400">Nenhum avaliador atribuído ainda. Use o formulário acima.</div>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {Object.entries(groups).map(([sid, g]) => (
+                  <div key={sid} className="px-6 py-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-7 h-7 rounded-full text-white text-xs font-bold flex items-center justify-center" style={{ background:GRAD }}>{(g.name||"?").charAt(0)}</div>
+                      <span className="text-sm font-semibold text-slate-800">{g.name || "—"}</span>
+                      <span className="text-xs text-slate-400">· {g.items.length} avaliador{g.items.length!==1?"es":""}</span>
                     </div>
-                  </td>
-                  {[row.auto,row.gestores,row.pares,row.subordinados].map((v,j) => (
-                    <td key={j} className="px-5 py-4 text-center text-sm font-semibold text-slate-700">{v}</td>
+                    <div className="space-y-1.5 pl-9">
+                      {g.items.map(a => (
+                        <div key={a.id} className="flex items-center gap-3 text-sm">
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 w-28 text-center flex-shrink-0">{EVAL_REL_LABEL[a.relationship]||a.relationship}</span>
+                          <span className="text-slate-600 flex-1 truncate">{a.evaluator_name || a.evaluator_email || "Avaliador sem nome"}</span>
+                          {a.completed
+                            ? <span className="flex items-center gap-1 text-xs text-green-600 flex-shrink-0"><CheckCircle size={13} />Concluído</span>
+                            : <span className="flex items-center gap-1 text-xs text-amber-500 flex-shrink-0"><Clock size={13} />Pendente</span>}
+                          <button onClick={() => copy(a.token, a.id)} title="Copiar link do avaliador" className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-700 flex-shrink-0"><Link2 size={13} />{copiedId===a.id?"Copiado!":"Link"}</button>
+                          <button onClick={() => removeAssign(a.id)} title="Remover" className="text-slate-300 hover:text-red-500 flex-shrink-0"><Trash2 size={13} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="font-semibold text-slate-800 text-sm">Matriz de resultados</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Scores normalizados de 0 a 100 por perspectiva · só respostas concluídas</p>
+            </div>
+            {matrix.length === 0 ? (
+              <div className="px-6 py-8 text-center text-sm text-slate-400">Sem resultados ainda. Os scores aparecem conforme os avaliadores respondem.</div>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    {["Avaliado","👤 Auto","⬆️ Gestor","↔️ Par","⬇️ Subord.","📊 Geral"].map(h => (
+                      <th key={h} className={`text-xs font-semibold text-slate-500 px-5 py-3 ${h==="Avaliado"?"text-left":"text-center"}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {matrix.map((row,i) => (
+                    <tr key={row.subjectId} className={`hover:bg-slate-50 transition-colors ${i<matrix.length-1?"border-b border-slate-50":""}`}>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full text-white text-xs font-bold flex items-center justify-center" style={{ background:GRAD }}>{(row.subjectName||"?").charAt(0)}</div>
+                          <span className="text-sm font-medium text-slate-800">{row.subjectName}</span>
+                        </div>
+                      </td>
+                      {[row.auto,row.gestor,row.par,row.subordinado].map((v,j) => (
+                        <td key={j} className="px-5 py-4 text-center text-sm font-semibold text-slate-700">{v==null?"—":v}</td>
+                      ))}
+                      <td className="px-5 py-4 text-center">
+                        <span className={`text-sm font-bold px-2.5 py-1 rounded-full ${score360Color(row.overall)}`}>{row.overall==null?"—":row.overall}</span>
+                      </td>
+                    </tr>
                   ))}
-                  <td className="px-5 py-4 text-center">
-                    <span className={`text-sm font-bold px-2.5 py-1 rounded-full ${badge}`}>{avg}</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
