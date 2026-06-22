@@ -5,7 +5,8 @@ import {
   Bell, TrendingUp, CheckCircle, Clock, Send, Sparkles, Download, Eye, Edit,
   Trash2, X, Loader2, Target, Award, Mail, Link2, ChevronDown, ArrowUpRight,
   UserCheck, Building2, MessageSquare, ChevronRight, Shield, Lock, AlertTriangle,
-  FileText, Key, Activity, EyeOff, Database, RefreshCw, Info
+  FileText, Key, Activity, EyeOff, Database, RefreshCw, Info,
+  FileCheck, Zap, MessageCircle, BarChart2, Star
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
