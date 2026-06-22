@@ -6,7 +6,7 @@ import {
   Trash2, X, Loader2, Target, Award, Mail, Link2, ChevronDown, ArrowUpRight,
   UserCheck, Building2, MessageSquare, ChevronRight, Shield, Lock, AlertTriangle,
   FileText, Key, Activity, EyeOff, Database, RefreshCw, Info,
-  FileCheck, Zap, MessageCircle, BarChart2, Star
+  FileCheck, Zap, MessageCircle, BarChart2, Star, LogOut
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -220,6 +220,16 @@ function LGPDBanner({ onAccept }) {
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 function Sidebar({ page, setPage }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  let me = {};
+  try { me = JSON.parse(localStorage.getItem("rh_user") || "{}"); } catch {}
+  const meName     = me.name || "Usuário";
+  const meEmail    = me.email || "";
+  const meInitials = (me.name || "U").trim().split(/\s+/).map(w => w[0]).slice(0,2).join("").toUpperCase() || "U";
+  const handleLogout = () => {
+    try { localStorage.removeItem("rh_token"); localStorage.removeItem("rh_user"); } catch {}
+    window.location.reload();
+  };
   const nav = [
     { id:"dashboard",     label:"Dashboard",      Icon:LayoutDashboard },
     { id:"surveys",       label:"Pesquisas",       Icon:ClipboardList   },
@@ -268,13 +278,35 @@ function Sidebar({ page, setPage }) {
           <Shield size={12} className="text-green-600" />
           <span className="text-xs text-green-700 font-medium">Ambiente seguro · TLS 1.3</span>
         </div>
-        <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-slate-50 cursor-pointer">
-          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background:GRAD }}>RH</div>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-slate-700">Admin RH</div>
-            <div className="text-xs text-slate-400 truncate">admin@empresa.com</div>
+        <div className="relative">
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-20">
+                <button onClick={() => { setMenuOpen(false); setPage("settings"); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left">
+                  <Settings size={15} className="text-slate-400" />Configurações
+                </button>
+                <button onClick={() => { setMenuOpen(false); setPage("settings"); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left border-t border-slate-50">
+                  <Key size={15} className="text-slate-400" />Trocar senha
+                </button>
+                <button onClick={handleLogout}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 text-left border-t border-slate-50">
+                  <LogOut size={15} />Sair
+                </button>
+              </div>
+            </>
+          )}
+          <div onClick={() => setMenuOpen(o => !o)}
+            className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-slate-50 cursor-pointer">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background:GRAD }}>{meInitials}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold text-slate-700 truncate">{meName}</div>
+              <div className="text-xs text-slate-400 truncate">{meEmail}</div>
+            </div>
+            <ChevronDown size={13} className={`text-slate-400 transition-transform ${menuOpen ? "rotate-180" : ""}`} />
           </div>
-          <ChevronDown size={13} className="text-slate-400" />
         </div>
       </div>
     </div>
