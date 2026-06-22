@@ -36,6 +36,17 @@ class ErrorBoundary extends Component {
 // Lazy load para capturar erros de cada módulo separadamente
 const Login    = React.lazy(() => import('./Login.jsx'));
 const MainApp  = React.lazy(() => import('./MainApp.jsx'));
+const PublicSurvey = React.lazy(() => import('./PublicSurvey.jsx'));
+
+// Detecta o token público na URL: /r/<token> ou ?r=<token>
+function getPublicToken() {
+  try {
+    const m = window.location.pathname.match(/^\/r\/([^/?#]+)/);
+    if (m) return decodeURIComponent(m[1]);
+    const q = new URLSearchParams(window.location.search).get('r');
+    return q || null;
+  } catch { return null; }
+}
 
 function Root() {
   const [auth, setAuth] = useState(() => {
@@ -52,6 +63,17 @@ function Root() {
       <p style={{color:'#64748B',fontSize:14,margin:0}}>Carregando...</p>
     </div>
   );
+
+  const publicToken = getPublicToken();
+  if (publicToken) {
+    return (
+      <ErrorBoundary>
+        <React.Suspense fallback={<Fallback />}>
+          <PublicSurvey token={publicToken} />
+        </React.Suspense>
+      </ErrorBoundary>
+    );
+  }
 
   return (
     <ErrorBoundary>
