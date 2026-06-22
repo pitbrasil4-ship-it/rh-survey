@@ -10,7 +10,7 @@ function list(req, res) {
   try {
     const { group, search } = req.query;
     const db   = getDB();
-    let sql    = 'SELECT id, name, email, group_type, department, role, consent_given, anonymized, created_at FROM respondents WHERE tenant_id = ? AND anonymized = 0';
+    let sql    = 'SELECT id, name, email, group_type, department, role, consent_given, consent_date, consent_channel, anonymized, created_at FROM respondents WHERE tenant_id = ? AND anonymized = 0';
     const args = [req.user.tenant_id];
     if (group)  { sql += ' AND group_type = ?'; args.push(group); }
     if (search) { sql += ' AND (name LIKE ? OR email LIKE ?)'; args.push(`%${search}%`, `%${search}%`); }
