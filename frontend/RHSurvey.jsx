@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import api from "./src/api.js";
 import {
   LayoutDashboard, ClipboardList, Users, BarChart3, Settings, Plus, Search,
   Bell, TrendingUp, CheckCircle, Clock, Send, Sparkles, Download, Eye, Edit,
@@ -2083,15 +2084,22 @@ function NotificationCenter({ notifications, setNotifications }) {
 
 // ─── TEAM MANAGEMENT ──────────────────────────────────────────────────────────
 function TeamManagement() {
-  const [users,    setUsers]    = useState(MOCK_USERS);
+  const [users,    setUsers]    = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [newName,  setNewName]  = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newRole,  setNewRole]  = useState("viewer");
+  const [saving,   setSaving]   = useState(false);
+  const [tempPw,   setTempPw]   = useState(null);   // senha temporária a exibir após criar
+  const [tempName, setTempName] = useState("");
+  const [copied,   setCopied]   = useState(false);
 
   const roleConfig = {
-    admin:   { label:"Administrador", bg:"bg-purple-100 text-purple-700", desc:"Acesso total"                      },
-    manager: { label:"Gestor",        bg:"bg-blue-100 text-blue-700",     desc:"Cria e gerencia pesquisas"         },
-    viewer:  { label:"Visualizador",  bg:"bg-slate-100 text-slate-600",   desc:"Apenas leitura de resultados"      },
+    admin:   { label:"Administrador", bg:"bg-purple-100 text-purple-700" },
+    manager: { label:"Gestor",        bg:"bg-blue-100 text-blue-700"     },
+    viewer:  { label:"Colaborador",   bg:"bg-slate-100 text-slate-600"   },
   };
 
   const PERMISSIONS = [
@@ -2099,88 +2107,186 @@ function TeamManagement() {
     ["Editar pesquisas",        true,  true,  false],
     ["Excluir pesquisas",       true,  false, false],
     ["Ver resultados",          true,  true,  true ],
-    ["Exportar relatórios",     true,  true,  true ],
+    ["Exportar relatórios",     true,  true,  false],
     ["Gerenciar respondentes",  true,  true,  false],
     ["Gerenciar equipe",        true,  false, false],
     ["Configurações LGPD",      true,  false, false],
-    ["Acessar segurança",       true,  false, false],
+    ["Usar IA",                 true,  true,  false],
+    ["Responder avaliações",    true,  true,  true ],
   ];
+
+  async function loadUsers() {
+    setLoading(true); setError("");
+    try {
+      const data = await api.users.list();
+      setUsers(data.users || []);
+    } catch (e) {
+      setError(e.message || "Não foi possível carregar os usuários.");
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { loadUsers(); }, []);
+
+  async function handleCreate() {
+    if (!newName || !newEmail) { setError("Preencha nome e e-mail."); return; }
+    setSaving(true); setError(""); setTempPw(null);
+    try {
+      const data = await api.users.create({ name:newName, email:newEmail, role:newRole });
+      if (data.temporaryPassword) { setTempPw(data.temporaryPassword); setTempName(newName); }
+      setNewName(""); setNewEmail(""); setNewRole("viewer"); setShowForm(false);
+      await loadUsers();
+    } catch (e) {
+      setError(e.message || "Erro ao criar usuário.");
+    }
+    setSaving(false);
+  }
+
+  async function handleRoleChange(id, role) {
+    try { await api.users.update(id, { role }); await loadUsers(); }
+    catch (e) { setError(e.message || "Erro ao alterar papel."); }
+  }
+
+  async function handleDeactivate(id, name) {
+    if (!window.confirm(`Desativar o acesso de "${name}"? A pessoa não poderá mais entrar no sistema.`)) return;
+    try { await api.users.remove(id); await loadUsers(); }
+    catch (e) { setError(e.message || "Erro ao desativar usuário."); }
+  }
+
+  function copyPw() {
+    try { navigator.clipboard.writeText(tempPw); setCopied(true); setTimeout(()=>setCopied(false),2000); } catch {}
+  }
+
+  const fmtDate = (d) => {
+    if (!d) return "—";
+    try { return new Date(d).toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }
+    catch { return d; }
+  };
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Equipe & Acesso</h1>
-          <p className="text-sm text-slate-500 mt-1">Gerencie usuários, papéis e permissões da plataforma.</p>
+          <p className="text-sm text-slate-500 mt-1">Cadastre colaboradores e defina o papel de cada um. As credenciais são enviadas pelo RH.</p>
         </div>
-        <button onClick={() => setShowForm(!showForm)}
+        <button onClick={() => { setShowForm(!showForm); setTempPw(null); setError(""); }}
           className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm font-medium hover:opacity-90"
           style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-          <Plus size={15} />Convidar Usuário
+          <Plus size={15} />Cadastrar Usuário
         </button>
       </div>
 
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm mb-5 flex items-center gap-2">
+          <AlertTriangle size={15} />{error}
+        </div>
+      )}
+
+      {/* Senha temporária recém-gerada */}
+      {tempPw && (
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-5 mb-6">
+          <div className="flex items-start gap-3">
+            <CheckCircle size={18} className="text-green-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-green-800 text-sm">Usuário "{tempName}" criado com sucesso</h3>
+              <p className="text-xs text-green-700 mt-1 mb-3">Compartilhe esta senha temporária com a pessoa para o primeiro acesso. Ela aparece apenas uma vez.</p>
+              <div className="flex items-center gap-2">
+                <code className="bg-white border border-green-300 rounded-lg px-3 py-2 text-sm font-mono text-green-800 flex-1">{tempPw}</code>
+                <button onClick={copyPw} className="px-3 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700">
+                  {copied ? "Copiado!" : "Copiar"}
+                </button>
+              </div>
+            </div>
+            <button onClick={() => setTempPw(null)} className="text-green-400 hover:text-green-600"><X size={16} /></button>
+          </div>
+        </div>
+      )}
+
       {showForm && (
         <div className="bg-purple-50 border border-purple-200 rounded-2xl p-5 mb-6">
-          <h3 className="font-semibold text-slate-800 text-sm mb-4">Convidar novo usuário</h3>
-          <div className="grid grid-cols-3 gap-3">
+          <h3 className="font-semibold text-slate-800 text-sm mb-4">Cadastrar novo usuário</h3>
+          <div className="grid grid-cols-4 gap-3">
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">Nome</label>
+              <input className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400 bg-white"
+                placeholder="Nome completo" value={newName} onChange={e => setNewName(e.target.value)} />
+            </div>
             <div className="col-span-2">
               <label className="text-xs font-medium text-slate-600 block mb-1">E-mail corporativo</label>
               <input className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400 bg-white"
-                placeholder="nome@empresa.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+                placeholder="nome@rgis.com.br" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600 block mb-1">Papel</label>
               <select className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white" value={newRole} onChange={e => setNewRole(e.target.value)}>
                 <option value="admin">Administrador</option>
                 <option value="manager">Gestor</option>
-                <option value="viewer">Visualizador</option>
+                <option value="viewer">Colaborador</option>
               </select>
             </div>
           </div>
           <div className="flex gap-2 mt-3">
-            <button onClick={() => { if(newEmail) { setUsers(p => [...p,{id:Date.now(),name:newEmail.split("@")[0],email:newEmail,role:newRole,lastLogin:"—",active:true}]); setNewEmail(""); setShowForm(false); }}}
-              className="px-4 py-2 text-white text-sm rounded-xl font-medium hover:opacity-90" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-              <Send size={13} className="inline mr-1.5" />Enviar Convite
+            <button onClick={handleCreate} disabled={saving}
+              className="px-4 py-2 text-white text-sm rounded-xl font-medium hover:opacity-90 disabled:opacity-60" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+              {saving ? <><Loader2 size={13} className="inline mr-1.5 animate-spin" />Criando...</> : <><Plus size={13} className="inline mr-1.5" />Criar usuário</>}
             </button>
             <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-white">Cancelar</button>
           </div>
+          <p className="text-xs text-slate-400 mt-2">Uma senha temporária será gerada automaticamente para o primeiro acesso.</p>
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-5 mb-6">
         {/* Users table */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h3 className="font-semibold text-slate-800 text-sm">Usuários ({users.length})</h3>
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="font-semibold text-slate-800 text-sm">Usuários {loading ? "" : `(${users.length})`}</h3>
+            {!loading && <button onClick={loadUsers} className="text-xs text-purple-600 font-medium hover:opacity-80">Atualizar</button>}
           </div>
-          <div className="divide-y divide-slate-50">
-            {users.map(u => {
-              const r = roleConfig[u.role];
-              return (
-                <div key={u.id} className="flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors">
-                  <div className="w-9 h-9 rounded-full text-white text-sm font-bold flex items-center justify-center flex-shrink-0"
-                    style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-                    {u.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-slate-800 truncate">{u.name}</span>
-                      {!u.active && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">Inativo</span>}
+          {loading ? (
+            <div className="flex items-center justify-center py-16 text-slate-400 text-sm gap-2">
+              <Loader2 size={18} className="animate-spin" />Carregando usuários...
+            </div>
+          ) : users.length === 0 ? (
+            <div className="text-center py-16 text-slate-400 text-sm">Nenhum usuário cadastrado ainda.</div>
+          ) : (
+            <div className="divide-y divide-slate-50">
+              {users.map(u => {
+                const r = roleConfig[u.role] || roleConfig.viewer;
+                return (
+                  <div key={u.id} className="flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors">
+                    <div className="w-9 h-9 rounded-full text-white text-sm font-bold flex items-center justify-center flex-shrink-0"
+                      style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+                      {(u.name || "?").charAt(0).toUpperCase()}
                     </div>
-                    <div className="text-xs text-slate-400 truncate">{u.email}</div>
-                    <div className="text-xs text-slate-400">Último acesso: {u.lastLogin}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-800 truncate">{u.name}</span>
+                        {!u.active && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">Inativo</span>}
+                      </div>
+                      <div className="text-xs text-slate-400 truncate">{u.email}</div>
+                      <div className="text-xs text-slate-400">Último acesso: {fmtDate(u.last_login)}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select value={u.role} onChange={e => handleRoleChange(u.id, e.target.value)}
+                        className={`text-xs font-semibold px-2 py-1 rounded-lg border-0 cursor-pointer ${r.bg}`}>
+                        <option value="admin">Administrador</option>
+                        <option value="manager">Gestor</option>
+                        <option value="viewer">Colaborador</option>
+                      </select>
+                      {u.active && (
+                        <button onClick={() => handleDeactivate(u.id, u.name)}
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Desativar acesso">
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.bg}`}>{r.label}</span>
-                    <button className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Permission matrix */}
@@ -2195,7 +2301,7 @@ function TeamManagement() {
                   <th className="text-left text-xs font-semibold text-slate-500 px-5 py-3">Ação</th>
                   <th className="text-center text-xs font-semibold text-purple-600 px-3 py-3">Admin</th>
                   <th className="text-center text-xs font-semibold text-blue-600 px-3 py-3">Gestor</th>
-                  <th className="text-center text-xs font-semibold text-slate-500 px-3 py-3">Viewer</th>
+                  <th className="text-center text-xs font-semibold text-slate-500 px-3 py-3">Colab.</th>
                 </tr>
               </thead>
               <tbody>
@@ -2220,6 +2326,7 @@ function TeamManagement() {
     </div>
   );
 }
+
 
 // ─── TEMPLATES LIBRARY ────────────────────────────────────────────────────────
 function TemplatesLibrary({ onUseTemplate }) {
