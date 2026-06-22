@@ -118,4 +118,32 @@ function me(req, res) {
   return ok(res, { user, tenant });
 }
 
-module.exports = { register, login, refresh, logout, me };
+/* POST /auth/change-password — usuário troca a própria senha */
+async function changePassword(req, res) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) return badReq(res, 'Senha atual e nova senha são obrigatórias');
+    if (newPassword.length < 8)            return badReq(res, 'A nova senha deve ter no mínimo 8 caracteres');
+    if (currentPassword === newPassword)   return badReq(res, 'A nova senha deve ser diferente da atual');
+
+    const db   = getDB();
+    const user = db.prepare('SELECT id, password_hash FROM users WHERE id = ?').get(req.user.id);
+    if (!user) return unauth(res, 'Usuário não encontrado');
+
+    const valid = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!valid) return badReq(res, 'Senha atual incorreta');
+
+    const newHash = await bcrypt.hash(newPassword, ROUNDS);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, req.user.id);
+    // Revoga sessões antigas (refresh tokens) por segurança.
+    db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(req.user.id);
+
+    logger.info('Senha alterada', { userId: req.user.id });
+    return ok(res, {}, 'Senha alterada com sucesso');
+  } catch (e) {
+    logger.error('changePassword error', { error: e.message });
+    return err(res, 'Erro ao alterar senha', 500, e.message);
+  }
+}
+
+module.exports = { register, login, refresh, logout, me, changePassword };
