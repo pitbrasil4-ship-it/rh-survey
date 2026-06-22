@@ -94,7 +94,25 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY(survey_id) REFERENCES surveys(id)
     );
+    CREATE TABLE IF NOT EXISTS eval_cycles (
+      id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT NOT NULL,
+      survey_id TEXT, status TEXT DEFAULT 'ativo',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+      FOREIGN KEY(survey_id) REFERENCES surveys(id)
+    );
+    CREATE TABLE IF NOT EXISTS eval_assignments (
+      id TEXT PRIMARY KEY, cycle_id TEXT, subject_id TEXT,
+      relationship TEXT, evaluator_name TEXT, evaluator_email TEXT,
+      token TEXT UNIQUE, completed INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY(cycle_id) REFERENCES eval_cycles(id) ON DELETE CASCADE,
+      FOREIGN KEY(subject_id) REFERENCES respondents(id)
+    );
   `);
+  // Migração idempotente: colunas de 360° na tabela responses (para bancos já existentes).
+  try { db.exec("ALTER TABLE responses ADD COLUMN subject_id TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE responses ADD COLUMN relationship TEXT"); } catch (e) {}
 }
 
 module.exports = { getDB };
