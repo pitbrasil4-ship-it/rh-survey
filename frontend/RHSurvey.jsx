@@ -993,6 +993,41 @@ function RespondentManager() {
   const [respondents, setRespondents] = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState("");
+  const [showForm, setShowForm]   = useState(false);
+  const [fName,    setFName]      = useState("");
+  const [fEmail,   setFEmail]     = useState("");
+  const [fGroup,   setFGroup]     = useState("subordinados");
+  const [fDept,    setFDept]      = useState("");
+  const [fRole,    setFRole]      = useState("");
+  const [saving,   setSaving]     = useState(false);
+  const [formError,setFormError]  = useState("");
+
+  const resetForm = () => { setFName(""); setFEmail(""); setFGroup("subordinados"); setFDept(""); setFRole(""); setFormError(""); };
+
+  const handleAdd = async () => {
+    setFormError("");
+    if (!fName.trim()) { setFormError("O nome é obrigatório."); return; }
+    setSaving(true);
+    try {
+      const res = await api.respondents.create({
+        name: fName.trim(),
+        email: fEmail.trim() || undefined,
+        groupType: fGroup,
+        department: fDept.trim() || undefined,
+        role: fRole.trim() || undefined,
+      });
+      const r = res.respondent;
+      setRespondents(prev => [{
+        id: r.id, name: r.name || "—", email: r.email || "—", group: r.group_type || "subordinados",
+        department: r.department || "—", role: r.role || "", consent: !!r.consent_given,
+        status: r.consent_given ? "ativo" : "pendente",
+      }, ...prev]);
+      resetForm(); setShowForm(false);
+    } catch (e) {
+      setFormError(e.message || "Erro ao adicionar respondente.");
+    }
+    setSaving(false);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -1046,11 +1081,51 @@ function RespondentManager() {
           <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
             <Download size={14} />Importar CSV
           </button>
-          <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed" style={{ background:GRAD }}>
+          <button onClick={() => { setShowForm(s => !s); setFormError(""); }} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}>
             <Plus size={14} />Adicionar
           </button>
         </div>
       </div>
+
+      {showForm && (
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm mb-5">
+          <h3 className="font-semibold text-slate-800 text-sm mb-4">Novo Respondente</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">Nome *</label>
+              <input value={fName} onChange={e=>setFName(e.target.value)} placeholder="Nome completo" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">E-mail</label>
+              <input value={fEmail} onChange={e=>setFEmail(e.target.value)} placeholder="email@empresa.com" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">Grupo</label>
+              <select value={fGroup} onChange={e=>setFGroup(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white">
+                <option value="gestores">Gestores</option>
+                <option value="fornecedores">Fornecedores</option>
+                <option value="subordinados">Subordinados</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">Departamento</label>
+              <input value={fDept} onChange={e=>setFDept(e.target.value)} placeholder="Ex: Vendas" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-slate-600 block mb-1">Cargo</label>
+              <input value={fRole} onChange={e=>setFRole(e.target.value)} placeholder="Ex: Analista de Vendas" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
+            </div>
+          </div>
+          {formError && <div className="mt-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm flex items-center gap-2"><AlertTriangle size={14} />{formError}</div>}
+          <div className="flex gap-2 mt-4">
+            <button onClick={handleAdd} disabled={saving} className="px-4 py-2.5 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-60 flex items-center gap-2" style={{ background:GRAD }}>
+              {saving ? <><Loader2 size={14} className="animate-spin" />Salvando...</> : <><Plus size={14} />Adicionar respondente</>}
+            </button>
+            <button onClick={() => { setShowForm(false); resetForm(); }} className="px-4 py-2.5 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">Cancelar</button>
+          </div>
+          <p className="text-xs text-slate-400 mt-3">O consentimento LGPD é registrado à parte — novos respondentes entram como "Pendente".</p>
+        </div>
+      )}
 
       {pending>0 && (
         <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl mb-5">
