@@ -61,4 +61,11 @@ async function seed() {
   logger.info(`   🔗 Survey público: /api/v1/public/survey/${token}`);
 }
 
-seed().catch(e => { logger.error('Seed error', { error: e.message }); process.exit(1); });
+module.exports = { seed };
+
+// Executa diretamente apenas quando chamado via `node src/utils/seed.js`
+if (require.main === module) {
+  seed()
+    .then(() => process.exit(0))
+    .catch(e => { logger.error('Seed error', { error: e.message }); process.exit(1); });
+}
