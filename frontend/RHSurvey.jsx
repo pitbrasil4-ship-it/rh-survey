@@ -568,6 +568,7 @@ function SurveyList({ onCreateNew, onView }) {
           category:   s.category || "—",
           nps:        0,
           anonymous:  !!s.anonymous,
+          token:      s.public_token || "",
         }));
         if (alive) { setSurveys(mapped); setLoading(false); }
       } catch (e) {
@@ -591,6 +592,22 @@ function SurveyList({ onCreateNew, onView }) {
     } catch (e) {
       alert(e.message || "Erro ao excluir a pesquisa.");
     }
+  };
+
+  const [copiedId, setCopiedId] = useState(null);
+  const handleCopyLink = async (s) => {
+    if (!s.token) return;
+    const url = `${window.location.origin}/r/${s.token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = url; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch {}
+      document.body.removeChild(ta);
+    }
+    setCopiedId(s.id);
+    setTimeout(() => setCopiedId(c => (c === s.id ? null : c)), 2000);
   };
 
   if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />Carregando pesquisas...</div>;
@@ -678,12 +695,13 @@ function SurveyList({ onCreateNew, onView }) {
                   <div className="flex items-center gap-4 mt-4 pt-3.5 border-t border-slate-50">
                     <span className="text-xs text-slate-400 flex items-center gap-1"><Clock size={11} />{s.created}</span>
                     <div className="flex gap-3 ml-auto">
-                      {[[Mail,"E-mail"],[Link2,"Copiar link"],[Send,"WhatsApp"]].map(([Ic,lbl],j) => (
-                        <button key={j} disabled title="Distribuição — em desenvolvimento"
-                          className="flex items-center gap-1 text-xs text-slate-300 cursor-not-allowed font-medium">
-                          <Ic size={11} />{lbl}
-                        </button>
-                      ))}
+                      <button disabled title="Envio por e-mail — em desenvolvimento" className="flex items-center gap-1 text-xs text-slate-300 cursor-not-allowed font-medium"><Mail size={11} />E-mail</button>
+                      <button onClick={() => handleCopyLink(s)} disabled={!s.token || s.status!=="ativo"}
+                        title={s.status!=="ativo" ? "Publique a pesquisa para gerar o link" : "Copiar link público de resposta"}
+                        className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+                        {copiedId===s.id ? <><CheckCircle size={11} />Copiado!</> : <><Link2 size={11} />Copiar link</>}
+                      </button>
+                      <button disabled title="Envio por WhatsApp — em desenvolvimento" className="flex items-center gap-1 text-xs text-slate-300 cursor-not-allowed font-medium"><Send size={11} />WhatsApp</button>
                     </div>
                   </div>
                 </div>
