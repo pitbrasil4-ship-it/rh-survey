@@ -696,6 +696,36 @@ function SurveyBuilder({ onBack }) {
   const [newQ,      setNewQ]      = useState("");
   const [anonymous, setAnonymous] = useState(true);
   const [lgpdOk,    setLgpdOk]   = useState(false);
+  const [targetGroup, setTargetGroup] = useState("Gestores");
+  const [category,    setCategory]    = useState("Avaliação 360°");
+  const [saving,      setSaving]      = useState(false);
+  const [error,       setError]       = useState(null);
+
+  const GROUP_MAP = { "Gestores":"gestores", "Fornecedores":"fornecedores", "Subordinados":"subordinados", "Todos":"todos" };
+
+  const handleSubmit = async (publishNow) => {
+    setError(null);
+    if (!surveyName.trim())     { setError("Dê um nome à pesquisa."); return; }
+    if (questions.length === 0) { setError("Adicione pelo menos uma pergunta antes de salvar."); return; }
+    if (publishNow && !lgpdOk)  { setError("Confirme a conformidade LGPD antes de publicar."); return; }
+    setSaving(true);
+    try {
+      const result = await api.surveys.create({
+        name: surveyName.trim(),
+        category,
+        targetGroup: GROUP_MAP[targetGroup] || "todos",
+        anonymous,
+        questions: questions.map(q => ({ type: q.type, text: q.text })),
+        lgpdBasis: "consentimento",
+      });
+      const id = result && result.survey && result.survey.id;
+      if (publishNow && id) await api.post(`/surveys/${id}/publish`);
+      onBack();
+    } catch (e) {
+      setError((e && e.message) || "Erro ao salvar a pesquisa.");
+      setSaving(false);
+    }
+  };
 
   const addQ = () => {
     if (!newQ.trim()) return;
@@ -732,13 +762,22 @@ function SurveyBuilder({ onBack }) {
           <p className="text-sm text-slate-500 mt-0.5">Configure, adicione perguntas e defina proteções de privacidade.</p>
         </div>
         <div className="ml-auto flex gap-3">
-          <button className="px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50">Salvar Rascunho</button>
-          <button disabled={!lgpdOk} title={!lgpdOk?"Confirme os termos LGPD antes de publicar":""}
-            className="px-4 py-2 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity" style={{ background:GRAD }}>
-            Publicar Pesquisa
+          <button onClick={() => handleSubmit(false)} disabled={saving}
+            className="px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2">
+            {saving ? <><Loader2 size={14} className="animate-spin" />Salvando...</> : "Salvar Rascunho"}
+          </button>
+          <button onClick={() => handleSubmit(true)} disabled={saving || !lgpdOk} title={!lgpdOk?"Confirme os termos LGPD antes de publicar":""}
+            className="px-4 py-2 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity flex items-center gap-2" style={{ background:GRAD }}>
+            {saving ? <><Loader2 size={14} className="animate-spin" />Publicando...</> : <><Send size={14} />Publicar Pesquisa</>}
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="mb-5 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 flex items-center gap-2 text-sm">
+          <AlertTriangle size={15} className="flex-shrink-0" />{error}
+        </div>
+      )}
 
       {/* Basic Info */}
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-5">
@@ -750,13 +789,13 @@ function SurveyBuilder({ onBack }) {
           </div>
           <div>
             <label className="text-xs font-medium text-slate-600 block mb-1">Público-Alvo</label>
-            <select className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white">
+            <select value={targetGroup} onChange={e => setTargetGroup(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white">
               {["Gestores","Fornecedores","Subordinados","Todos"].map(o => <option key={o}>{o}</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs font-medium text-slate-600 block mb-1">Categoria</label>
-            <select className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white">
+            <select value={category} onChange={e => setCategory(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white">
               {["Avaliação 360°","NPS","Clima Organizacional","Feedback"].map(o => <option key={o}>{o}</option>)}
             </select>
           </div>
