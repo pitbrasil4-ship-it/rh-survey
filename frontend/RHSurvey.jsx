@@ -206,7 +206,7 @@ function LGPDBanner({ onAccept }) {
           </p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <button className="px-4 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
+          <button onClick={onAccept} className="px-4 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
             Recusar opcionais
           </button>
           <button onClick={onAccept} className="px-4 py-2 text-xs text-white rounded-xl hover:opacity-90 transition-opacity" style={{ background: GRAD }}>
@@ -541,7 +541,7 @@ function Dashboard({ setPage }) {
 
 
 // ─── SURVEY LIST ───────────────────────────────────────────────────────────────
-function SurveyList({ onCreateNew }) {
+function SurveyList({ onCreateNew, onView }) {
   const [search,  setSearch]  = useState("");
   const [filter,  setFilter]  = useState("todos");
   const [surveys, setSurveys] = useState([]);
@@ -582,6 +582,16 @@ function SurveyList({ onCreateNew }) {
     const mf = filter === "todos" || s.status === filter;
     return ms && mf;
   });
+
+  const handleDelete = async (s) => {
+    if (!window.confirm(`Excluir a pesquisa "${s.name}"? Esta ação não pode ser desfeita.`)) return;
+    try {
+      await api.del(`/surveys/${s.id}`);
+      setSurveys(prev => prev.filter(x => x.id !== s.id));
+    } catch (e) {
+      alert(e.message || "Erro ao excluir a pesquisa.");
+    }
+  };
 
   if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />Carregando pesquisas...</div>;
   if (error)   return <div className="p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
@@ -636,11 +646,12 @@ function SurveyList({ onCreateNew }) {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {[Eye,Edit,Trash2].map((Ic,j) => (
-                        <button key={j} className={`p-2 rounded-lg transition-colors ${j===2?"text-slate-400 hover:text-red-500 hover:bg-red-50":"text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}>
-                          <Ic size={14} />
-                        </button>
-                      ))}
+                      <button onClick={() => onView && onView(s)} title="Ver resultados"
+                        className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><Eye size={14} /></button>
+                      <button disabled title="Edição de pesquisa — em desenvolvimento"
+                        className="p-2 rounded-lg text-slate-300 cursor-not-allowed"><Edit size={14} /></button>
+                      <button onClick={() => handleDelete(s)} title="Excluir pesquisa"
+                        className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 size={14} /></button>
                     </div>
                   </div>
                   <div className="flex items-center gap-6 mt-4">
@@ -668,7 +679,8 @@ function SurveyList({ onCreateNew }) {
                     <span className="text-xs text-slate-400 flex items-center gap-1"><Clock size={11} />{s.created}</span>
                     <div className="flex gap-3 ml-auto">
                       {[[Mail,"E-mail"],[Link2,"Copiar link"],[Send,"WhatsApp"]].map(([Ic,lbl],j) => (
-                        <button key={j} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium">
+                        <button key={j} disabled title="Distribuição — em desenvolvimento"
+                          className="flex items-center gap-1 text-xs text-slate-300 cursor-not-allowed font-medium">
                           <Ic size={11} />{lbl}
                         </button>
                       ))}
@@ -922,12 +934,12 @@ function SurveyBuilder({ onBack }) {
                 <div className="text-3xl mb-2">📄</div>
                 <p className="text-sm text-slate-600 mb-1">Arraste ou clique para selecionar</p>
                 <p className="text-xs text-slate-400">.xlsx, .csv ou .json</p>
-                <button className="mt-3 px-4 py-2 border border-slate-300 text-slate-600 text-xs rounded-xl hover:bg-slate-50">Selecionar Arquivo</button>
+                <button disabled title="Recurso em desenvolvimento" className="mt-3 px-4 py-2 border border-slate-300 text-slate-600 text-xs rounded-xl hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">Selecionar Arquivo</button>
               </div>
               <div className="border-t border-slate-100 pt-4">
                 <p className="text-xs font-semibold text-slate-600 mb-3">Modelos prontos (LGPD):</p>
                 {["Avaliação de Gestores (Padrão)","Pesquisa de Clima","NPS Interno","Avaliação de Fornecedores"].map((t,i) => (
-                  <button key={i} className="w-full text-left p-3 rounded-xl hover:bg-slate-50 border border-slate-100 text-xs text-slate-700 flex items-center justify-between mb-2">
+                  <button disabled title="Recurso em desenvolvimento" key={i} className="w-full text-left p-3 rounded-xl hover:bg-slate-50 border border-slate-100 text-xs text-slate-700 flex items-center justify-between mb-2 disabled:opacity-40 disabled:cursor-not-allowed">
                     <span className="flex items-center gap-2"><LGPDBadge />{t}</span>
                     <ChevronRight size={13} className="text-slate-400" />
                   </button>
@@ -1031,10 +1043,10 @@ function RespondentManager() {
           <p className="text-sm text-slate-500 mt-1">Gerencie participantes e consentimentos LGPD por grupo.</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+          <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
             <Download size={14} />Importar CSV
           </button>
-          <button className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}>
+          <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed" style={{ background:GRAD }}>
             <Plus size={14} />Adicionar
           </button>
         </div>
@@ -1047,7 +1059,7 @@ function RespondentManager() {
             <p className="text-sm font-semibold text-amber-800">Consentimento pendente para {pending} respondente{pending>1?"s":""}</p>
             <p className="text-xs text-amber-700 mt-0.5">Não é possível enviar pesquisas para respondentes sem consentimento LGPD registrado.</p>
           </div>
-          <button className="ml-auto text-xs font-semibold text-amber-700 border border-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-100">
+          <button disabled title="Recurso em desenvolvimento" className="ml-auto text-xs font-semibold text-amber-700 border border-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed">
             Enviar solicitação
           </button>
         </div>
@@ -1112,7 +1124,7 @@ function RespondentManager() {
                 <td className="px-4 py-3.5">
                   <div className="flex items-center gap-1">
                     {[[Send,false],[Edit,false],[Trash2,true]].map(([Ic,danger],j) => (
-                      <button key={j} className={`p-1.5 rounded-lg transition-colors ${danger?"text-slate-400 hover:text-red-500 hover:bg-red-50":"text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}>
+                      <button disabled title="Recurso em desenvolvimento" key={j} className={`p-1.5 rounded-lg transition-colors ${danger?"text-slate-400 hover:text-red-500 hover:bg-red-50":"text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}>
                         <Ic size={13} />
                       </button>
                     ))}
@@ -1146,7 +1158,7 @@ function Evaluation360() {
           <h1 className="text-2xl font-bold text-slate-800">Avaliação 360°</h1>
           <p className="text-sm text-slate-500 mt-1">Ciclos de avaliação com múltiplas perspectivas e anonimização LGPD.</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}>
+        <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed" style={{ background:GRAD }}>
           <Plus size={14} />Novo Ciclo
         </button>
       </div>
@@ -1191,8 +1203,8 @@ function Evaluation360() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button className="flex-1 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50">Ver Detalhes</button>
-                <button className="flex-1 py-2 text-xs border rounded-xl hover:opacity-80" style={{ borderColor:"#5B21B6",color:"#5B21B6" }}>Relatório</button>
+                <button disabled title="Recurso em desenvolvimento" className="flex-1 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">Ver Detalhes</button>
+                <button disabled title="Recurso em desenvolvimento" className="flex-1 py-2 text-xs border rounded-xl hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ borderColor:"#5B21B6",color:"#5B21B6" }}>Relatório</button>
               </div>
             </div>
           );
@@ -1417,7 +1429,7 @@ function ResultsDashboard() {
           <h1 className="text-2xl font-bold text-slate-800">Resultados & Relatórios</h1>
           <p className="text-sm text-slate-500 mt-1">Análise completa por pergunta, com proteção LGPD.</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+        <button onClick={() => window.print()} title="Abrir a janela de impressão (salve como PDF)" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
           <Download size={14} />Exportar PDF
         </button>
       </div>
@@ -1543,7 +1555,7 @@ function LGPDPage() {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h3 className="font-semibold text-slate-800 text-sm">Registro de Consentimentos</h3>
-          <button className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80" style={{ color:"#5B21B6" }}>
+          <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>
             <Download size={12} />Exportar log
           </button>
         </div>
@@ -1687,10 +1699,10 @@ function SecurityPage() {
             <Activity size={15} className="text-slate-500" />Trilha de Auditoria
           </h3>
           <div className="flex gap-2">
-            <button className="flex items-center gap-1.5 text-xs border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50">
+            <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-1.5 text-xs border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
               <RefreshCw size={11} />Atualizar
             </button>
-            <button className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80" style={{ color:"#5B21B6" }}>
+            <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>
               <Download size={11} />Exportar
             </button>
           </div>
@@ -1935,7 +1947,7 @@ function DistributionCenter() {
           <h1 className="text-2xl font-bold text-slate-800">Central de Distribuição</h1>
           <p className="text-sm text-slate-500 mt-1">Envie pesquisas por e-mail, WhatsApp ou link seguro com rastreamento.</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm font-medium hover:opacity-90" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+        <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
           <Plus size={15} />Nova Campanha
         </button>
       </div>
@@ -2042,7 +2054,7 @@ function DistributionCenter() {
                   <label className="text-xs font-medium text-slate-600 block mb-1.5">Agendamento</label>
                   <input type="datetime-local" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:outline-none" />
                 </div>
-                <button className="w-full py-3 text-white rounded-xl font-medium text-sm hover:opacity-90" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+                <button disabled title="Recurso em desenvolvimento" className="w-full py-3 text-white rounded-xl font-medium text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
                   <Send size={14} className="inline mr-2" />Agendar Envio
                 </button>
               </div>
@@ -2106,7 +2118,7 @@ function DistributionCenter() {
                   <p className="text-sm font-semibold text-slate-800 mb-2">Link seguro gerado</p>
                   <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 max-w-sm mx-auto">
                     <span className="text-xs text-slate-600 truncate flex-1">https://rhsurvey.app/s/abc123x</span>
-                    <button className="text-xs font-semibold flex-shrink-0" style={{ color:"#5B21B6" }}>Copiar</button>
+                    <button disabled title="Recurso em desenvolvimento" className="text-xs font-semibold flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>Copiar</button>
                   </div>
                   <p className="text-xs text-slate-400 mt-3">Link expira em 30/06/2025 · Proteção LGPD ativa</p>
                 </div>
@@ -2130,7 +2142,7 @@ function DistributionCenter() {
                   <h3 className="font-semibold text-slate-800 text-sm">{t.name}</h3>
                   <span className="text-xs text-slate-400 mt-0.5">{t.type}</span>
                 </div>
-                <button className="opacity-0 group-hover:opacity-100 text-xs font-semibold transition-opacity hover:opacity-80" style={{ color:"#5B21B6" }}>Usar</button>
+                <button disabled title="Recurso em desenvolvimento" className="opacity-0 group-hover:opacity-100 text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>Usar</button>
               </div>
               <p className="text-xs text-slate-500 mb-3 leading-relaxed">{t.desc}</p>
               <div className="flex gap-1.5 flex-wrap">
@@ -2744,7 +2756,7 @@ function TemplatesLibrary({ onUseTemplate }) {
               ))}
             </div>
             <div className="flex gap-2 pt-3 border-t border-slate-50">
-              <button className="flex-1 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-center gap-1">
+              <button disabled title="Recurso em desenvolvimento" className="flex-1 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
                 <Eye size={11} />Visualizar
               </button>
               <button onClick={() => onUseTemplate && onUseTemplate(t)}
@@ -2772,10 +2784,10 @@ function AdvancedReports() {
           <p className="text-sm text-slate-500 mt-1">Análise comparativa entre grupos, períodos e competências.</p>
         </div>
         <div className="flex gap-2">
-          <button className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+          <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
             <Download size={14} />Exportar PDF
           </button>
-          <button className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+          <button disabled title="Recurso em desenvolvimento" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
             <Download size={14} />Excel
           </button>
         </div>
@@ -3044,7 +3056,7 @@ export default function RHSurvey() {
     if (creating) return <SurveyBuilder onBack={() => setCreating(false)} />;
     switch (page) {
       case "dashboard":     return <Dashboard     setPage={handleNav} />;
-      case "surveys":       return <SurveyList    onCreateNew={() => setCreating(true)} />;
+      case "surveys":       return <SurveyList    onCreateNew={() => setCreating(true)} onView={() => handleNav("results")} />;
       case "respondents":   return <RespondentManager />;
       case "evaluation360": return <Evaluation360 />;
       case "results":       return <ResultsDashboard />;
