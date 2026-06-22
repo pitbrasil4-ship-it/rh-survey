@@ -7,5 +7,6 @@ router.use('/respondents', require('./respondents.routes'));
 router.use('/public',      require('./responses.routes'));
 router.use('/results',     require('./results.routes'));
 router.use('/eval',        require('./eval.routes'));
+router.use('/audit',       require('./audit.routes'));
 router.use('/lgpd',        require('./lgpd.routes'));
 module.exports = router;
