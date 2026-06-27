@@ -227,7 +227,10 @@ export default function PublicSurvey({ token }) {
         </div>
       </Card>
 
-      {questions.map((q, idx) => (
+      {questions.map((q, idx) => {
+        const hasOpts = Array.isArray(q.options) && q.options.length > 0;
+        const specialized = q.type === 'nps' || q.type === 'scale' || q.type === 'rating' || q.type === 'yesno' || (q.type === 'multiple' && hasOpts);
+        return (
         <Card key={q.id} style={{ marginBottom:14 }}>
           <div style={{ display:'flex', gap:10, marginBottom:14 }}>
             <span style={{ flexShrink:0, width:24, height:24, borderRadius:'50%', background:RED, color:'white', fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }}>{idx+1}</span>
@@ -237,13 +240,14 @@ export default function PublicSurvey({ token }) {
           {q.type === 'scale'    && <ScaleInput options={q.options} value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'rating'   && <RatingInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'yesno'    && <YesNoInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
-          {q.type === 'multiple' && <MultipleInput options={q.options} value={answers[q.id]} onToggle={opt => toggleMulti(q.id, opt)} />}
-          {(q.type === 'text' || !['nps','scale','rating','yesno','multiple'].includes(q.type)) &&
+          {q.type === 'multiple' && hasOpts && <MultipleInput options={q.options} value={answers[q.id]} onToggle={opt => toggleMulti(q.id, opt)} />}
+          {!specialized &&
             <textarea value={answers[q.id] || ''} onChange={e => setAns(q.id, e.target.value)} rows={4}
               placeholder="Digite sua resposta..."
               style={{ width:'100%', boxSizing:'border-box', border:'1px solid #E2E8F0', borderRadius:10, padding:'12px 14px', fontSize:14, fontFamily:'inherit', resize:'vertical' }} />}
         </Card>
-      ))}
+        );
+      })}
 
       {errMsg ? <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', color:'#B91C1C', borderRadius:10, padding:'12px 14px', fontSize:14, marginBottom:14 }}>⚠️ {errMsg}</div> : null}
 
