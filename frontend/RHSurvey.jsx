@@ -73,16 +73,28 @@ function rowsToQuestions(rows, delim) {
   const norm = s => (s == null ? "" : String(s)).trim().toLowerCase();
   const header = rows[0].map(norm);
   const looksHeader = header.some(h => h.includes("pergunta") || h.includes("tipo") || h.startsWith("op") || h.includes("texto") || h.includes("question"));
-  let pIdx = 0, tIdx = 1, oIdx = 2, enIdx = -1, esIdx = -1, start = 0;
+  const isOpt = h => h.includes("opç") || h.includes("opc") || h.startsWith("op") || h.includes("alternativa") || h.includes("escolha");
+  const isEn  = h => h.includes("(en)") || h.includes("english") || h.includes("inglês") || h.includes("ingles") || h.includes(" en)") || h.endsWith(" en");
+  const isEs  = h => h.includes("(es)") || h.includes("español") || h.includes("espanol") || h.includes("espanhol") || h.includes("spanish") || h.includes("pregunta") || h.includes(" es)") || h.endsWith(" es");
+  let pIdx = 0, tIdx = 1, oIdx = 2, enIdx = -1, esIdx = -1, oEnIdx = -1, oEsIdx = -1, start = 0;
   if (looksHeader) {
     start = 1;
-    const find = (keys, def) => { const idx = header.findIndex(h => keys.some(k => h.includes(k))); return idx >= 0 ? idx : def; };
-    enIdx = find(["(en)", "english", "inglês", "ingles", "pergunta en", "texto en"], -1);
-    esIdx = find(["(es)", "español", "espanol", "espanhol", "spanish", "pregunta", "pergunta es", "texto es"], -1);
-    pIdx = find(["pergunta", "texto", "question"], 0);
-    tIdx = find(["tipo", "type"], 1);
-    oIdx = find(["opç", "opc", "op", "alternativa", "escolha"], 2);
+    const fi = pred => header.findIndex(pred);
+    oEnIdx = fi(h => isOpt(h) && isEn(h));
+    oEsIdx = fi(h => isOpt(h) && isEs(h));
+    enIdx  = fi(h => isEn(h) && !isOpt(h));
+    esIdx  = fi(h => isEs(h) && !isOpt(h));
+    pIdx = fi(h => (h.includes("pergunta") || h.includes("texto") || h.includes("question")) && !isEn(h) && !isEs(h)); if (pIdx < 0) pIdx = 0;
+    tIdx = fi(h => h.includes("tipo") || h.includes("type")); if (tIdx < 0) tIdx = 1;
+    oIdx = fi(h => isOpt(h) && !isEn(h) && !isEs(h)); if (oIdx < 0) oIdx = 2;
   }
+  const splitOpts = raw => {
+    const s = raw == null ? "" : String(raw);
+    if (!s.trim()) return null;
+    const sep = (delim !== ";" && s.includes(";")) ? ";" : (s.includes("|") ? "|" : (s.includes(";") ? ";" : ","));
+    const a = s.split(sep).map(o => o.trim()).filter(Boolean);
+    return a.length ? a : null;
+  };
   const out = []; let skipped = 0, unknown = 0;
   for (let r = start; r < rows.length; r++) {
     const cols = rows[r] || [];
@@ -92,14 +104,17 @@ function rowsToQuestions(rows, delim) {
     const text_es = (esIdx >= 0 && cols[esIdx] != null) ? String(cols[esIdx]).trim() : "";
     const mapped = mapTipoToType(cols[tIdx]);
     if (mapped.unknown) unknown++;
-    let options;
+    let options, options_en, options_es;
     if (mapped.type === "scale" || mapped.type === "multiple") {
-      const rawOpts = cols[oIdx] == null ? "" : String(cols[oIdx]);
-      const sep = (delim !== ";" && rawOpts.includes(";")) ? ";" : (rawOpts.includes("|") ? "|" : (rawOpts.includes(";") ? ";" : ","));
-      const arr = rawOpts.split(sep).map(o => o.trim()).filter(Boolean);
-      if (arr.length) options = arr;
+      options = splitOpts(cols[oIdx]);
+      const oe = oEnIdx >= 0 ? splitOpts(cols[oEnIdx]) : null;
+      const os = oEsIdx >= 0 ? splitOpts(cols[oEsIdx]) : null;
+      if (options && oe && oe.length === options.length) options_en = oe;
+      if (options && os && os.length === options.length) options_es = os;
     }
-    out.push({ id: Date.now() + r, text, type: mapped.type, ...(text_en ? { text_en } : {}), ...(text_es ? { text_es } : {}), ...(options ? { options } : {}) });
+    out.push({ id: Date.now() + r, text, type: mapped.type,
+      ...(text_en ? { text_en } : {}), ...(text_es ? { text_es } : {}),
+      ...(options ? { options } : {}), ...(options_en ? { options_en } : {}), ...(options_es ? { options_es } : {}) });
   }
   return { questions: out, skipped, unknown };
 }
@@ -423,6 +438,7 @@ function TopBar({ title, unreadCount, onBell }) {
 
 // ─── DASHBOARD ─────────────────────────────────────────────────────────────────
 function Dashboard({ setPage }) {
+  const { t } = useLang();
   const [data,    setData]    = useState(null);
   const [surveys, setSurveys] = useState([]);
   const [resp,    setResp]    = useState([]);
@@ -442,7 +458,7 @@ function Dashboard({ setPage }) {
         setSurveys(surv.surveys || []);
         setResp(people.respondents || []);
       } catch (e) {
-        setError(e.message || "Não foi possível carregar o painel.");
+        setError(e.message || t('dash_load_error'));
       }
       setLoading(false);
     })();
@@ -450,7 +466,7 @@ function Dashboard({ setPage }) {
 
   if (loading) return (
     <div className="p-8 flex items-center justify-center" style={{ minHeight:"60vh" }}>
-      <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 size={18} className="animate-spin" />Carregando painel...</div>
+      <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 size={18} className="animate-spin" />{t('dash_loading')}</div>
     </div>
   );
   if (error) return (
@@ -480,7 +496,7 @@ function Dashboard({ setPage }) {
 
   // Gráfico honesto 2: pesquisas por status
   const statusColors = { ativo:"#10B981", encerrado:"#94A3B8", rascunho:"#F59E0B" };
-  const statusLabels = { ativo:"Ativas", encerrado:"Encerradas", rascunho:"Rascunhos" };
+  const statusLabels = { ativo:t('st_active'), encerrado:t('st_closed'), rascunho:t('st_draft') };
   const byStatus = ["ativo","encerrado","rascunho"]
     .map(st => ({ name: statusLabels[st], value: surveys.filter(s => s.status === st).length, color: statusColors[st] }))
     .filter(d => d.value > 0);
@@ -488,15 +504,15 @@ function Dashboard({ setPage }) {
   return (
     <div className="p-8">
       <div className="mb-7">
-        <h1 className="text-2xl font-bold text-slate-800">Bom dia, Equipe RH 👋</h1>
-        <p className="text-slate-500 mt-1 text-sm">Visão geral das pesquisas, avaliações e conformidade LGPD.</p>
+        <h1 className="text-2xl font-bold text-slate-800">{t('dash_welcome')}</h1>
+        <p className="text-slate-500 mt-1 text-sm">{t('dash_subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <KpiCard title="Pesquisas Ativas"    value={String(active)}       subtitle={`${totalSurveys} no total`}        icon={ClipboardList} colorClass="bg-purple-500"  />
-        <KpiCard title="Total de Respostas"  value={String(totalResp)}    subtitle="Avaliações concluídas"             icon={CheckCircle}   colorClass="bg-emerald-500" />
-        <KpiCard title="Pesquisas Criadas"   value={String(totalSurveys)} subtitle="Em todos os status"                icon={TrendingUp}    colorClass="bg-blue-500"    />
-        <KpiCard title="Respondentes"        value={String(consentTotal)} subtitle={`${consentOk} com consentimento`}  icon={Users}         colorClass="bg-amber-500"   />
+        <KpiCard title={t('kpi_active_surveys')} value={String(active)} subtitle={t('kpi_of_total',{n:totalSurveys})}        icon={ClipboardList} colorClass="bg-purple-500"  />
+        <KpiCard title={t('kpi_total_responses')} value={String(totalResp)} subtitle={t('kpi_completed_evals')}             icon={CheckCircle}   colorClass="bg-emerald-500" />
+        <KpiCard title={t('kpi_created_surveys')} value={String(totalSurveys)} subtitle={t('kpi_all_status')}                icon={TrendingUp}    colorClass="bg-blue-500"    />
+        <KpiCard title={t('nav_respondents')} value={String(consentTotal)} subtitle={t('kpi_with_consent',{n:consentOk})}  icon={Users}         colorClass="bg-amber-500"   />
       </div>
 
       {/* LGPD quick status — dados reais */}
@@ -504,30 +520,30 @@ function Dashboard({ setPage }) {
         <div className="bg-white rounded-2xl p-4 border border-green-200 shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0"><Shield size={18} className="text-green-600" /></div>
           <div>
-            <div className="text-sm font-semibold text-slate-800">Consentimentos</div>
-            <div className="text-xs text-slate-500 mt-0.5">{consentOk} de {consentTotal} coletados <span className="text-green-600 font-medium">({consentPct}%)</span></div>
+            <div className="text-sm font-semibold text-slate-800">{t('dash_consents')}</div>
+            <div className="text-xs text-slate-500 mt-0.5">{t('dash_collected',{a:consentOk,b:consentTotal})} <span className="text-green-600 font-medium">({consentPct}%)</span></div>
           </div>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-blue-200 shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0"><Lock size={18} className="text-blue-600" /></div>
           <div>
-            <div className="text-sm font-semibold text-slate-800">Dados Anonimizados</div>
-            <div className="text-xs text-slate-500 mt-0.5">{anonCount} pesquisa(s) com anonimato</div>
+            <div className="text-sm font-semibold text-slate-800">{t('dash_anonymized')}</div>
+            <div className="text-xs text-slate-500 mt-0.5">{t('dash_anon_surveys',{n:anonCount})}</div>
           </div>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-purple-200 shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0"><Activity size={18} style={{ color:"#5B21B6" }} /></div>
           <div>
-            <div className="text-sm font-semibold text-slate-800">Trilha de Auditoria</div>
-            <div className="text-xs text-slate-500 mt-0.5">Ativa · registros LGPD</div>
+            <div className="text-sm font-semibold text-slate-800">{t('dash_audit_trail')}</div>
+            <div className="text-xs text-slate-500 mt-0.5">{t('dash_audit_active')}</div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-5 mb-6">
         <div className="col-span-2 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <h3 className="font-semibold text-slate-800 text-sm mb-1">Respostas por Pesquisa</h3>
-          <p className="text-xs text-slate-400 mb-5">Avaliações concluídas em cada pesquisa</p>
+          <h3 className="font-semibold text-slate-800 text-sm mb-1">{t('dash_responses_by_survey')}</h3>
+          <p className="text-xs text-slate-400 mb-5">{t('dash_responses_by_survey_sub')}</p>
           {byResponses.some(d => d.respostas > 0) ? (
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={byResponses}>
@@ -539,12 +555,12 @@ function Dashboard({ setPage }) {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center text-slate-400 text-sm" style={{ height:180 }}>Ainda não há respostas registradas.</div>
+            <div className="flex items-center justify-center text-slate-400 text-sm" style={{ height:180 }}>{t('dash_no_responses')}</div>
           )}
         </div>
         <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <h3 className="font-semibold text-slate-800 text-sm mb-1">Pesquisas por Status</h3>
-          <p className="text-xs text-slate-400 mb-3">Distribuição atual</p>
+          <h3 className="font-semibold text-slate-800 text-sm mb-1">{t('dash_surveys_by_status')}</h3>
+          <p className="text-xs text-slate-400 mb-3">{t('dash_current_distribution')}</p>
           {byStatus.length > 0 ? (
             <>
               <ResponsiveContainer width="100%" height={130}>
@@ -568,20 +584,20 @@ function Dashboard({ setPage }) {
               </div>
             </>
           ) : (
-            <div className="flex items-center justify-center text-slate-400 text-sm" style={{ height:130 }}>Sem pesquisas ainda.</div>
+            <div className="flex items-center justify-center text-slate-400 text-sm" style={{ height:130 }}>{t('dash_no_surveys')}</div>
           )}
         </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm mb-5">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-800 text-sm">Pesquisas Recentes</h3>
+          <h3 className="font-semibold text-slate-800 text-sm">{t('dash_recent_surveys')}</h3>
           <button onClick={() => setPage("surveys")} className="text-xs font-medium flex items-center gap-1 hover:opacity-80" style={{ color:"#5B21B6" }}>
-            Ver todas <ChevronRight size={13} />
+            {t('dash_see_all')} <ChevronRight size={13} />
           </button>
         </div>
         {recent.length === 0 ? (
-          <div className="text-center py-10 text-slate-400 text-sm">Nenhuma pesquisa criada ainda.</div>
+          <div className="text-center py-10 text-slate-400 text-sm">{t('dash_none_created')}</div>
         ) : recent.slice(0,4).map((s,i) => (
           <div key={s.id} className={`flex items-center gap-4 px-6 py-3.5 hover:bg-slate-50 transition-colors ${i<Math.min(recent.length,4)-1?"border-b border-slate-50":""}`}>
             <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
@@ -592,7 +608,7 @@ function Dashboard({ setPage }) {
                 <span className="text-sm font-medium text-slate-800 truncate">{s.name}</span>
                 {s.anonymous ? <LGPDBadge /> : null}
               </div>
-              <div className="text-xs text-slate-400 mt-0.5">{s.responses} resposta(s)</div>
+              <div className="text-xs text-slate-400 mt-0.5">{t('dash_n_responses',{n:s.responses})}</div>
             </div>
             <div className="flex items-center gap-2.5">
               <Badge status={s.status} /><GroupBadge group={s.target_group} />
@@ -603,9 +619,9 @@ function Dashboard({ setPage }) {
 
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label:"Nova Pesquisa",         desc:"Crie um questionário",  Icon:Plus,    bg:"bg-purple-500",  target:"surveys"      },
-          { label:"Gerenciar Respondentes",desc:"Adicione participantes",Icon:Users,   bg:"bg-blue-500",    target:"respondents"  },
-          { label:"Ver Resultados",        desc:"Análise completa",      Icon:BarChart3,bg:"bg-emerald-500",target:"results"      },
+          { label:t('new_survey'), desc:t('qa_create_desc'),  Icon:Plus,    bg:"bg-purple-500",  target:"surveys"      },
+          { label:t('qa_manage_resp'), desc:t('qa_add_participants'),Icon:Users,   bg:"bg-blue-500",    target:"respondents"  },
+          { label:t('qa_see_results'), desc:t('qa_full_analysis'),      Icon:BarChart3,bg:"bg-emerald-500",target:"results"      },
         ].map(({ label,desc,Icon,bg,target },i) => (
           <button key={i} onClick={() => setPage(target)} className="flex items-center gap-3 bg-white border border-slate-100 rounded-2xl p-4 hover:shadow-md transition-all text-left group">
             <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0`}>
@@ -848,7 +864,7 @@ function SurveyBuilder({ onBack, initial }) {
         category,
         targetGroup: GROUP_MAP[targetGroup] || "todos",
         anonymous,
-        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options })),
+        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es })),
         lgpdBasis: "consentimento",
       });
       const id = result && result.survey && result.survey.id;
