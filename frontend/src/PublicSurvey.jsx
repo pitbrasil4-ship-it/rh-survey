@@ -1,4 +1,28 @@
 import React, { useState, useEffect } from 'react';
+import { LANGS, t, storeLang } from './i18n.js';
+
+function initialLang() {
+  try { const s = localStorage.getItem('rh_lang'); if (LANGS.some(l => l.code === s)) return s; } catch {}
+  const n = (typeof navigator !== 'undefined' ? navigator.language : '' || '').toLowerCase();
+  if (n.startsWith('en')) return 'en';
+  if (n.startsWith('es')) return 'es';
+  return 'pt';
+}
+
+function LangPicker({ lang, setLang }) {
+  return (
+    <div style={{ display:'flex', justifyContent:'flex-end', gap:6, marginBottom:12 }}>
+      {LANGS.map(l => (
+        <button key={l.code} type="button" onClick={() => setLang(l.code)}
+          style={{ padding:'5px 11px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer',
+            border: lang===l.code ? `2px solid ${RED}` : '1px solid #E2E8F0',
+            background: lang===l.code ? '#FEF2F2' : 'white', color: lang===l.code ? RED_DARK : '#64748B' }}>
+          {l.short}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const RED = '#DC2626';
@@ -41,7 +65,7 @@ function Card({ children, style }) {
   return <div style={{ background:'white', borderRadius:16, border:'1px solid #E2E8F0', boxShadow:'0 1px 3px rgba(0,0,0,.05)', padding:24, ...style }}>{children}</div>;
 }
 
-function NpsInput({ value, onChange }) {
+function NpsInput({ value, onChange, tr }) {
   return (
     <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
       {Array.from({ length:11 }).map((_, n) => (
@@ -53,7 +77,7 @@ function NpsInput({ value, onChange }) {
         </button>
       ))}
       <div style={{ width:'100%', display:'flex', justifyContent:'space-between', fontSize:11, color:'#94A3B8', marginTop:4 }}>
-        <span>Nada provável</span><span>Muito provável</span>
+        <span>{tr('nps_low')}</span><span>{tr('nps_high')}</span>
       </div>
     </div>
   );
@@ -95,7 +119,7 @@ function RatingInput({ value, onChange }) {
   );
 }
 
-function YesNoInput({ value, onChange }) {
+function YesNoInput({ value, onChange, tr }) {
   const opt = (val, label) => {
     const sel = value === val;
     return (
@@ -105,13 +129,13 @@ function YesNoInput({ value, onChange }) {
           background: sel ? RED : 'white', color: sel ? 'white' : '#475569' }}>{label}</button>
     );
   };
-  return <div style={{ display:'flex', gap:10 }}>{opt('sim','Sim')}{opt('nao','Não')}</div>;
+  return <div style={{ display:'flex', gap:10 }}>{opt('sim', tr('yes'))}{opt('nao', tr('no'))}</div>;
 }
 
-function MultipleInput({ options, value, onToggle }) {
+function MultipleInput({ options, value, onToggle, tr }) {
   const opts = options && options.length ? options : [];
   const arr = Array.isArray(value) ? value : [];
-  if (opts.length === 0) return <p style={{ fontSize:13, color:'#94A3B8' }}>Sem opções configuradas.</p>;
+  if (opts.length === 0) return <p style={{ fontSize:13, color:'#94A3B8' }}>{tr('no_options')}</p>;
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
       {opts.map((label, i) => {
@@ -137,6 +161,9 @@ export default function PublicSurvey({ token }) {
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState('');
+  const [lang, setLang] = useState(initialLang);
+  const tr = (k, v) => t(lang, k, v);
+  const changeLang = (l) => { setLang(l); storeLang(l); };
 
   useEffect(() => {
     let alive = true;
@@ -172,33 +199,33 @@ export default function PublicSurvey({ token }) {
     const payload = questions
       .map(q => ({ questionId: q.id, value: answers[q.id] }))
       .filter(a => a.value !== undefined && a.value !== '' && !(Array.isArray(a.value) && a.value.length === 0));
-    if (payload.length === 0) { setErrMsg('Responda ao menos uma pergunta antes de enviar.'); return; }
+    if (payload.length === 0) { setErrMsg(tr('at_least_one')); return; }
     setSubmitting(true);
     try {
       await pub('POST', token, { answers: payload });
       setState('done');
     } catch (e) {
-      setErrMsg(e.message || 'Erro ao enviar suas respostas. Tente novamente.');
+      setErrMsg(e.message || tr('submit_error'));
       setSubmitting(false);
     }
   };
 
   if (state === 'loading') {
-    return <Shell><div style={{ textAlign:'center', color:'#64748B', paddingTop:80 }}>Carregando pesquisa...</div></Shell>;
+    return <Shell><div style={{ textAlign:'center', color:'#64748B', paddingTop:80 }}>{tr('loading_survey')}</div></Shell>;
   }
   if (state === 'notfound') {
-    return <Shell><Card style={{ textAlign:'center' }}>
+    return <Shell><LangPicker lang={lang} setLang={changeLang} /><Card style={{ textAlign:'center' }}>
       <div style={{ fontSize:40 }}>🔒</div>
-      <h2 style={{ color:'#0F172A', fontSize:18, margin:'12px 0 6px' }}>Pesquisa indisponível</h2>
-      <p style={{ color:'#64748B', fontSize:14, margin:0 }}>Este link é inválido ou a pesquisa não está mais ativa. Verifique com quem o enviou.</p>
+      <h2 style={{ color:'#0F172A', fontSize:18, margin:'12px 0 6px' }}>{tr('unavailable_title')}</h2>
+      <p style={{ color:'#64748B', fontSize:14, margin:0 }}>{tr('unavailable_body')}</p>
     </Card></Shell>;
   }
   if (state === 'error') {
-    return <Shell><Card style={{ textAlign:'center' }}>
+    return <Shell><LangPicker lang={lang} setLang={changeLang} /><Card style={{ textAlign:'center' }}>
       <div style={{ fontSize:40 }}>⚠️</div>
-      <h2 style={{ color:'#B91C1C', fontSize:18, margin:'12px 0 6px' }}>Não foi possível carregar</h2>
-      <p style={{ color:'#64748B', fontSize:14, margin:'0 0 16px' }}>{errMsg || 'Tente novamente em instantes.'}</p>
-      <button onClick={() => window.location.reload()} style={{ padding:'10px 18px', background:RED, color:'white', border:'none', borderRadius:10, cursor:'pointer', fontWeight:700, fontSize:14 }}>Recarregar</button>
+      <h2 style={{ color:'#B91C1C', fontSize:18, margin:'12px 0 6px' }}>{tr('load_error_title')}</h2>
+      <p style={{ color:'#64748B', fontSize:14, margin:'0 0 16px' }}>{errMsg || tr('try_again_short')}</p>
+      <button onClick={() => window.location.reload()} style={{ padding:'10px 18px', background:RED, color:'white', border:'none', borderRadius:10, cursor:'pointer', fontWeight:700, fontSize:14 }}>{tr('reload')}</button>
     </Card></Shell>;
   }
   if (state === 'done') {
@@ -206,9 +233,9 @@ export default function PublicSurvey({ token }) {
       <div style={{ marginBottom:16 }}><Logo /></div>
       <Card style={{ textAlign:'center' }}>
         <div style={{ width:64, height:64, borderRadius:'50%', background:'#DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', fontSize:30 }}>✓</div>
-        <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>Resposta enviada!</h2>
-        <p style={{ color:'#64748B', fontSize:14, margin:0 }}>Obrigado por participar. Sua contribuição foi registrada com segurança.</p>
-        {survey && survey.anonymous ? <p style={{ color:'#16A34A', fontSize:12, marginTop:12, fontWeight:600 }}>🔒 Resposta anônima — não vinculada à sua identidade.</p> : null}
+        <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>{tr('done_title')}</h2>
+        <p style={{ color:'#64748B', fontSize:14, margin:0 }}>{tr('done_body')}</p>
+        {survey && survey.anonymous ? <p style={{ color:'#16A34A', fontSize:12, marginTop:12, fontWeight:600 }}>{tr('anon_note')}</p> : null}
       </Card>
     </Shell>;
   }
@@ -217,13 +244,14 @@ export default function PublicSurvey({ token }) {
   return (
     <Shell>
       <div style={{ marginBottom:16 }}><Logo /></div>
+      <LangPicker lang={lang} setLang={changeLang} />
       <Card style={{ marginBottom:16, borderTop:`3px solid ${RED}` }}>
         <h1 style={{ color:'#0F172A', fontSize:22, margin:'0 0 6px' }}>{survey.name}</h1>
         {survey.description ? <p style={{ color:'#64748B', fontSize:14, margin:'0 0 10px' }}>{survey.description}</p> : null}
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', fontSize:12 }}>
-          {survey.anonymous ? <span style={{ background:'#EFF6FF', color:'#2563EB', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>🔒 Anônima</span> : null}
-          <span style={{ background:'#F0FDF4', color:'#16A34A', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>Protegida pela LGPD</span>
-          <span style={{ background:'#F1F5F9', color:'#64748B', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{questions.length} pergunta{questions.length!==1?'s':''}</span>
+          {survey.anonymous ? <span style={{ background:'#EFF6FF', color:'#2563EB', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{tr('anon_badge')}</span> : null}
+          <span style={{ background:'#F0FDF4', color:'#16A34A', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{tr('lgpd_badge')}</span>
+          <span style={{ background:'#F1F5F9', color:'#64748B', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{questions.length} {questions.length!==1 ? tr('q_many') : tr('q_one')}</span>
         </div>
       </Card>
 
@@ -234,16 +262,16 @@ export default function PublicSurvey({ token }) {
         <Card key={q.id} style={{ marginBottom:14 }}>
           <div style={{ display:'flex', gap:10, marginBottom:14 }}>
             <span style={{ flexShrink:0, width:24, height:24, borderRadius:'50%', background:RED, color:'white', fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }}>{idx+1}</span>
-            <p style={{ margin:0, fontSize:15, fontWeight:600, color:'#1E293B', lineHeight:1.4 }}>{q.text}</p>
+            <p style={{ margin:0, fontSize:15, fontWeight:600, color:'#1E293B', lineHeight:1.4 }}>{(lang !== 'pt' && q['text_'+lang]) ? q['text_'+lang] : q.text}</p>
           </div>
-          {q.type === 'nps'      && <NpsInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
+          {q.type === 'nps'      && <NpsInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
           {q.type === 'scale'    && <ScaleInput options={q.options} value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'rating'   && <RatingInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
-          {q.type === 'yesno'    && <YesNoInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
-          {q.type === 'multiple' && hasOpts && <MultipleInput options={q.options} value={answers[q.id]} onToggle={opt => toggleMulti(q.id, opt)} />}
+          {q.type === 'yesno'    && <YesNoInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
+          {q.type === 'multiple' && hasOpts && <MultipleInput options={q.options} value={answers[q.id]} onToggle={opt => toggleMulti(q.id, opt)} tr={tr} />}
           {!specialized &&
             <textarea value={answers[q.id] || ''} onChange={e => setAns(q.id, e.target.value)} rows={4}
-              placeholder="Digite sua resposta..."
+              placeholder={tr('answer_placeholder')}
               style={{ width:'100%', boxSizing:'border-box', border:'1px solid #E2E8F0', borderRadius:10, padding:'12px 14px', fontSize:14, fontFamily:'inherit', resize:'vertical' }} />}
         </Card>
         );
@@ -252,15 +280,15 @@ export default function PublicSurvey({ token }) {
       {errMsg ? <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', color:'#B91C1C', borderRadius:10, padding:'12px 14px', fontSize:14, marginBottom:14 }}>⚠️ {errMsg}</div> : null}
 
       <Card style={{ position:'sticky', bottom:16, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
-        <span style={{ fontSize:13, color:'#64748B' }}>{answeredCount} de {questions.length} respondidas</span>
+        <span style={{ fontSize:13, color:'#64748B' }}>{tr('answered_of', { a: answeredCount, b: questions.length })}</span>
         <button onClick={submit} disabled={submitting}
           style={{ padding:'12px 24px', background: submitting ? '#FCA5A5' : RED, color:'white', border:'none', borderRadius:10, cursor: submitting ? 'default' : 'pointer', fontWeight:700, fontSize:14 }}>
-          {submitting ? 'Enviando...' : 'Enviar respostas'}
+          {submitting ? tr('sending') : tr('submit_answers')}
         </button>
       </Card>
 
       <p style={{ textAlign:'center', fontSize:11, color:'#94A3B8', marginTop:16 }}>
-        Seus dados são tratados conforme a Lei nº 13.709/2018 (LGPD), exclusivamente para fins de avaliação organizacional interna.
+        {tr('lgpd_footer')}
       </p>
     </Shell>
   );
