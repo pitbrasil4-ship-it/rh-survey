@@ -36,8 +36,8 @@ function create(req, res) {
     );
 
     if (questions.length > 0) {
-      const stmt = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, options) VALUES (?,?,?,?,?,?)');
-      questions.forEach((q, i) => stmt.run(uuid(), surveyId, i+1, q.type, q.text, q.options ? JSON.stringify(q.options) : null));
+      const stmt = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options) VALUES (?,?,?,?,?,?,?,?)');
+      questions.forEach((q, i) => stmt.run(uuid(), surveyId, i+1, q.type, q.text, q.text_en || null, q.text_es || null, q.options ? JSON.stringify(q.options) : null));
     }
 
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(surveyId);
