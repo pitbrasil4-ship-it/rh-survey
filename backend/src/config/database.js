@@ -113,6 +113,9 @@ function initSchema() {
   // Migração idempotente: colunas de 360° na tabela responses (para bancos já existentes).
   try { db.exec("ALTER TABLE responses ADD COLUMN subject_id TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN relationship TEXT"); } catch (e) {}
+  // Migração idempotente: texto das perguntas em outros idiomas (EN/ES).
+  try { db.exec("ALTER TABLE questions ADD COLUMN text_en TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE questions ADD COLUMN text_es TEXT"); } catch (e) {}
 }
 
 module.exports = { getDB };
