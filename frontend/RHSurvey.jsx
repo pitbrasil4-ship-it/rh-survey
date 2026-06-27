@@ -1197,6 +1197,7 @@ function SurveyBuilder({ onBack, initial }) {
 
 // ─── RESPONDENTS ───────────────────────────────────────────────────────────────
 function RespondentManager() {
+  const { t } = useLang();
   const [activeGroup, setActiveGroup] = useState("todos");
   const [search,      setSearch]      = useState("");
   const [respondents, setRespondents] = useState([]);
@@ -1215,7 +1216,7 @@ function RespondentManager() {
 
   const handleAdd = async () => {
     setFormError("");
-    if (!fName.trim()) { setFormError("O nome é obrigatório."); return; }
+    if (!fName.trim()) { setFormError(t('rm_name_required')); return; }
     setSaving(true);
     try {
       const res = await api.respondents.create({
@@ -1233,7 +1234,7 @@ function RespondentManager() {
       }, ...prev]);
       resetForm(); setShowForm(false);
     } catch (e) {
-      setFormError(e.message || "Erro ao adicionar respondente.");
+      setFormError(e.message || t('rm_add_error'));
     }
     setSaving(false);
   };
@@ -1254,15 +1255,15 @@ function RespondentManager() {
     try {
       await api.respondents.registerConsent(r.id);
       setRespondents(prev => prev.map(x => x.id===r.id ? { ...x, consent:true, status:"ativo" } : x));
-    } catch (e) { alert(e.message || "Erro ao registrar consentimento."); }
+    } catch (e) { alert(e.message || t('rm_consent_error')); }
   };
 
   const handleAnonymize = async (r) => {
-    if (!window.confirm(`Anonimizar os dados de "${r.name}"? Conforme a LGPD (Art. 18), os dados pessoais serão removidos e o respondente sairá da lista. A ação é irreversível.`)) return;
+    if (!window.confirm(t('rm_anon_confirm',{name:r.name}))) return;
     try {
       await api.respondents.remove(r.id);
       setRespondents(prev => prev.filter(x => x.id !== r.id));
-    } catch (e) { alert(e.message || "Erro ao anonimizar."); }
+    } catch (e) { alert(e.message || t('rm_anon_error')); }
   };
 
   const parseCSV = (text) => text.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => l.split(/[;,]/).map(c => c.trim().replace(/^"|"$/g, "")));
@@ -1270,7 +1271,7 @@ function RespondentManager() {
   const handleImport = async () => {
     setImportError(""); setImportResult("");
     const rows = parseCSV(csvText);
-    if (rows.length === 0) { setImportError("Cole o conteúdo do CSV ou selecione um arquivo."); return; }
+    if (rows.length === 0) { setImportError(t('rm_paste_csv')); return; }
     let data = rows;
     const head = rows[0].map(c => c.toLowerCase());
     if (head.some(c => c === "nome" || c === "name") || head.some(c => c.includes("mail"))) data = rows.slice(1);
@@ -1280,15 +1281,15 @@ function RespondentManager() {
       groupType: GMAP[(c[2] || "").toLowerCase()] || "subordinados",
       department: c[3] || undefined, role: c[4] || undefined,
     })).filter(x => x.name);
-    if (list.length === 0) { setImportError("Nenhuma linha válida — cada linha precisa de um nome na 1ª coluna."); return; }
+    if (list.length === 0) { setImportError(t('rm_no_valid_rows')); return; }
     setImporting(true);
     try {
       const res = await api.respondents.import(list);
       const fresh = await api.respondents.list();
       setRespondents((fresh.respondents || []).map(mapRow));
-      setImportResult(`${res.imported} respondente(s) importado(s) com sucesso.`);
+      setImportResult(t('rm_import_success',{n:res.imported}));
       setCsvText("");
-    } catch (e) { setImportError(e.message || "Erro ao importar."); }
+    } catch (e) { setImportError(e.message || t('rm_import_error')); }
     setImporting(false);
   };
 
@@ -1302,11 +1303,11 @@ function RespondentManager() {
 
   const handleExportCSV = () => {
     const GLAB = { gestores:"Gestores", fornecedores:"Fornecedores", subordinados:"Subordinados" };
-    const rows = [["Nome","E-mail","Grupo","Departamento","Cargo","Status","Consentimento LGPD"]];
+    const rows = [[t('col_name'),t('col_email'),t('col_group'),t('col_department'),t('col_role'),t('col_status'),t('col_consent_lgpd')]];
     filtered.forEach(r => rows.push([
       r.name, r.email === "—" ? "" : r.email, GLAB[r.group] || r.group,
       r.department === "—" ? "" : r.department, r.role,
-      r.consent ? "Ativo" : "Pendente", r.consent ? "Coletado" : "Pendente",
+      r.consent ? t('status_ativo') : t('status_pendente'), r.consent ? t('rm_collected') : t('status_pendente'),
     ]));
     downloadCSV(`respondentes-${new Date().toISOString().slice(0,10)}.csv`, rows);
   };
@@ -1328,7 +1329,7 @@ function RespondentManager() {
         }));
         if (alive) { setRespondents(mapped); setLoading(false); }
       } catch (e) {
-        if (alive) { setError(e.message || "Erro ao carregar respondentes."); setLoading(false); }
+        if (alive) { setError(e.message || t('rm_load_error')); setLoading(false); }
       }
     })();
     return () => { alive = false; };
@@ -1343,7 +1344,7 @@ function RespondentManager() {
 
   const handleConsentRequest = () => {
     const emails = respondents.filter(r => !r.consent && r.email && r.email !== "—" && r.email.includes("@")).map(r => r.email);
-    if (emails.length === 0) { alert("Nenhum respondente pendente possui e-mail cadastrado para enviar a solicitação."); return; }
+    if (emails.length === 0) { alert(t('rm_no_pending_email')); return; }
     const subject = "Solicitação de consentimento (LGPD) — RGIS Brasil";
     const body = `Olá,\n\nPara participar das nossas pesquisas internas de avaliação, precisamos do seu consentimento para o tratamento dos seus dados, conforme a LGPD (Lei nº 13.709/2018).\n\nPor favor, responda este e-mail confirmando que você concorda em participar, ou entre em contato com o RH em caso de dúvidas.\n\nObrigado.`;
     window.location.href = `mailto:?bcc=${encodeURIComponent(emails.join(","))}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -1357,79 +1358,79 @@ function RespondentManager() {
 
   const pending = respondents.filter(r => !r.consent).length;
 
-  if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />Carregando respondentes...</div>;
+  if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('rm_loading')}</div>;
   if (error)   return <div className="p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Respondentes</h1>
-          <p className="text-sm text-slate-500 mt-1">Gerencie participantes e consentimentos LGPD por grupo.</p>
+          <h1 className="text-2xl font-bold text-slate-800">{t('nav_respondents')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('rm_subtitle')}</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={handleExportCSV} disabled={filtered.length===0} title="Baixar a lista atual em CSV" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
-            <Download size={14} />Exportar CSV
+          <button onClick={handleExportCSV} disabled={filtered.length===0} title={t('rm_export_csv_title')} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+            <Download size={14} />{t('common_export_csv')}
           </button>
           <button onClick={() => { setShowImport(s => !s); setImportError(""); setImportResult(""); }} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
-            <Download size={14} />Importar CSV
+            <Download size={14} />{t('rm_import_csv')}
           </button>
           <button onClick={() => { setShowForm(s => !s); setFormError(""); }} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}>
-            <Plus size={14} />Adicionar
+            <Plus size={14} />{t('rm_add')}
           </button>
         </div>
       </div>
 
       {showForm && (
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm mb-5">
-          <h3 className="font-semibold text-slate-800 text-sm mb-4">Novo Respondente</h3>
+          <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('rm_new_respondent')}</h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">Nome *</label>
-              <input value={fName} onChange={e=>setFName(e.target.value)} placeholder="Nome completo" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('rm_name_label')}</label>
+              <input value={fName} onChange={e=>setFName(e.target.value)} placeholder={t('rm_name_ph')} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">E-mail</label>
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('rm_email_label')}</label>
               <input value={fEmail} onChange={e=>setFEmail(e.target.value)} placeholder="email@empresa.com" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">Grupo</label>
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('rm_group_label')}</label>
               <select value={fGroup} onChange={e=>setFGroup(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white">
-                <option value="gestores">Gestores</option>
-                <option value="fornecedores">Fornecedores</option>
-                <option value="subordinados">Subordinados</option>
+                <option value="gestores">{t('group_gestores')}</option>
+                <option value="fornecedores">{t('group_fornecedores')}</option>
+                <option value="subordinados">{t('group_subordinados')}</option>
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">Departamento</label>
-              <input value={fDept} onChange={e=>setFDept(e.target.value)} placeholder="Ex: Vendas" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('rm_department')}</label>
+              <input value={fDept} onChange={e=>setFDept(e.target.value)} placeholder={t('rm_dept_ph')} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
             </div>
             <div className="col-span-2">
-              <label className="text-xs font-medium text-slate-600 block mb-1">Cargo</label>
-              <input value={fRole} onChange={e=>setFRole(e.target.value)} placeholder="Ex: Analista de Vendas" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('rm_role')}</label>
+              <input value={fRole} onChange={e=>setFRole(e.target.value)} placeholder={t('rm_role_ph')} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
             </div>
           </div>
           {formError && <div className="mt-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm flex items-center gap-2"><AlertTriangle size={14} />{formError}</div>}
           <div className="flex gap-2 mt-4">
             <button onClick={handleAdd} disabled={saving} className="px-4 py-2.5 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-60 flex items-center gap-2" style={{ background:GRAD }}>
-              {saving ? <><Loader2 size={14} className="animate-spin" />Salvando...</> : <><Plus size={14} />Adicionar respondente</>}
+              {saving ? <><Loader2 size={14} className="animate-spin" />{t('rm_saving')}</> : <><Plus size={14} />{t('rm_add_respondent')}</>}
             </button>
-            <button onClick={() => { setShowForm(false); resetForm(); }} className="px-4 py-2.5 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">Cancelar</button>
+            <button onClick={() => { setShowForm(false); resetForm(); }} className="px-4 py-2.5 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">{t('common_cancel')}</button>
           </div>
-          <p className="text-xs text-slate-400 mt-3">O consentimento LGPD é registrado à parte — novos respondentes entram como "Pendente".</p>
+          <p className="text-xs text-slate-400 mt-3">{t('rm_consent_note')}</p>
         </div>
       )}
 
       {showImport && (
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm mb-5">
-          <h3 className="font-semibold text-slate-800 text-sm mb-2">Importar respondentes (CSV)</h3>
-          <p className="text-xs text-slate-500 mb-3">Colunas na ordem: <strong>Nome, E-mail, Grupo, Departamento, Cargo</strong>. Separador vírgula ou ponto-e-vírgula. Grupo aceita: gestores, fornecedores, subordinados. Uma linha de cabeçalho é detectada e ignorada automaticamente.</p>
+          <h3 className="font-semibold text-slate-800 text-sm mb-2">{t('rm_import_title')}</h3>
+          <p className="text-xs text-slate-500 mb-3">{t('rm_import_instructions')}</p>
           <div className="flex items-center gap-3 mb-3">
             <label className="text-xs font-medium text-slate-600 px-3 py-2 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 inline-flex items-center gap-2">
-              <Download size={13} />Selecionar arquivo .csv
+              <Download size={13} />{t('rm_select_csv')}
               <input type="file" accept=".csv,text/csv" onChange={onCsvFile} className="hidden" />
             </label>
-            <span className="text-xs text-slate-400">ou cole o conteúdo abaixo</span>
+            <span className="text-xs text-slate-400">{t('rm_or_paste')}</span>
           </div>
           <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={6}
             placeholder={"Nome,E-mail,Grupo,Departamento,Cargo\nJoão Silva,joao@rgis.com,gestores,Vendas,Gerente\nMaria Souza,maria@rgis.com,subordinados,RH,Analista"}
@@ -1438,9 +1439,9 @@ function RespondentManager() {
           {importResult && <div className="mt-3 bg-green-50 border border-green-200 text-green-700 rounded-xl px-3 py-2 text-sm flex items-center gap-2"><CheckCircle size={14} />{importResult}</div>}
           <div className="flex gap-2 mt-4">
             <button onClick={handleImport} disabled={importing} className="px-4 py-2.5 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-60 flex items-center gap-2" style={{ background:GRAD }}>
-              {importing ? <><Loader2 size={14} className="animate-spin" />Importando...</> : <><Download size={14} />Importar</>}
+              {importing ? <><Loader2 size={14} className="animate-spin" />{t('rm_importing')}</> : <><Download size={14} />{t('rm_import_btn')}</>}
             </button>
-            <button onClick={() => { setShowImport(false); setCsvText(""); setImportError(""); setImportResult(""); }} className="px-4 py-2.5 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">Fechar</button>
+            <button onClick={() => { setShowImport(false); setCsvText(""); setImportError(""); setImportResult(""); }} className="px-4 py-2.5 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">{t('common_close')}</button>
           </div>
         </div>
       )}
@@ -1449,21 +1450,21 @@ function RespondentManager() {
         <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl mb-5">
           <AlertTriangle size={18} className="text-amber-500 flex-shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-amber-800">Consentimento pendente para {pending} respondente{pending>1?"s":""}</p>
-            <p className="text-xs text-amber-700 mt-0.5">Não é possível enviar pesquisas para respondentes sem consentimento LGPD registrado.</p>
+            <p className="text-sm font-semibold text-amber-800">{t('rm_pending_consent',{n:pending})}</p>
+            <p className="text-xs text-amber-700 mt-0.5">{t('rm_pending_note')}</p>
           </div>
-          <button onClick={handleConsentRequest} title="Abrir e-mail para solicitar consentimento aos pendentes" className="ml-auto text-xs font-semibold text-amber-700 border border-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-100">
-            Enviar solicitação
+          <button onClick={handleConsentRequest} title={t('rm_send_request_title')} className="ml-auto text-xs font-semibold text-amber-700 border border-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-100">
+            {t('rm_send_request')}
           </button>
         </div>
       )}
 
       <div className="flex gap-2 mb-5">
         {[
-          { id:"todos",        label:"Todos",        Icon:Users      },
-          { id:"gestores",     label:"Gestores",     Icon:UserCheck  },
-          { id:"fornecedores", label:"Fornecedores", Icon:Building2  },
-          { id:"subordinados", label:"Subordinados", Icon:Users      },
+          { id:"todos", label:t('common_all'), Icon:Users },
+          { id:"gestores", label:t('group_gestores'), Icon:UserCheck },
+          { id:"fornecedores", label:t('group_fornecedores'), Icon:Building2 },
+          { id:"subordinados", label:t('group_subordinados'), Icon:Users },
         ].map(({ id, label, Icon }) => (
           <button key={id} onClick={() => setActiveGroup(id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all border ${activeGroup===id?"border-purple-300 bg-purple-50 text-purple-700":"border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
@@ -1478,14 +1479,14 @@ function RespondentManager() {
       <div className="relative mb-4 max-w-xs">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
         <input className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:border-purple-400"
-          placeholder="Buscar por nome ou e-mail..." value={search} onChange={e => setSearch(e.target.value)} />
+          placeholder={t('rm_search_ph')} value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <table className="w-full">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100">
-              {["Nome","E-mail","Grupo","Departamento","Status","Consentimento LGPD","Ações"].map(h => (
+              {[t('col_name'),t('col_email'),t('col_group'),t('col_department'),t('col_status'),t('col_consent_lgpd'),t('col_actions')].map(h => (
                 <th key={h} className="text-left text-xs font-semibold text-slate-500 px-4 py-3">{h}</th>
               ))}
             </tr>
@@ -1510,17 +1511,17 @@ function RespondentManager() {
                 <td className="px-4 py-3.5"><Badge status={r.status} /></td>
                 <td className="px-4 py-3.5">
                   {r.consent
-                    ? <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full"><Shield size={10} />Coletado</span>
-                    : <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full"><AlertTriangle size={10} />Pendente</span>
+                    ? <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full"><Shield size={10} />{t('rm_collected')}</span>
+                    : <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full"><AlertTriangle size={10} />{t('status_pendente')}</span>
                   }
                 </td>
                 <td className="px-4 py-3.5">
                   <div className="flex items-center gap-1">
                     {!r.consent && (
-                      <button onClick={() => handleConsent(r)} title="Registrar consentimento LGPD"
+                      <button onClick={() => handleConsent(r)} title={t('rm_register_consent')}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 transition-colors"><Shield size={13} /></button>
                     )}
-                    <button onClick={() => handleAnonymize(r)} title="Anonimizar dados (LGPD Art. 18)"
+                    <button onClick={() => handleAnonymize(r)} title={t('rm_anonymize_title')}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 size={13} /></button>
                   </div>
                 </td>
@@ -3216,6 +3217,7 @@ function TemplatesLibrary({ onUseTemplate }) {
 
 // ─── ADVANCED REPORTS ──────────────────────────────────────────────────────────
 function AdvancedReports() {
+  const { t } = useLang();
   const [view, setView]               = useState("comparativo"); // comparativo | participacao
   const [surveys, setSurveys]         = useState([]);
   const [reports, setReports]         = useState({});            // surveyId -> { nps, completion, responses }
@@ -3241,7 +3243,7 @@ function AdvancedReports() {
         const map = {};
         results.forEach(x => { if (x) map[x.id] = { nps:(x.r.overallNPS ? x.r.overallNPS.nps : null), completion:x.r.completionRate, responses:x.r.survey?.totalResponses }; });
         setReports(map);
-      } catch (e) { setError(e.message || "Erro ao carregar relatórios."); }
+      } catch (e) { setError(e.message || t('ar_load_error')); }
       setLoading(false);
     })();
   }, []);
@@ -3257,7 +3259,7 @@ function AdvancedReports() {
   const totalResp  = respondents.length;
   const consented  = respondents.filter(r => r.consent_given).length;
   const consentPct = totalResp ? Math.round(consented/totalResp*100) : 0;
-  const GROUPS = [["gestores","Gestores"],["fornecedores","Fornecedores"],["subordinados","Subordinados"]];
+  const GROUPS = [["gestores",t('group_gestores')],["fornecedores",t('group_fornecedores')],["subordinados",t('group_subordinados')]];
   const byGroup = GROUPS.map(([key,label]) => ({ key, label, count: respondents.filter(r => r.group_type === key).length }));
   const otherCount = respondents.filter(r => !GROUPS.some(([k]) => k === r.group_type)).length;
   const maxGroup = Math.max(1, ...byGroup.map(g => g.count), otherCount);
@@ -3270,18 +3272,18 @@ function AdvancedReports() {
   const npsColor = (n) => n==null ? "text-slate-300" : n>=50 ? "text-green-600" : n>=0 ? "text-blue-600" : "text-red-500";
 
   const exportComparativo = () => {
-    const rows = [["Pesquisa","Status","Respostas","Conclusão %","NPS"]];
+    const rows = [[t('ar_csv_survey'),t('col_status'),t('rd_responses'),t('ar_csv_completion_pct'),"NPS"]];
     compRows.forEach(r => rows.push([r.name, r.status, r.responses, r.completion==null?"":r.completion, r.nps==null?"":r.nps]));
     downloadCSV(`relatorio-comparativo-${new Date().toISOString().slice(0,10)}.csv`, rows);
   };
   const exportParticipacao = () => {
-    const rows = [["Grupo","Respondentes"]];
+    const rows = [[t('col_group'),t('ar_csv_respondents')]];
     byGroup.forEach(g => rows.push([g.label, g.count]));
-    if (otherCount) rows.push(["Outros", otherCount]);
+    if (otherCount) rows.push([t('ar_others'), otherCount]);
     rows.push(["", ""]);
-    rows.push(["Total de respondentes ativos", totalResp]);
-    rows.push(["Com consentimento LGPD", consented]);
-    rows.push(["% de consentimento", consentPct + "%"]);
+    rows.push([t('ar_total_active'), totalResp]);
+    rows.push([t('ar_with_consent'), consented]);
+    rows.push([t('ar_consent_pct_label'), consentPct + "%"]);
     downloadCSV(`relatorio-participacao-${new Date().toISOString().slice(0,10)}.csv`, rows);
   };
 
@@ -3302,16 +3304,16 @@ function AdvancedReports() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Relatórios Avançados</h1>
-          <p className="text-sm text-slate-500 mt-1">Visão consolidada das pesquisas e da participação, com proteção LGPD.</p>
+          <h1 className="text-2xl font-bold text-slate-800">{t('ar_title')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('ar_subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => (view==="comparativo" ? exportComparativo() : exportParticipacao())} disabled={loading || (view==="comparativo" ? compRows.length===0 : totalResp===0)}
-            title="Baixar este relatório em CSV" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
-            <Download size={14} />Exportar CSV
+            title={t('ar_export_csv_title')} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+            <Download size={14} />{t('common_export_csv')}
           </button>
-          <button onClick={() => window.print()} title="Abrir a janela de impressão (salve como PDF)" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
-            <FileText size={14} />Exportar PDF
+          <button onClick={() => window.print()} title={t('rd_export_pdf_title')} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+            <FileText size={14} />{t('rd_export_pdf')}
           </button>
         </div>
       </div>
@@ -3319,26 +3321,26 @@ function AdvancedReports() {
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2 mb-5"><AlertTriangle size={15} />{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />Carregando relatórios...</div>
+        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />{t('ar_loading')}</div>
       ) : (
         <>
           <div className="grid grid-cols-4 gap-4 mb-6">
-            <Kpi label="Pesquisas" value={totalSurveys} sub={`${activeSurveys} ativa${activeSurveys!==1?"s":""}`} />
-            <Kpi label="Total de respostas" value={totalResponses} color="#5B21B6" />
-            <Kpi label="NPS médio" value={avgNps==null ? "—" : avgNps} sub={npsVals.length ? `de ${npsVals.length} pesquisa(s)` : "sem dados"} />
-            <Kpi label="Conclusão média" value={avgComp==null ? "—" : `${avgComp}%`} sub={compVals.length ? `de ${compVals.length} pesquisa(s)` : "sem dados"} />
+            <Kpi label={t('nav_surveys')} value={totalSurveys} sub={t('ar_n_active',{n:activeSurveys})} />
+            <Kpi label={t('ar_total_responses')} value={totalResponses} color="#5B21B6" />
+            <Kpi label={t('ar_avg_nps')} value={avgNps==null ? "—" : avgNps} sub={npsVals.length ? t('ar_of_n_surveys',{n:npsVals.length}) : t('ar_no_data')} />
+            <Kpi label={t('ar_avg_completion')} value={avgComp==null ? "—" : `${avgComp}%`} sub={compVals.length ? t('ar_of_n_surveys',{n:compVals.length}) : t('ar_no_data')} />
           </div>
 
           <div className="flex gap-2 mb-5">
-            <Tab id="comparativo">Comparativo de pesquisas</Tab>
-            <Tab id="participacao">Participação &amp; LGPD</Tab>
+            <Tab id="comparativo">{t('ar_tab_comparison')}</Tab>
+            <Tab id="participacao">{t('ar_tab_participation')}</Tab>
           </div>
 
           {view === "comparativo" && (
             <>
               {chartData.length > 0 && (
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-6">
-                  <h3 className="font-semibold text-slate-800 text-sm mb-4">Respostas por pesquisa</h3>
+                  <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('ar_responses_by_survey')}</h3>
                   <div style={{ width:"100%", height:280 }}>
                     <ResponsiveContainer>
                       <BarChart data={chartData} margin={{ top:5, right:10, left:-10, bottom:5 }}>
@@ -3346,7 +3348,7 @@ function AdvancedReports() {
                         <XAxis dataKey="name" tick={{ fontSize:11, fill:"#94A3B8" }} interval={0} angle={-15} textAnchor="end" height={50} />
                         <YAxis tick={{ fontSize:11, fill:"#94A3B8" }} allowDecimals={false} />
                         <Tooltip />
-                        <Bar dataKey="Respostas" fill="#7C3AED" radius={[6,6,0,0]} />
+                        <Bar dataKey="Respostas" name={t('rd_responses')} fill="#7C3AED" radius={[6,6,0,0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -3354,15 +3356,15 @@ function AdvancedReports() {
               )}
 
               <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-semibold text-slate-800 text-sm">Comparativo por pesquisa</h3></div>
+                <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-semibold text-slate-800 text-sm">{t('ar_comparison_title')}</h3></div>
                 {compRows.length === 0 ? (
-                  <div className="px-6 py-8 text-center text-sm text-slate-400">Nenhuma pesquisa cadastrada ainda.</div>
+                  <div className="px-6 py-8 text-center text-sm text-slate-400">{t('ar_no_surveys')}</div>
                 ) : (
                   <table className="w-full">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-100">
-                        {["Pesquisa","Status","Respostas","Conclusão","NPS"].map(h => (
-                          <th key={h} className={`text-xs font-semibold text-slate-500 px-5 py-3 ${h==="Pesquisa"?"text-left":"text-center"}`}>{h}</th>
+                        {[t('ar_csv_survey'),t('col_status'),t('rd_responses'),t('sl_completion'),"NPS"].map((h,hi) => (
+                          <th key={h} className={`text-xs font-semibold text-slate-500 px-5 py-3 ${hi===0?"text-left":"text-center"}`}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -3387,9 +3389,9 @@ function AdvancedReports() {
             <>
               <div className="grid grid-cols-3 gap-5 mb-6">
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 col-span-2">
-                  <h3 className="font-semibold text-slate-800 text-sm mb-4">Respondentes por grupo</h3>
+                  <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('ar_respondents_by_group')}</h3>
                   {totalResp === 0 ? (
-                    <p className="text-sm text-slate-400">Nenhum respondente ativo cadastrado.</p>
+                    <p className="text-sm text-slate-400">{t('ar_no_active_resp')}</p>
                   ) : (
                     <div className="space-y-3">
                       {byGroup.map(g => (
@@ -3400,7 +3402,7 @@ function AdvancedReports() {
                       ))}
                       {otherCount > 0 && (
                         <div>
-                          <div className="flex justify-between text-xs text-slate-600 mb-1"><span>Outros</span><span className="font-semibold">{otherCount}</span></div>
+                          <div className="flex justify-between text-xs text-slate-600 mb-1"><span>{t('ar_others')}</span><span className="font-semibold">{otherCount}</span></div>
                           <div className="h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full bg-slate-300" style={{ width:`${Math.round(otherCount/maxGroup*100)}%` }} /></div>
                         </div>
                       )}
@@ -3408,17 +3410,17 @@ function AdvancedReports() {
                   )}
                 </div>
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-                  <div className="flex items-center gap-2 mb-3"><Shield size={16} className="text-green-600" /><h3 className="font-semibold text-slate-800 text-sm">Consentimento LGPD</h3></div>
+                  <div className="flex items-center gap-2 mb-3"><Shield size={16} className="text-green-600" /><h3 className="font-semibold text-slate-800 text-sm">{t('col_consent_lgpd')}</h3></div>
                   <div className="text-3xl font-bold text-slate-800">{consentPct}%</div>
-                  <p className="text-xs text-slate-400 mt-1 mb-3">{consented} de {totalResp} respondente(s) com consentimento registrado</p>
+                  <p className="text-xs text-slate-400 mt-1 mb-3">{t('ar_consent_count',{done:consented,total:totalResp})}</p>
                   <div className="h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${consentPct}%`, background:"linear-gradient(90deg,#059669,#10B981)" }} /></div>
-                  {consented < totalResp && <p className="text-xs text-amber-600 mt-3">{totalResp - consented} respondente(s) ainda sem consentimento. Registre em “Respondentes”.</p>}
+                  {consented < totalResp && <p className="text-xs text-amber-600 mt-3">{t('ar_consent_missing',{n:totalResp - consented})}</p>}
                 </div>
               </div>
 
               <div className="rounded-2xl p-4 border border-purple-100 flex items-center gap-2 text-xs text-purple-700" style={{ background:"linear-gradient(135deg,#f5f3ff,#ede9fe)" }}>
                 <Info size={14} />
-                Respondentes anonimizados (direito ao esquecimento) não entram nesta contagem, conforme a LGPD.
+                {t('ar_anon_note')}
               </div>
             </>
           )}
