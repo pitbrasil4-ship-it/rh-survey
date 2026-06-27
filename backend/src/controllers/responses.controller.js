@@ -10,7 +10,7 @@ function getPublic(req, res) {
     const db     = getDB();
     const survey = db.prepare("SELECT id, name, description, category, anonymous FROM surveys WHERE public_token = ? AND status = 'ativo'").get(req.params.token);
     if (!survey) return notFound(res, 'Pesquisa');
-    const questions = db.prepare('SELECT id, order_num, type, text, options FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
+    const questions = db.prepare('SELECT id, order_num, type, text, text_en, text_es, options FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
     const parsed    = questions.map(q => ({ ...q, options: q.options ? JSON.parse(q.options) : null }));
     return ok(res, { survey, questions: parsed });
   } catch (e) { return err(res, 'Erro ao carregar pesquisa', 500, e.message); }
