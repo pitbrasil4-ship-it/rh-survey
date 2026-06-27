@@ -83,9 +83,10 @@ function NpsInput({ value, onChange, tr }) {
   );
 }
 
-function ScaleInput({ options, value, onChange }) {
+function ScaleInput({ options, labels, value, onChange }) {
   // options is an array of labels; we submit the 1-based numeric position so results can average.
   const opts = (options && options.length) ? options : ['1','2','3','4','5'];
+  const lab = (labels && labels.length === opts.length) ? labels : opts;
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
       {opts.map((label, i) => {
@@ -98,7 +99,7 @@ function ScaleInput({ options, value, onChange }) {
               background: sel ? '#FEF2F2' : 'white', color: sel ? RED_DARK : '#475569' }}>
             <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:22, height:22, borderRadius:'50%', marginRight:10, fontSize:12,
               background: sel ? RED : '#F1F5F9', color: sel ? 'white' : '#64748B' }}>{num}</span>
-            {label}
+            {lab[i]}
           </button>
         );
       })}
@@ -132,8 +133,9 @@ function YesNoInput({ value, onChange, tr }) {
   return <div style={{ display:'flex', gap:10 }}>{opt('sim', tr('yes'))}{opt('nao', tr('no'))}</div>;
 }
 
-function MultipleInput({ options, value, onToggle, tr }) {
+function MultipleInput({ options, labels, value, onToggle, tr }) {
   const opts = options && options.length ? options : [];
+  const lab = (labels && labels.length === opts.length) ? labels : opts;
   const arr = Array.isArray(value) ? value : [];
   if (opts.length === 0) return <p style={{ fontSize:13, color:'#94A3B8' }}>{tr('no_options')}</p>;
   return (
@@ -146,7 +148,7 @@ function MultipleInput({ options, value, onToggle, tr }) {
               border: sel ? `2px solid ${RED}` : '1px solid #E2E8F0',
               background: sel ? '#FEF2F2' : 'white', color: sel ? RED_DARK : '#475569' }}>
             <span style={{ width:18, height:18, borderRadius:5, border: sel ? `2px solid ${RED}` : '2px solid #CBD5E1', background: sel ? RED : 'white', color:'white', fontSize:12, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{sel ? '✓' : ''}</span>
-            {label}
+            {lab[i]}
           </button>
         );
       })}
@@ -257,6 +259,7 @@ export default function PublicSurvey({ token }) {
 
       {questions.map((q, idx) => {
         const hasOpts = Array.isArray(q.options) && q.options.length > 0;
+        const optsLabels = (lang !== 'pt' && Array.isArray(q['options_'+lang]) && q['options_'+lang].length === (q.options || []).length) ? q['options_'+lang] : q.options;
         const specialized = q.type === 'nps' || q.type === 'scale' || q.type === 'rating' || q.type === 'yesno' || (q.type === 'multiple' && hasOpts);
         return (
         <Card key={q.id} style={{ marginBottom:14 }}>
@@ -265,10 +268,10 @@ export default function PublicSurvey({ token }) {
             <p style={{ margin:0, fontSize:15, fontWeight:600, color:'#1E293B', lineHeight:1.4 }}>{(lang !== 'pt' && q['text_'+lang]) ? q['text_'+lang] : q.text}</p>
           </div>
           {q.type === 'nps'      && <NpsInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
-          {q.type === 'scale'    && <ScaleInput options={q.options} value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
+          {q.type === 'scale'    && <ScaleInput options={q.options} labels={optsLabels} value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'rating'   && <RatingInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'yesno'    && <YesNoInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
-          {q.type === 'multiple' && hasOpts && <MultipleInput options={q.options} value={answers[q.id]} onToggle={opt => toggleMulti(q.id, opt)} tr={tr} />}
+          {q.type === 'multiple' && hasOpts && <MultipleInput options={q.options} labels={optsLabels} value={answers[q.id]} onToggle={opt => toggleMulti(q.id, opt)} tr={tr} />}
           {!specialized &&
             <textarea value={answers[q.id] || ''} onChange={e => setAns(q.id, e.target.value)} rows={4}
               placeholder={tr('answer_placeholder')}
