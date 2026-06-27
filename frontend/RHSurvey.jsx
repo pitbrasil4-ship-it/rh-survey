@@ -73,10 +73,12 @@ function rowsToQuestions(rows, delim) {
   const norm = s => (s == null ? "" : String(s)).trim().toLowerCase();
   const header = rows[0].map(norm);
   const looksHeader = header.some(h => h.includes("pergunta") || h.includes("tipo") || h.startsWith("op") || h.includes("texto") || h.includes("question"));
-  let pIdx = 0, tIdx = 1, oIdx = 2, start = 0;
+  let pIdx = 0, tIdx = 1, oIdx = 2, enIdx = -1, esIdx = -1, start = 0;
   if (looksHeader) {
     start = 1;
     const find = (keys, def) => { const idx = header.findIndex(h => keys.some(k => h.includes(k))); return idx >= 0 ? idx : def; };
+    enIdx = find(["(en)", "english", "inglês", "ingles", "pergunta en", "texto en"], -1);
+    esIdx = find(["(es)", "español", "espanol", "espanhol", "spanish", "pregunta", "pergunta es", "texto es"], -1);
     pIdx = find(["pergunta", "texto", "question"], 0);
     tIdx = find(["tipo", "type"], 1);
     oIdx = find(["opç", "opc", "op", "alternativa", "escolha"], 2);
@@ -86,6 +88,8 @@ function rowsToQuestions(rows, delim) {
     const cols = rows[r] || [];
     const text = (cols[pIdx] == null ? "" : String(cols[pIdx])).trim();
     if (!text) { skipped++; continue; }
+    const text_en = (enIdx >= 0 && cols[enIdx] != null) ? String(cols[enIdx]).trim() : "";
+    const text_es = (esIdx >= 0 && cols[esIdx] != null) ? String(cols[esIdx]).trim() : "";
     const mapped = mapTipoToType(cols[tIdx]);
     if (mapped.unknown) unknown++;
     let options;
@@ -95,7 +99,7 @@ function rowsToQuestions(rows, delim) {
       const arr = rawOpts.split(sep).map(o => o.trim()).filter(Boolean);
       if (arr.length) options = arr;
     }
-    out.push({ id: Date.now() + r, text, type: mapped.type, ...(options ? { options } : {}) });
+    out.push({ id: Date.now() + r, text, type: mapped.type, ...(text_en ? { text_en } : {}), ...(text_es ? { text_es } : {}), ...(options ? { options } : {}) });
   }
   return { questions: out, skipped, unknown };
 }
@@ -819,6 +823,8 @@ function SurveyBuilder({ onBack, initial }) {
   const [aiQs,      setAiQs]      = useState([]);
   const [selType,   setSelType]   = useState("nps");
   const [newQ,      setNewQ]      = useState("");
+  const [newQEn,    setNewQEn]    = useState("");
+  const [newQEs,    setNewQEs]    = useState("");
   const [anonymous, setAnonymous] = useState(true);
   const [lgpdOk,    setLgpdOk]   = useState(false);
   const [targetGroup, setTargetGroup] = useState("Gestores");
@@ -842,7 +848,7 @@ function SurveyBuilder({ onBack, initial }) {
         category,
         targetGroup: GROUP_MAP[targetGroup] || "todos",
         anonymous,
-        questions: questions.map(q => ({ type: q.type, text: q.text, options: q.options })),
+        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options })),
         lgpdBasis: "consentimento",
       });
       const id = result && result.survey && result.survey.id;
@@ -856,8 +862,8 @@ function SurveyBuilder({ onBack, initial }) {
 
   const addQ = () => {
     if (!newQ.trim()) return;
-    setQuestions(p => [...p,{ id:Date.now(), text:newQ, type:selType }]);
-    setNewQ("");
+    setQuestions(p => [...p,{ id:Date.now(), text:newQ, text_en:newQEn.trim(), text_es:newQEs.trim(), type:selType }]);
+    setNewQ(""); setNewQEn(""); setNewQEs("");
   };
 
   const generateAI = async () => {
@@ -893,6 +899,8 @@ function SurveyBuilder({ onBack, initial }) {
         arr.forEach((q, i) => {
           const t = (q.text ?? q.pergunta ?? q.texto ?? "").toString().trim();
           if (!t) { skipped++; return; }
+          const t_en = (q.text_en ?? q.en ?? q.english ?? "").toString().trim();
+          const t_es = (q.text_es ?? q.es ?? q["español"] ?? q.espanol ?? "").toString().trim();
           const m = mapTipoToType(q.type ?? q.tipo ?? "");
           if (m.unknown) unknown++;
           let options;
@@ -901,7 +909,7 @@ function SurveyBuilder({ onBack, initial }) {
             if (Array.isArray(raw)) options = raw.map(o => String(o).trim()).filter(Boolean);
             else if (typeof raw === "string" && raw.trim()) options = raw.split(/[;|,]/).map(o => o.trim()).filter(Boolean);
           }
-          qs.push({ id: Date.now() + i, text: t, type: m.type, ...(options && options.length ? { options } : {}) });
+          qs.push({ id: Date.now() + i, text: t, type: m.type, ...(t_en ? { text_en: t_en } : {}), ...(t_es ? { text_es: t_es } : {}), ...(options && options.length ? { options } : {}) });
         });
         result = { questions: qs, skipped, unknown };
       } else if (name.endsWith(".csv") || name.endsWith(".txt")) {
@@ -1037,8 +1045,16 @@ function SurveyBuilder({ onBack, initial }) {
                   </button>
                 ))}
               </div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Pergunta (Português)</label>
               <textarea className="w-full border border-slate-200 rounded-xl px-3 py-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-purple-400 resize-none"
-                placeholder="Digite o texto da pergunta..." rows={3} value={newQ} onChange={e => setNewQ(e.target.value)} />
+                placeholder="Digite o texto da pergunta..." rows={2} value={newQ} onChange={e => setNewQ(e.target.value)} />
+              <label className="block text-xs font-semibold text-slate-600 mt-3 mb-1">Pergunta (English) <span className="font-normal text-slate-400">— opcional</span></label>
+              <textarea className="w-full border border-slate-200 rounded-xl px-3 py-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-purple-400 resize-none"
+                placeholder="Question text in English..." rows={2} value={newQEn} onChange={e => setNewQEn(e.target.value)} />
+              <label className="block text-xs font-semibold text-slate-600 mt-3 mb-1">Pregunta (Español) <span className="font-normal text-slate-400">— opcional</span></label>
+              <textarea className="w-full border border-slate-200 rounded-xl px-3 py-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-purple-400 resize-none"
+                placeholder="Texto de la pregunta en español..." rows={2} value={newQEs} onChange={e => setNewQEs(e.target.value)} />
+              <p className="text-xs text-slate-400 mt-2">Deixe EN/ES em branco para usar o português em todos os idiomas.</p>
               <button onClick={addQ} disabled={!newQ.trim()}
                 className="w-full mt-3 py-2.5 text-sm font-medium text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
                 style={{ background:GRAD }}>
