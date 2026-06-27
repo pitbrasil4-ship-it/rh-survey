@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "./src/api.js";
+import { LANGS, t as translate, getStoredLang, storeLang, LangContext, useLang } from "./src/i18n.js";
 import {
   LayoutDashboard, ClipboardList, Users, BarChart3, Settings, Plus, Search,
   Bell, TrendingUp, CheckCircle, Clock, Send, Sparkles, Download, Eye, Edit,
@@ -289,6 +290,7 @@ function LGPDBanner({ onAccept }) {
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 function Sidebar({ page, setPage }) {
+  const { t } = useLang();
   const [menuOpen, setMenuOpen] = useState(false);
   let me = {};
   try { me = JSON.parse(localStorage.getItem("rh_user") || "{}"); } catch {}
@@ -335,8 +337,8 @@ function Sidebar({ page, setPage }) {
             <button key={id} onClick={() => setPage(id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${active ? "text-white" : "text-slate-600 hover:bg-slate-50 hover:text-slate-800"}`}
               style={active ? { background: isSec ? GRAD_GREEN : GRAD } : {}}>
-              <Icon size={17} />{label}
-              {isNew && !active && <span className="ml-auto text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-semibold">Novo</span>}
+              <Icon size={17} />{t('nav_'+id)}
+              {isNew && !active && <span className="ml-auto text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-semibold">{t('badge_new')}</span>}
             </button>
           );
         })}
@@ -344,7 +346,7 @@ function Sidebar({ page, setPage }) {
       <div className="px-3 py-3 border-t border-slate-100 space-y-2">
         <div className="flex items-center gap-2 px-2 py-1.5 bg-green-50 rounded-xl border border-green-100">
           <Shield size={12} className="text-green-600" />
-          <span className="text-xs text-green-700 font-medium">Ambiente seguro · TLS 1.3</span>
+          <span className="text-xs text-green-700 font-medium">{t('system_secure')}</span>
         </div>
         <div className="relative">
           {menuOpen && (
@@ -353,15 +355,15 @@ function Sidebar({ page, setPage }) {
               <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-20">
                 <button onClick={() => { setMenuOpen(false); setPage("settings"); }}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left">
-                  <Settings size={15} className="text-slate-400" />Configurações
+                  <Settings size={15} className="text-slate-400" />{t('nav_settings')}
                 </button>
                 <button onClick={() => { setMenuOpen(false); setPage("settings"); }}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left border-t border-slate-50">
-                  <Key size={15} className="text-slate-400" />Trocar senha
+                  <Key size={15} className="text-slate-400" />{t('change_password')}
                 </button>
                 <button onClick={handleLogout}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 text-left border-t border-slate-50">
-                  <LogOut size={15} />Sair
+                  <LogOut size={15} />{t('logout')}
                 </button>
               </div>
             </>
@@ -383,6 +385,7 @@ function Sidebar({ page, setPage }) {
 
 // ─── TOPBAR ────────────────────────────────────────────────────────────────────
 function TopBar({ title, unreadCount, onBell }) {
+  const { t, lang, setLang } = useLang();
   return (
     <div className="bg-white border-b border-slate-100 px-8 py-3.5 flex items-center justify-between sticky top-0 z-10">
       <div className="text-sm text-slate-400">
@@ -390,9 +393,17 @@ function TopBar({ title, unreadCount, onBell }) {
         <span className="text-slate-700 font-medium">{title}</span>
       </div>
       <div className="flex items-center gap-3">
+        <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
+          {LANGS.map(l => (
+            <button key={l.code} onClick={() => setLang(l.code)} title={l.label}
+              className={`px-2 py-1 rounded-md text-xs font-bold transition-colors ${lang===l.code ? "bg-white text-purple-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+              {l.short}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-100 rounded-full">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-xs text-green-700 font-medium">Sistema seguro</span>
+          <span className="text-xs text-green-700 font-medium">{t('system_secure')}</span>
         </div>
         <button onClick={onBell} className="relative p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
           <Bell size={17} />
@@ -3497,6 +3508,8 @@ export default function RHSurvey() {
   const [tmpl,     setTmpl]    = useState(null);
   const [lgpdOk,       setLgpdOk]       = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [lang,     setLang]    = useState(getStoredLang);
+  const changeLang = (l) => { setLang(l); storeLang(l); };
   const unreadCount = notifications.filter(n => !n.read).length;
 
   useEffect(() => {
@@ -3535,13 +3548,15 @@ export default function RHSurvey() {
   };
 
   return (
+    <LangContext.Provider value={{ lang, setLang: changeLang, t: (k, v) => translate(lang, k, v) }}>
     <div style={{ display:"flex", height:"100vh", overflow:"hidden", background:"#F8FAFC", fontFamily:"system-ui,-apple-system,sans-serif" }}>
       <Sidebar page={creating?"surveys":page} setPage={handleNav} />
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-        <TopBar title={creating?"Nova Pesquisa":PAGE_LABELS[page]} unreadCount={unreadCount} onBell={() => handleNav("notificacoes")} />
+        <TopBar title={creating ? translate(lang,"new_survey") : translate(lang,"title_"+page)} unreadCount={unreadCount} onBell={() => handleNav("notificacoes")} />
         <main style={{ flex:1, overflowY:"auto" }}>{renderContent()}</main>
       </div>
       {!lgpdOk && <LGPDBanner onAccept={() => setLgpdOk(true)} />}
     </div>
+    </LangContext.Provider>
   );
 }
