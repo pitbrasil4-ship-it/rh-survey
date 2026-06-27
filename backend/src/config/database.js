@@ -116,6 +116,9 @@ function initSchema() {
   // Migração idempotente: texto das perguntas em outros idiomas (EN/ES).
   try { db.exec("ALTER TABLE questions ADD COLUMN text_en TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE questions ADD COLUMN text_es TEXT"); } catch (e) {}
+  // Migração idempotente: opções de resposta traduzidas (EN/ES).
+  try { db.exec("ALTER TABLE questions ADD COLUMN options_en TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE questions ADD COLUMN options_es TEXT"); } catch (e) {}
 }
 
 module.exports = { getDB };
