@@ -231,20 +231,24 @@ const TYPE_COLORS = {
 
 // ─── ATOMS ─────────────────────────────────────────────────────────────────────
 function Badge({ status }) {
-  const c = STATUS_CFG[status] || STATUS_CFG.rascunho;
+  const { t } = useLang();
+  const key = STATUS_CFG[status] ? status : "rascunho";
+  const c = STATUS_CFG[key];
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />{c.label}
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />{t("status_"+key)}
     </span>
   );
 }
 
 function GroupBadge({ group }) {
-  const c = GROUP_CFG[group] || GROUP_CFG.subordinados;
+  const { t } = useLang();
+  const key = GROUP_CFG[group] ? group : "subordinados";
+  const c = GROUP_CFG[key];
   const Icon = c.Icon;
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${c.color}`}>
-      <Icon size={11} />{c.label}
+      <Icon size={11} />{t("group_"+key)}
     </span>
   );
 }
@@ -641,6 +645,7 @@ function Dashboard({ setPage }) {
 
 // ─── SURVEY LIST ───────────────────────────────────────────────────────────────
 function SurveyList({ onCreateNew, onView }) {
+  const { t } = useLang();
   const [search,  setSearch]  = useState("");
   const [filter,  setFilter]  = useState("todos");
   const [surveys, setSurveys] = useState([]);
@@ -671,7 +676,7 @@ function SurveyList({ onCreateNew, onView }) {
         }));
         if (alive) { setSurveys(mapped); setLoading(false); }
       } catch (e) {
-        if (alive) { setError(e.message || "Erro ao carregar pesquisas."); setLoading(false); }
+        if (alive) { setError(e.message || t('sl_load_error')); setLoading(false); }
       }
     })();
     return () => { alive = false; };
@@ -684,12 +689,12 @@ function SurveyList({ onCreateNew, onView }) {
   });
 
   const handleDelete = async (s) => {
-    if (!window.confirm(`Excluir a pesquisa "${s.name}"? Esta ação não pode ser desfeita.`)) return;
+    if (!window.confirm(t('sl_delete_confirm',{name:s.name}))) return;
     try {
       await api.del(`/surveys/${s.id}`);
       setSurveys(prev => prev.filter(x => x.id !== s.id));
     } catch (e) {
-      alert(e.message || "Erro ao excluir a pesquisa.");
+      alert(e.message || t('sl_delete_error'));
     }
   };
 
@@ -723,18 +728,18 @@ function SurveyList({ onCreateNew, onView }) {
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
   };
 
-  if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />Carregando pesquisas...</div>;
+  if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('sl_loading')}</div>;
   if (error)   return <div className="p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Pesquisas</h1>
-          <p className="text-sm text-slate-500 mt-1">Gerencie questionários com controle de privacidade e LGPD.</p>
+          <h1 className="text-2xl font-bold text-slate-800">{t('nav_surveys')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('sl_subtitle')}</p>
         </div>
         <button onClick={onCreateNew} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-medium hover:opacity-90" style={{ background:GRAD }}>
-          <Plus size={15} />Nova Pesquisa
+          <Plus size={15} />{t('new_survey')}
         </button>
       </div>
 
@@ -742,13 +747,13 @@ function SurveyList({ onCreateNew, onView }) {
         <div className="relative flex-1 max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:border-purple-400"
-            placeholder="Buscar pesquisa..." value={search} onChange={e => setSearch(e.target.value)} />
+            placeholder={t('sl_search')} value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         {["todos","ativo","encerrado","rascunho"].map(f => (
           <button key={f} onClick={() => setFilter(f)}
             className={`px-3.5 py-2 rounded-xl text-sm font-medium transition-all ${filter===f?"text-white":"bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}`}
             style={filter===f?{ background:GRAD }:{}}>
-            {f==="todos"?"Todos":f.charAt(0).toUpperCase()+f.slice(1)}
+            {f==="todos"?t('common_all'):t('status_'+f)}
           </button>
         ))}
       </div>
@@ -772,20 +777,20 @@ function SurveyList({ onCreateNew, onView }) {
                       <div className="flex items-center gap-2 mt-1.5">
                         <Badge status={s.status} /><GroupBadge group={s.type} />
                         <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{s.category}</span>
-                        {s.anonymous && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1"><EyeOff size={10} />Anônima</span>}
+                        {s.anonymous && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1"><EyeOff size={10} />{t('sl_anon')}</span>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <button onClick={() => onView && onView(s)} title="Ver resultados"
+                      <button onClick={() => onView && onView(s)} title={t('sl_view_results')}
                         className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><Eye size={14} /></button>
-                      <button onClick={() => handleDelete(s)} title="Excluir pesquisa"
+                      <button onClick={() => handleDelete(s)} title={t('sl_delete_survey')}
                         className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 size={14} /></button>
                     </div>
                   </div>
                   <div className="flex items-center gap-6 mt-4">
                     <div className="flex-1">
                       <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-                        <span>Progresso</span>
+                        <span>{t('sl_progress')}</span>
                         <span className="font-medium text-slate-700">{s.responses}/{s.total}</span>
                       </div>
                       <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -800,19 +805,19 @@ function SurveyList({ onCreateNew, onView }) {
                     )}
                     <div className="text-center">
                       <div className="text-lg font-bold text-slate-700">{pct}%</div>
-                      <div className="text-xs text-slate-400">Conclusão</div>
+                      <div className="text-xs text-slate-400">{t('sl_completion')}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 mt-4 pt-3.5 border-t border-slate-50">
                     <span className="text-xs text-slate-400 flex items-center gap-1"><Clock size={11} />{s.created}</span>
                     <div className="flex gap-3 ml-auto">
-                      <button onClick={() => handleEmail(s)} disabled={!s.token || s.status!=="ativo"} title={s.status!=="ativo" ? "Publique a pesquisa para enviar" : "Abrir e-mail com o link da pesquisa"} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"><Mail size={11} />E-mail</button>
+                      <button onClick={() => handleEmail(s)} disabled={!s.token || s.status!=="ativo"} title={s.status!=="ativo" ? t('sl_publish_send') : t('sl_open_email')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"><Mail size={11} />{t('sl_email_btn')}</button>
                       <button onClick={() => handleCopyLink(s)} disabled={!s.token || s.status!=="ativo"}
-                        title={s.status!=="ativo" ? "Publique a pesquisa para gerar o link" : "Copiar link público de resposta"}
+                        title={s.status!=="ativo" ? t('sl_publish_link') : t('sl_copy_link_title')}
                         className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed">
-                        {copiedId===s.id ? <><CheckCircle size={11} />Copiado!</> : <><Link2 size={11} />Copiar link</>}
+                        {copiedId===s.id ? <><CheckCircle size={11} />{t('sl_copied')}</> : <><Link2 size={11} />{t('sl_copy_link')}</>}
                       </button>
-                      <button onClick={() => handleWhatsApp(s)} disabled={!s.token || s.status!=="ativo"} title={s.status!=="ativo" ? "Publique a pesquisa para enviar" : "Abrir WhatsApp com o link da pesquisa"} className="flex items-center gap-1 text-xs text-slate-500 hover:text-green-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"><Send size={11} />WhatsApp</button>
+                      <button onClick={() => handleWhatsApp(s)} disabled={!s.token || s.status!=="ativo"} title={s.status!=="ativo" ? t('sl_publish_send') : t('sl_open_whatsapp')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-green-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"><Send size={11} />WhatsApp</button>
                     </div>
                   </div>
                 </div>
@@ -1885,18 +1890,19 @@ function CycleDetail({ cycleId, onBack }) {
 
 // ─── RESULTS ───────────────────────────────────────────────────────────────────
 function QuestionResult({ q }) {
+  const { t } = useLang();
   // NPS
   if (q.type === "nps") {
     const parts = [
-      { label:"Promotores", pct:q.promoters||0, color:"#10B981" },
-      { label:"Neutros",    pct:q.passives||0,  color:"#94A3B8" },
-      { label:"Detratores", pct:q.detractors||0,color:"#EF4444" },
+      { label:t('qr_promoters'), pct:q.promoters||0, color:"#10B981" },
+      { label:t('qr_passives'), pct:q.passives||0, color:"#94A3B8" },
+      { label:t('qr_detractors'), pct:q.detractors||0, color:"#EF4444" },
     ];
     return (
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-start justify-between mb-4">
           <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
-          <span className="text-xs text-slate-400 whitespace-nowrap">{q.responseCount} resposta(s)</span>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
         </div>
         <div className="flex items-center gap-5">
           <div className="text-center">
@@ -1923,15 +1929,15 @@ function QuestionResult({ q }) {
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-start justify-between mb-4">
           <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
-          <span className="text-xs text-slate-400 whitespace-nowrap">{q.responseCount} resposta(s)</span>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
         </div>
         <div className="flex items-center gap-5">
           <div className="text-center">
             <div className="text-3xl font-bold" style={{ color:"#5B21B6" }}>{q.average ?? "—"}</div>
-            <div className="text-xs text-slate-400 mt-0.5">média</div>
+            <div className="text-xs text-slate-400 mt-0.5">{t('qr_average')}</div>
           </div>
           <div className="flex-1 space-y-1.5">
-            {dist.length === 0 ? <span className="text-xs text-slate-400">Sem respostas.</span> : dist.map((d,i) => (
+            {dist.length === 0 ? <span className="text-xs text-slate-400">{t('qr_no_answers')}</span> : dist.map((d,i) => (
               <div key={i} className="flex items-center gap-3">
                 <span className="text-xs text-slate-500 w-8">{d.value}</span>
                 <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${d.pct}%`,background:"#5B21B6" }} /></div>
@@ -1949,17 +1955,17 @@ function QuestionResult({ q }) {
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-start justify-between mb-4">
           <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
-          <span className="text-xs text-slate-400 whitespace-nowrap">{(q.yes||0)+(q.no||0)} resposta(s)</span>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:(q.yes||0)+(q.no||0)})}</span>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex-1">
             <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-500 w-12">Sim</span>
+              <span className="text-xs text-slate-500 w-12">{t('yes')}</span>
               <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${q.yesPct||0}%`,background:"#10B981" }} /></div>
               <span className="text-xs font-semibold text-slate-700 w-9 text-right">{q.yesPct||0}%</span>
             </div>
             <div className="flex items-center gap-3 mt-2">
-              <span className="text-xs text-slate-500 w-12">Não</span>
+              <span className="text-xs text-slate-500 w-12">{t('no')}</span>
               <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${100-(q.yesPct||0)}%`,background:"#EF4444" }} /></div>
               <span className="text-xs font-semibold text-slate-700 w-9 text-right">{100-(q.yesPct||0)}%</span>
             </div>
@@ -1975,10 +1981,10 @@ function QuestionResult({ q }) {
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-start justify-between mb-4">
           <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
-          <span className="text-xs text-slate-400 whitespace-nowrap">{q.responseCount} resposta(s)</span>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
         </div>
         <div className="space-y-1.5">
-          {freq.length === 0 ? <span className="text-xs text-slate-400">Sem respostas.</span> : freq.map((d,i) => (
+          {freq.length === 0 ? <span className="text-xs text-slate-400">{t('qr_no_answers')}</span> : freq.map((d,i) => (
             <div key={i} className="flex items-center gap-3">
               <span className="text-xs text-slate-500 flex-1 truncate">{d.value}</span>
               <div className="w-32 h-2.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${d.pct}%`,background:"#5B21B6" }} /></div>
@@ -1996,9 +2002,9 @@ function QuestionResult({ q }) {
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-start justify-between mb-3">
           <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
-          <span className="text-xs text-slate-400 whitespace-nowrap">{arr.length} resposta(s)</span>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:arr.length})}</span>
         </div>
-        {arr.length === 0 ? <span className="text-xs text-slate-400">Sem respostas.</span> : (
+        {arr.length === 0 ? <span className="text-xs text-slate-400">{t('qr_no_answers')}</span> : (
           <div className="space-y-2 max-h-44 overflow-y-auto">
             {arr.map((t,i) => <div key={i} className="text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">{t}</div>)}
           </div>
@@ -2010,6 +2016,7 @@ function QuestionResult({ q }) {
 }
 
 function ResultsDashboard() {
+  const { t } = useLang();
   const [surveys,       setSurveys]       = useState([]);
   const [selectedId,    setSelectedId]    = useState(null);
   const [result,        setResult]        = useState(null);
@@ -2026,7 +2033,7 @@ function ResultsDashboard() {
         setSurveys(list);
         const pick = list.find(s => (s.response_count||0) > 0) || list[0];
         if (pick) setSelectedId(pick.id);
-      } catch (e) { setError(e.message || "Erro ao carregar pesquisas."); }
+      } catch (e) { setError(e.message || t('sl_load_error')); }
       setLoadingList(false);
     })();
   }, []);
@@ -2037,13 +2044,13 @@ function ResultsDashboard() {
     (async () => {
       setLoadingResult(true);
       try { const r = await api.get(`/results/${selectedId}`); if (alive) setResult(r); }
-      catch (e) { if (alive) setError(e.message || "Erro ao carregar resultados."); }
+      catch (e) { if (alive) setError(e.message || t('rd_results_error')); }
       if (alive) setLoadingResult(false);
     })();
     return () => { alive = false; };
   }, [selectedId]);
 
-  if (loadingList) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />Carregando resultados...</div>;
+  if (loadingList) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('rd_loading')}</div>;
   if (error)       return <div className="p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
 
   const survey   = result?.survey;
@@ -2055,7 +2062,7 @@ function ResultsDashboard() {
 
   const handleExportCSV = () => {
     if (!questions.length) return;
-    const rows = [["Pergunta","Tipo","Respostas","Resumo"]];
+    const rows = [[t('csv_question'),t('csv_type'),t('csv_responses'),t('csv_summary')]];
     questions.forEach(q => {
       let resumo = "";
       if (q.type === "nps") resumo = `NPS ${q.nps} (${q.classification||""}) · ${q.promoters||0}% prom / ${q.detractors||0}% detr`;
@@ -2073,21 +2080,21 @@ function ResultsDashboard() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Resultados & Relatórios</h1>
-          <p className="text-sm text-slate-500 mt-1">Análise completa por pergunta, com proteção LGPD.</p>
+          <h1 className="text-2xl font-bold text-slate-800">{t('rd_title')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('rd_subtitle')}</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={handleExportCSV} disabled={!questions.length} title="Baixar o resumo por pergunta em CSV" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
-            <Download size={14} />Exportar CSV
+          <button onClick={handleExportCSV} disabled={!questions.length} title={t('rd_export_csv_title')} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+            <Download size={14} />{t('common_export_csv')}
           </button>
-          <button onClick={() => window.print()} title="Abrir a janela de impressão (salve como PDF)" className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
-            <Download size={14} />Exportar PDF
+          <button onClick={() => window.print()} title={t('rd_export_pdf_title')} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
+            <Download size={14} />{t('rd_export_pdf')}
           </button>
         </div>
       </div>
 
       {surveys.length === 0 ? (
-        <div className="bg-white rounded-2xl p-10 border border-slate-100 shadow-sm text-center text-slate-400 text-sm">Nenhuma pesquisa criada ainda.</div>
+        <div className="bg-white rounded-2xl p-10 border border-slate-100 shadow-sm text-center text-slate-400 text-sm">{t('dash_none_created')}</div>
       ) : (
       <>
       <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm mb-6">
@@ -2103,19 +2110,19 @@ function ResultsDashboard() {
       </div>
 
       {loadingResult ? (
-        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />Carregando...</div>
+        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />{t('common_loading')}</div>
       ) : !result ? null : (
       <>
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <KpiCard title="Respostas"         value={String(totalR)}                  subtitle="Avaliações concluídas"  icon={MessageSquare} colorClass="bg-purple-500" />
-        <KpiCard title="Taxa de Conclusão" value={`${compRate}%`}                   subtitle="Iniciadas vs concluídas" icon={CheckCircle}  colorClass="bg-emerald-500" />
-        <KpiCard title="NPS Score"         value={nps ? String(nps.nps) : "—"}     subtitle={nps ? nps.classification : "Sem pergunta NPS"} icon={TrendingUp} colorClass="bg-blue-500" />
-        <KpiCard title="Anonimato"         value={anon?"Ativo":"Inativo"}          subtitle="Proteção LGPD"          icon={Shield}        colorClass={anon?"bg-green-500":"bg-slate-400"} />
+        <KpiCard title={t('rd_responses')} value={String(totalR)} subtitle={t('kpi_completed_evals')} icon={MessageSquare} colorClass="bg-purple-500" />
+        <KpiCard title={t('rd_completion_rate')} value={`${compRate}%`} subtitle={t('rd_started_vs_completed')} icon={CheckCircle} colorClass="bg-emerald-500" />
+        <KpiCard title={t('rd_nps_score')} value={nps ? String(nps.nps) : "—"} subtitle={nps ? nps.classification : t('rd_no_nps_q')} icon={TrendingUp} colorClass="bg-blue-500" />
+        <KpiCard title={t('rd_anonymity')} value={anon?t('status_ativo'):t('rd_inactive')} subtitle={t('rd_lgpd_protection')} icon={Shield} colorClass={anon?"bg-green-500":"bg-slate-400"} />
       </div>
 
       {totalR === 0 ? (
         <div className="bg-white rounded-2xl p-10 border border-slate-100 shadow-sm text-center text-slate-400 text-sm">
-          Esta pesquisa ainda não recebeu respostas. Os resultados aparecerão aqui assim que os participantes responderem.
+          {t('rd_no_responses_yet')}
         </div>
       ) : (
         <div className="space-y-4">
