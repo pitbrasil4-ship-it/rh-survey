@@ -10,8 +10,9 @@ function getPublic(req, res) {
     const db     = getDB();
     const survey = db.prepare("SELECT id, name, description, category, anonymous FROM surveys WHERE public_token = ? AND status = 'ativo'").get(req.params.token);
     if (!survey) return notFound(res, 'Pesquisa');
-    const questions = db.prepare('SELECT id, order_num, type, text, text_en, text_es, options FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
-    const parsed    = questions.map(q => ({ ...q, options: q.options ? JSON.parse(q.options) : null }));
+    const questions = db.prepare('SELECT id, order_num, type, text, text_en, text_es, options, options_en, options_es FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
+    const PJ = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+    const parsed    = questions.map(q => ({ ...q, options: PJ(q.options), options_en: PJ(q.options_en), options_es: PJ(q.options_es) }));
     return ok(res, { survey, questions: parsed });
   } catch (e) { return err(res, 'Erro ao carregar pesquisa', 500, e.message); }
 }
