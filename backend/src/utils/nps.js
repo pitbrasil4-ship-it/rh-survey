@@ -42,4 +42,36 @@ function calculateFrequency(values) {
     .sort((a, b) => b.count - a.count);
 }
 
-module.exports = { calculateNPS, calculateAverage, calculateFrequency };
+/**
+ * Weighted NPS. items: [{ score (0-10), weight }]. Peso padrão 1 → idêntico ao NPS simples.
+ */
+function calculateNPSWeighted(items) {
+  if (!items || items.length === 0) return { nps: 0, promoters: 0, passives: 0, detractors: 0, total: 0 };
+  let W = 0, p = 0, pa = 0, d = 0;
+  items.forEach(({ score, weight }) => {
+    const w = (weight > 0 ? weight : 1);
+    W += w;
+    if (score >= 9) p += w; else if (score >= 7) pa += w; else d += w;
+  });
+  const nps = W > 0 ? Math.round(((p - d) / W) * 100) : 0;
+  return {
+    nps,
+    promoters:  W > 0 ? Math.round((p  / W) * 100) : 0,
+    passives:   W > 0 ? Math.round((pa / W) * 100) : 0,
+    detractors: W > 0 ? Math.round((d  / W) * 100) : 0,
+    total: items.length,
+    classification: nps >= 75 ? 'Excelente' : nps >= 50 ? 'Bom' : nps >= 0 ? 'Neutro' : 'Ruim'
+  };
+}
+
+/**
+ * Weighted average. items: [{ value, weight }]. Peso padrão 1 → idêntico à média simples.
+ */
+function calculateAverageWeighted(items) {
+  if (!items || items.length === 0) return 0;
+  let W = 0, s = 0;
+  items.forEach(({ value, weight }) => { const w = (weight > 0 ? weight : 1); W += w; s += value * w; });
+  return W > 0 ? parseFloat((s / W).toFixed(2)) : 0;
+}
+
+module.exports = { calculateNPS, calculateAverage, calculateFrequency, calculateNPSWeighted, calculateAverageWeighted };
