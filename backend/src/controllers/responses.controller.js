@@ -46,6 +46,7 @@ function submitPublic(req, res) {
     });
 
     db.prepare("UPDATE responses SET completed_at=datetime('now') WHERE id=?").run(responseId);
+    try { require('../utils/push').notifyNewResponse(db, survey.id).catch(() => {}); } catch {}
     return ok(res, { responseId }, 'Resposta registrada com sucesso. Obrigado!');
   } catch (e) { return err(res, 'Erro ao registrar resposta', 500, e.message); }
 }
