@@ -144,6 +144,13 @@ function initSchema() {
   try { db.exec(`CREATE TABLE IF NOT EXISTS departamentos (
     id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT NOT NULL, meta INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now'))
   )`); } catch (e) {}
+  // Segmentação: marca cada resposta com distrito/departamento, e links públicos por segmento.
+  try { db.exec("ALTER TABLE responses ADD COLUMN distrito_id TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE responses ADD COLUMN departamento_id TEXT"); } catch (e) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS survey_links (
+    id TEXT PRIMARY KEY, tenant_id TEXT, survey_id TEXT, token TEXT UNIQUE,
+    distrito_id TEXT, departamento_id TEXT, created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
 }
 
 module.exports = { getDB };
