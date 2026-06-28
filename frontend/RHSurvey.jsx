@@ -3573,6 +3573,53 @@ const PAGE_LABELS = {
   lgpd:"LGPD & Privacidade", security:"Segurança", settings:"Configurações",
 };
 
+// ─── INSTALL PROMPT (PWA) ──────────────────────────────────────────────────────
+function InstallPrompt() {
+  const { t } = useLang();
+  const [canInstall, setCanInstall] = useState(!!(typeof window !== "undefined" && window.__bipEvent));
+  const [iosHint, setIosHint] = useState(false);
+  const [dismissed, setDismissed] = useState(() => { try { return localStorage.getItem("rh_pwa_dismiss") === "1"; } catch { return false; } });
+
+  useEffect(() => {
+    const onInstallable = () => setCanInstall(true);
+    const onInstalled   = () => { setCanInstall(false); setIosHint(false); };
+    window.addEventListener("pwa-installable", onInstallable);
+    window.addEventListener("pwa-installed", onInstalled);
+    const ua = window.navigator.userAgent || "";
+    const isIOS = /iphone|ipad|ipod/i.test(ua) && !/crios|fxios/i.test(ua); // Safari iOS
+    const standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+    if (isIOS && !standalone && !window.__bipEvent) setIosHint(true);
+    return () => { window.removeEventListener("pwa-installable", onInstallable); window.removeEventListener("pwa-installed", onInstalled); };
+  }, []);
+
+  const dismiss = () => { setDismissed(true); try { localStorage.setItem("rh_pwa_dismiss", "1"); } catch {} };
+  const install = async () => {
+    const e = window.__bipEvent;
+    if (!e) return;
+    e.prompt();
+    try { await e.userChoice; } catch {}
+    window.__bipEvent = null; setCanInstall(false);
+  };
+
+  if (dismissed || (!canInstall && !iosHint)) return null;
+
+  return (
+    <div style={{ position:"fixed", left:16, right:16, bottom:"calc(16px + env(safe-area-inset-bottom))", zIndex:60, maxWidth:430, margin:"0 auto" }}>
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-3 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{ background:GRAD }}>RH</div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-slate-800">{t('install_title')}</div>
+          <div className="text-xs text-slate-500 leading-snug">{canInstall ? t('install_desc') : t('install_ios_hint')}</div>
+        </div>
+        {canInstall && (
+          <button onClick={install} className="text-xs font-bold text-white rounded-lg px-3 py-2 flex-shrink-0 hover:opacity-90" style={{ background:GRAD }}>{t('install_btn')}</button>
+        )}
+        <button onClick={dismiss} aria-label="Fechar" className="p-1.5 text-slate-400 hover:text-slate-600 flex-shrink-0"><X size={16} /></button>
+      </div>
+    </div>
+  );
+}
+
 export default function RHSurvey() {
   const [page,     setPage]    = useState("dashboard");
   const [creating, setCreating]= useState(false);
@@ -3588,6 +3635,13 @@ export default function RHSurvey() {
     const onResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
+  }, []);
+  useEffect(() => {
+    try {
+      const go = new URLSearchParams(window.location.search).get("go");
+      const valid = ["dashboard","surveys","respondents","evaluation360","results","templates","relatorios","equipe","notificacoes","distribuicao","insights","lgpd","security","settings"];
+      if (go && valid.includes(go)) setPage(go);
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -3643,6 +3697,7 @@ export default function RHSurvey() {
         <main style={{ flex:1, overflowY:"auto" }}>{renderContent()}</main>
       </div>
       {!lgpdOk && <LGPDBanner onAccept={() => setLgpdOk(true)} />}
+      <InstallPrompt />
     </div>
     </LangContext.Provider>
   );
