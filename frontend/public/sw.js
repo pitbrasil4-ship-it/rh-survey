@@ -1,10 +1,9 @@
-// Service worker mínimo para PWA instalável (RH Survey).
-// Não interfere nas chamadas à API (outro domínio) — só cuida do app shell.
-const CACHE = 'rh-survey-v1';
-const APP_SHELL = ['/', '/index.html', '/favicon.svg', '/site.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
+// Service worker do RH Survey (PWA).
+// Não interfere nas chamadas à API (outro domínio). Suporta atualização sob demanda.
+const CACHE = 'rh-survey-v2';
+const APP_SHELL = ['/', '/index.html', '/offline.html', '/favicon.svg', '/site.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
-  self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(APP_SHELL).catch(() => {})));
 });
 
@@ -16,11 +15,16 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// Permite que a página peça para ativar a nova versão imediatamente.
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return; // chamadas à API (Railway) passam direto, sem cache
+  if (url.origin !== self.location.origin) return; // chamadas à API (Railway) passam direto
 
   // Assets versionados do Vite são imutáveis: cache-first.
   if (url.pathname.startsWith('/assets/')) {
@@ -34,7 +38,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Navegações e demais GETs: network-first com fallback ao cache (funciona offline).
+  // Navegações e demais GETs: network-first; offline cai no cache e, por fim, na página offline.
   e.respondWith(
     fetch(req)
       .then((res) => {
@@ -42,6 +46,6 @@ self.addEventListener('fetch', (e) => {
         caches.open(CACHE).then((c) => c.put(req, copy));
         return res;
       })
-      .catch(() => caches.match(req).then((hit) => hit || caches.match('/index.html')))
+      .catch(() => caches.match(req).then((hit) => hit || (req.mode === 'navigate' ? caches.match('/offline.html') : caches.match('/index.html'))))
   );
 });
