@@ -12,4 +12,5 @@ router.put('/:id',      authorize('admin','manager'), auditLog('survey.update','
 router.post('/:id/publish', authorize('admin','manager'), auditLog('survey.publish','survey'), ctrl.publish);
 router.delete('/:id',   authorize('admin'),           auditLog('survey.delete','survey'), ctrl.remove);
 router.post('/generate-ai', authorize('admin','manager'), ctrl.generateAI);
+router.post('/:id/translate', authorize('admin','manager'), auditLog('survey.translate','survey'), ctrl.translateExisting);
 module.exports = router;
