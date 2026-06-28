@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import api from "./src/api.js";
 import { LANGS, t as translate, getStoredLang, storeLang, LangContext, useLang } from "./src/i18n.js";
+import LogoMark from "./src/LogoMark.jsx";
 import {
   LayoutDashboard, ClipboardList, Users, BarChart3, Settings, Plus, Search,
   Bell, TrendingUp, CheckCircle, Clock, Send, Sparkles, Download, Eye, Edit,
@@ -342,7 +343,7 @@ function Sidebar({ page, setPage }) {
     <div style={{ width:240, minWidth:240 }} className="bg-white border-r border-slate-100 flex flex-col h-screen">
       <div className="px-5 py-4 border-b border-slate-100">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold" style={{ background:GRAD }}>RH</div>
+          <LogoMark size={36} />
           <div>
             <div className="font-bold text-slate-800 text-sm">RH Survey</div>
             <div className="text-xs text-slate-400 flex items-center gap-1"><Shield size={9} className="text-green-500" />{t('side_lgpd')}</div>
@@ -439,7 +440,7 @@ function TopBar({ title, unreadCount, onBell, onMenu, showMenu }) {
             <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center leading-none">{unreadCount}</span>
           )}
         </button>
-        <div className="w-8 h-8 rounded-full text-white text-xs font-bold flex items-center justify-center" style={{ background:GRAD }}>RH</div>
+        <LogoMark size={32} />
       </div>
     </div>
   );
@@ -3691,7 +3692,7 @@ function InstallPrompt() {
   return (
     <div style={{ position:"fixed", left:16, right:16, bottom:"calc(16px + env(safe-area-inset-bottom))", zIndex:60, maxWidth:430, margin:"0 auto" }}>
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-3 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{ background:GRAD }}>RH</div>
+        <LogoMark size={40} />
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-slate-800">{t('install_title')}</div>
           <div className="text-xs text-slate-500 leading-snug">{canInstall ? t('install_desc') : t('install_ios_hint')}</div>
