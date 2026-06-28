@@ -66,7 +66,7 @@ export const api = {
   },
   results: {
     dashboard: ()         => request('GET', '/results/dashboard'),
-    insights:  (surveyId) => request('POST', '/results/insights', { surveyId }),
+    insights:  (surveyId, lang) => request('POST', '/results/insights', { surveyId, lang }),
   },
   eval: {
     cycles:           ()               => request('GET', '/eval/cycles'),
