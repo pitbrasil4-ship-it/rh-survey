@@ -8,12 +8,15 @@ const { hashIP }   = require('../utils/crypto');
 function getPublic(req, res) {
   try {
     const db     = getDB();
-    const survey = db.prepare("SELECT id, name, name_en, name_es, description, description_en, description_es, category, anonymous FROM surveys WHERE public_token = ? AND status = 'ativo'").get(req.params.token);
+    const survey = db.prepare("SELECT id, name, name_en, name_es, description, description_en, description_es, category, anonymous, status, deadline FROM surveys WHERE public_token = ?").get(req.params.token);
     if (!survey) return notFound(res, 'Pesquisa');
+    const closed = survey.status !== 'ativo' || (survey.deadline && new Date(survey.deadline).getTime() < Date.now());
+    if (closed) return ok(res, { closed: true, survey: { name: survey.name, name_en: survey.name_en, name_es: survey.name_es } }, 'Pesquisa encerrada');
     const questions = db.prepare('SELECT id, order_num, type, text, text_en, text_es, options, options_en, options_es FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
     const PJ = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
     const parsed    = questions.map(q => ({ ...q, options: PJ(q.options), options_en: PJ(q.options_en), options_es: PJ(q.options_es) }));
-    return ok(res, { survey, questions: parsed });
+    const { status, deadline, ...pub } = survey;
+    return ok(res, { survey: pub, questions: parsed });
   } catch (e) { return err(res, 'Erro ao carregar pesquisa', 500, e.message); }
 }
 
@@ -24,8 +27,10 @@ function submitPublic(req, res) {
     if (!answers || !Array.isArray(answers) || answers.length === 0) return badReq(res, 'Respostas são obrigatórias');
 
     const db     = getDB();
-    const survey = db.prepare("SELECT id, anonymous FROM surveys WHERE public_token = ? AND status = 'ativo'").get(req.params.token);
+    const survey = db.prepare("SELECT id, anonymous, status, deadline FROM surveys WHERE public_token = ?").get(req.params.token);
     if (!survey) return notFound(res, 'Pesquisa');
+    if (survey.status !== 'ativo' || (survey.deadline && new Date(survey.deadline).getTime() < Date.now()))
+      return badReq(res, 'Esta pesquisa está encerrada e não aceita mais respostas.');
 
     const responseId = uuid();
     const ipHash     = hashIP(req.ip || '');
