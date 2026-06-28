@@ -198,4 +198,48 @@ function setDeadline(req, res) {
   } catch (e) { return err(res, 'Erro ao atualizar prazo', 500, e.message); }
 }
 
-module.exports = { list, create, getOne, update, publish, remove, generateAI, translateExisting, setDeadline };
+/* Monta a lista de links por segmento (distritos com regional + departamentos) */
+function segmentLinksData(db, t, surveyId, res) {
+  const links   = db.prepare('SELECT token, distrito_id, departamento_id FROM survey_links WHERE survey_id=?').all(surveyId);
+  const distMap = {}; db.prepare('SELECT id, name, regional_id FROM distritos WHERE tenant_id=?').all(t).forEach(d => distMap[d.id] = d);
+  const depMap  = {}; db.prepare('SELECT id, name FROM departamentos WHERE tenant_id=?').all(t).forEach(d => depMap[d.id] = d);
+  const regMap  = {}; db.prepare('SELECT id, name FROM regionais WHERE tenant_id=?').all(t).forEach(r => regMap[r.id] = r.name);
+  const distritos = [], departamentos = [];
+  links.forEach(l => {
+    if (l.distrito_id && distMap[l.distrito_id]) distritos.push({ token: l.token, name: distMap[l.distrito_id].name, regional: regMap[distMap[l.distrito_id].regional_id] || null });
+    else if (l.departamento_id && depMap[l.departamento_id]) departamentos.push({ token: l.token, name: depMap[l.departamento_id].name });
+  });
+  distritos.sort((a, b) => (a.regional || '~').localeCompare(b.regional || '~') || a.name.localeCompare(b.name));
+  departamentos.sort((a, b) => a.name.localeCompare(b.name));
+  return ok(res, { distritos, departamentos }, 'ok');
+}
+
+/* GET /surveys/:id/segment-links — lista os links por segmento já existentes */
+function listSegmentLinks(req, res) {
+  try {
+    const db = getDB(); const t = req.user.tenant_id;
+    const survey = db.prepare('SELECT id FROM surveys WHERE id=? AND tenant_id=?').get(req.params.id, t);
+    if (!survey) return notFound(res, 'Pesquisa');
+    return segmentLinksData(db, t, survey.id, res);
+  } catch (e) { return err(res, 'Erro ao listar links', 500, e.message); }
+}
+
+/* POST /surveys/:id/segment-links — garante um link para cada distrito e departamento, e retorna a lista */
+function segmentLinks(req, res) {
+  try {
+    const db = getDB(); const t = req.user.tenant_id;
+    const survey = db.prepare("SELECT id FROM surveys WHERE id=? AND tenant_id=? AND status != 'excluido'").get(req.params.id, t);
+    if (!survey) return notFound(res, 'Pesquisa');
+    const distritos     = db.prepare('SELECT id FROM distritos WHERE tenant_id=?').all(t);
+    const departamentos = db.prepare('SELECT id FROM departamentos WHERE tenant_id=?').all(t);
+    const hasD = db.prepare('SELECT 1 FROM survey_links WHERE survey_id=? AND distrito_id=?');
+    const hasP = db.prepare('SELECT 1 FROM survey_links WHERE survey_id=? AND departamento_id=?');
+    const ins  = db.prepare('INSERT INTO survey_links (id, tenant_id, survey_id, token, distrito_id, departamento_id) VALUES (?,?,?,?,?,?)');
+    const tok  = () => uuid().replace(/-/g, '');
+    distritos.forEach(d => { if (!hasD.get(survey.id, d.id)) ins.run(uuid(), t, survey.id, tok(), d.id, null); });
+    departamentos.forEach(d => { if (!hasP.get(survey.id, d.id)) ins.run(uuid(), t, survey.id, tok(), null, d.id); });
+    return segmentLinksData(db, t, survey.id, res);
+  } catch (e) { return err(res, 'Erro ao gerar links', 500, e.message); }
+}
+
+module.exports = { list, create, getOne, update, publish, remove, generateAI, translateExisting, setDeadline, listSegmentLinks, segmentLinks };
