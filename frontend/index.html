@@ -7,7 +7,11 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
-    <meta name="theme-color" content="#DC2626" />
+    <meta name="theme-color" content="#5B21B6" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="RH Survey" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="description" content="RH Survey — plataforma de avaliação organizacional da RGIS Brasil. Pesquisas, Avaliação 360° e Insights com IA, em conformidade com a LGPD." />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="RH Survey" />
@@ -42,5 +46,12 @@
       </div>
     </div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function () {});
+        });
+      }
+    </script>
   </body>
 </html>
