@@ -57,6 +57,8 @@ export const api = {
     generateAI: (context, count) => request('POST', '/surveys/generate-ai', { context, count }),
     translate:  (id)       => request('POST', `/surveys/${id}/translate`),
     setDeadline: (id, deadline) => request('PUT', `/surveys/${id}/deadline`, { deadline }),
+    segmentLinks:     (id) => request('POST', `/surveys/${id}/segment-links`),
+    listSegmentLinks: (id) => request('GET',  `/surveys/${id}/segment-links`),
   },
   respondents: {
     list:   ()     => request('GET', '/respondents'),
@@ -68,6 +70,7 @@ export const api = {
   results: {
     dashboard: ()         => request('GET', '/results/dashboard'),
     insights:  (surveyId, lang) => request('POST', '/results/insights', { surveyId, lang }),
+    segments:  (surveyId) => request('GET', `/results/segments?surveyId=${encodeURIComponent(surveyId)}`),
   },
   push: {
     vapidPublic: ()             => request('GET',  '/push/vapid-public'),
