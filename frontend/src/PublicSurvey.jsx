@@ -248,8 +248,8 @@ export default function PublicSurvey({ token }) {
       <div style={{ marginBottom:16 }}><Logo /></div>
       <LangPicker lang={lang} setLang={changeLang} />
       <Card style={{ marginBottom:16, borderTop:`3px solid ${RED}` }}>
-        <h1 style={{ color:'#0F172A', fontSize:22, margin:'0 0 6px' }}>{survey.name}</h1>
-        {survey.description ? <p style={{ color:'#64748B', fontSize:14, margin:'0 0 10px' }}>{survey.description}</p> : null}
+        <h1 style={{ color:'#0F172A', fontSize:22, margin:'0 0 6px' }}>{(lang !== 'pt' && survey['name_'+lang]) ? survey['name_'+lang] : survey.name}</h1>
+        {survey.description ? <p style={{ color:'#64748B', fontSize:14, margin:'0 0 10px' }}>{(lang !== 'pt' && survey['description_'+lang]) ? survey['description_'+lang] : survey.description}</p> : null}
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', fontSize:12 }}>
           {survey.anonymous ? <span style={{ background:'#EFF6FF', color:'#2563EB', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{tr('anon_badge')}</span> : null}
           <span style={{ background:'#F0FDF4', color:'#16A34A', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{tr('lgpd_badge')}</span>
