@@ -8,7 +8,10 @@ const { hashIP }   = require('../utils/crypto');
 function getPublic(req, res) {
   try {
     const db     = getDB();
-    const survey = db.prepare("SELECT id, name, name_en, name_es, description, description_en, description_es, category, anonymous, status, deadline FROM surveys WHERE public_token = ?").get(req.params.token);
+    const link   = db.prepare("SELECT survey_id FROM survey_links WHERE token = ?").get(req.params.token);
+    const survey = link
+      ? db.prepare("SELECT id, name, name_en, name_es, description, description_en, description_es, category, anonymous, status, deadline FROM surveys WHERE id = ?").get(link.survey_id)
+      : db.prepare("SELECT id, name, name_en, name_es, description, description_en, description_es, category, anonymous, status, deadline FROM surveys WHERE public_token = ?").get(req.params.token);
     if (!survey) return notFound(res, 'Pesquisa');
     const closed = survey.status !== 'ativo' || (survey.deadline && new Date(survey.deadline).getTime() < Date.now());
     if (closed) return ok(res, { closed: true, survey: { name: survey.name, name_en: survey.name_en, name_es: survey.name_es } }, 'Pesquisa encerrada');
@@ -27,16 +30,21 @@ function submitPublic(req, res) {
     if (!answers || !Array.isArray(answers) || answers.length === 0) return badReq(res, 'Respostas são obrigatórias');
 
     const db     = getDB();
-    const survey = db.prepare("SELECT id, anonymous, status, deadline FROM surveys WHERE public_token = ?").get(req.params.token);
+    const link   = db.prepare("SELECT survey_id, distrito_id, departamento_id FROM survey_links WHERE token = ?").get(req.params.token);
+    const survey = link
+      ? db.prepare("SELECT id, anonymous, status, deadline FROM surveys WHERE id = ?").get(link.survey_id)
+      : db.prepare("SELECT id, anonymous, status, deadline FROM surveys WHERE public_token = ?").get(req.params.token);
     if (!survey) return notFound(res, 'Pesquisa');
     if (survey.status !== 'ativo' || (survey.deadline && new Date(survey.deadline).getTime() < Date.now()))
       return badReq(res, 'Esta pesquisa está encerrada e não aceita mais respostas.');
 
     const responseId = uuid();
     const ipHash     = hashIP(req.ip || '');
+    const distritoId     = link ? (link.distrito_id || null) : null;
+    const departamentoId = link ? (link.departamento_id || null) : null;
 
-    db.prepare('INSERT INTO responses (id, survey_id, respondent_id, ip_hash) VALUES (?,?,?,?)').run(
-      responseId, survey.id, survey.anonymous ? null : (respondentId || null), ipHash
+    db.prepare('INSERT INTO responses (id, survey_id, respondent_id, ip_hash, distrito_id, departamento_id) VALUES (?,?,?,?,?,?)').run(
+      responseId, survey.id, survey.anonymous ? null : (respondentId || null), ipHash, distritoId, departamentoId
     );
 
     const stmt = db.prepare('INSERT INTO answers (id, response_id, question_id, value_text, value_num, value_json) VALUES (?,?,?,?,?,?)');
