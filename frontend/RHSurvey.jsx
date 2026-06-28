@@ -3645,7 +3645,7 @@ function PushToggle() {
       <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background:GRAD }}><Bell size={18} /></div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-slate-800">{t('push_title')}</div>
-        <div className="text-xs text-slate-500 leading-snug">{(enabled ? t('push_state_on') : t('push_state_off')) + (status ? " · " + status : "")}</div>
+        <div className="text-xs text-slate-500 leading-snug">{(!available ? t('push_server_off') : (enabled ? t('push_state_on') : t('push_state_off'))) + (status ? " · " + status : "")}</div>
       </div>
       {!enabled
         ? <button onClick={enable} disabled={busy || !available} title={!available ? t('push_server_off') : ""} className="text-xs font-bold text-white rounded-lg px-3 py-2 flex-shrink-0 disabled:opacity-50" style={{ background:GRAD }}>{t('push_enable')}</button>
