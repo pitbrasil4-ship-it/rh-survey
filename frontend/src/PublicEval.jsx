@@ -1,4 +1,29 @@
 import React, { useState, useEffect } from 'react';
+import { LANGS, t, storeLang } from './i18n.js';
+import LogoMark from './LogoMark.jsx';
+
+function initialLang() {
+  try { const s = localStorage.getItem('rh_lang'); if (LANGS.some(l => l.code === s)) return s; } catch {}
+  const n = (typeof navigator !== 'undefined' ? navigator.language : '' || '').toLowerCase();
+  if (n.startsWith('en')) return 'en';
+  if (n.startsWith('es')) return 'es';
+  return 'pt';
+}
+
+function LangPicker({ lang, setLang }) {
+  return (
+    <div style={{ display:'flex', justifyContent:'flex-end', gap:6, marginBottom:12 }}>
+      {LANGS.map(l => (
+        <button key={l.code} type="button" onClick={() => setLang(l.code)}
+          style={{ padding:'5px 11px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer',
+            border: lang===l.code ? `2px solid ${RED}` : '1px solid #E2E8F0',
+            background: lang===l.code ? '#FEF2F2' : 'white', color: lang===l.code ? RED_DARK : '#64748B' }}>
+          {l.short}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const RED = '#DC2626';
@@ -30,7 +55,7 @@ async function pub(method, token, body) {
 function Logo() {
   return (
     <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-      <div style={{ width:38, height:38, borderRadius:10, background:RED, display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:800, fontSize:15 }}>RH</div>
+      <LogoMark size={38} />
       <div style={{ fontWeight:800, color:'#0F172A', fontSize:17, lineHeight:1 }}>RH<span style={{ color:RED }}>Survey</span><div style={{ fontSize:9, color:'#94A3B8', fontWeight:600, letterSpacing:1, marginTop:2 }}>RGIS BRASIL</div></div>
     </div>
   );
@@ -48,7 +73,7 @@ function Card({ children, style }) {
   return <div style={{ background:'white', borderRadius:16, border:'1px solid #E2E8F0', boxShadow:'0 1px 3px rgba(0,0,0,.05)', padding:24, ...style }}>{children}</div>;
 }
 
-function NpsInput({ value, onChange }) {
+function NpsInput({ value, onChange, tr }) {
   return (
     <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
       {Array.from({ length:11 }).map((_, n) => (
@@ -60,7 +85,7 @@ function NpsInput({ value, onChange }) {
         </button>
       ))}
       <div style={{ width:'100%', display:'flex', justifyContent:'space-between', fontSize:11, color:'#94A3B8', marginTop:4 }}>
-        <span>Nada provável</span><span>Muito provável</span>
+        <span>{tr('nps_low')}</span><span>{tr('nps_high')}</span>
       </div>
     </div>
   );
@@ -101,7 +126,7 @@ function RatingInput({ value, onChange }) {
   );
 }
 
-function YesNoInput({ value, onChange }) {
+function YesNoInput({ value, onChange, tr }) {
   const opt = (val, label) => {
     const sel = value === val;
     return (
@@ -111,13 +136,13 @@ function YesNoInput({ value, onChange }) {
           background: sel ? RED : 'white', color: sel ? 'white' : '#475569' }}>{label}</button>
     );
   };
-  return <div style={{ display:'flex', gap:10 }}>{opt('sim','Sim')}{opt('nao','Não')}</div>;
+  return <div style={{ display:'flex', gap:10 }}>{opt('sim', tr('yes'))}{opt('nao', tr('no'))}</div>;
 }
 
-function MultipleInput({ options, value, onToggle }) {
+function MultipleInput({ options, value, onToggle, tr }) {
   const opts = options && options.length ? options : [];
   const arr = Array.isArray(value) ? value : [];
-  if (opts.length === 0) return <p style={{ fontSize:13, color:'#94A3B8' }}>Sem opções configuradas.</p>;
+  if (opts.length === 0) return <p style={{ fontSize:13, color:'#94A3B8' }}>{tr('no_options')}</p>;
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
       {opts.map((label, i) => {
@@ -143,6 +168,9 @@ export default function PublicEval({ token }) {
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState('');
+  const [lang, setLang] = useState(initialLang);
+  const tr = (k, v) => t(lang, k, v);
+  const changeLang = (l) => { setLang(l); storeLang(l); };
 
   useEffect(() => {
     let alive = true;
@@ -179,49 +207,49 @@ export default function PublicEval({ token }) {
     const payload = questions
       .map(q => ({ questionId: q.id, value: answers[q.id] }))
       .filter(a => a.value !== undefined && a.value !== '' && !(Array.isArray(a.value) && a.value.length === 0));
-    if (payload.length === 0) { setErrMsg('Responda ao menos uma pergunta antes de enviar.'); return; }
+    if (payload.length === 0) { setErrMsg(tr('at_least_one')); return; }
     setSubmitting(true);
     try {
       await pub('POST', token, { answers: payload });
       setState('done');
     } catch (e) {
-      setErrMsg(e.message || 'Erro ao enviar a avaliação. Tente novamente.');
+      setErrMsg(e.message || tr('submit_error_eval'));
       setSubmitting(false);
     }
   };
 
-  const relLabel = info ? (REL_LABEL[info.relationship] || info.relationship) : '';
+  const relLabel = info ? tr('rel_' + info.relationship) : '';
 
   function HeaderBanner() {
     return (
       <Card style={{ marginBottom:16, borderTop:`3px solid ${RED}` }}>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', fontSize:12, marginBottom:10 }}>
-          <span style={{ background:'#FEF2F2', color:RED_DARK, padding:'3px 10px', borderRadius:99, fontWeight:700 }}>Avaliação 360°</span>
+          <span style={{ background:'#FEF2F2', color:RED_DARK, padding:'3px 10px', borderRadius:99, fontWeight:700 }}>{tr('eval_360_badge')}</span>
           <span style={{ background:'#EFF6FF', color:'#2563EB', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{relLabel}</span>
         </div>
-        <p style={{ margin:'0 0 2px', fontSize:13, color:'#94A3B8', fontWeight:600 }}>Você está avaliando</p>
+        <p style={{ margin:'0 0 2px', fontSize:13, color:'#94A3B8', fontWeight:600 }}>{tr('eval_you_are_evaluating')}</p>
         <h1 style={{ color:'#0F172A', fontSize:24, margin:'0 0 6px' }}>{info?.subjectName || '—'}</h1>
-        {info?.cycleName ? <p style={{ color:'#64748B', fontSize:13, margin:0 }}>Ciclo: {info.cycleName}</p> : null}
+        {info?.cycleName ? <p style={{ color:'#64748B', fontSize:13, margin:0 }}>{tr('eval_cycle')}: {info.cycleName}</p> : null}
       </Card>
     );
   }
 
   if (state === 'loading') {
-    return <Shell><div style={{ textAlign:'center', color:'#64748B', paddingTop:80 }}>Carregando avaliação...</div></Shell>;
+    return <Shell><div style={{ textAlign:'center', color:'#64748B', paddingTop:80 }}>{tr('loading_eval')}</div></Shell>;
   }
   if (state === 'notfound') {
-    return <Shell><Card style={{ textAlign:'center' }}>
+    return <Shell><LangPicker lang={lang} setLang={changeLang} /><Card style={{ textAlign:'center' }}>
       <div style={{ fontSize:40 }}>🔒</div>
-      <h2 style={{ color:'#0F172A', fontSize:18, margin:'12px 0 6px' }}>Avaliação indisponível</h2>
-      <p style={{ color:'#64748B', fontSize:14, margin:0 }}>Este link é inválido ou o ciclo de avaliação não está mais ativo. Verifique com o RH.</p>
+      <h2 style={{ color:'#0F172A', fontSize:18, margin:'12px 0 6px' }}>{tr('eval_unavailable_title')}</h2>
+      <p style={{ color:'#64748B', fontSize:14, margin:0 }}>{tr('eval_unavailable_body')}</p>
     </Card></Shell>;
   }
   if (state === 'error') {
-    return <Shell><Card style={{ textAlign:'center' }}>
+    return <Shell><LangPicker lang={lang} setLang={changeLang} /><Card style={{ textAlign:'center' }}>
       <div style={{ fontSize:40 }}>⚠️</div>
-      <h2 style={{ color:'#B91C1C', fontSize:18, margin:'12px 0 6px' }}>Não foi possível carregar</h2>
-      <p style={{ color:'#64748B', fontSize:14, margin:'0 0 16px' }}>{errMsg || 'Tente novamente em instantes.'}</p>
-      <button onClick={() => window.location.reload()} style={{ padding:'10px 18px', background:RED, color:'white', border:'none', borderRadius:10, cursor:'pointer', fontWeight:700, fontSize:14 }}>Recarregar</button>
+      <h2 style={{ color:'#B91C1C', fontSize:18, margin:'12px 0 6px' }}>{tr('load_error_title')}</h2>
+      <p style={{ color:'#64748B', fontSize:14, margin:'0 0 16px' }}>{errMsg || tr('try_again_short')}</p>
+      <button onClick={() => window.location.reload()} style={{ padding:'10px 18px', background:RED, color:'white', border:'none', borderRadius:10, cursor:'pointer', fontWeight:700, fontSize:14 }}>{tr('reload')}</button>
     </Card></Shell>;
   }
   if (state === 'alreadyDone') {
@@ -229,8 +257,8 @@ export default function PublicEval({ token }) {
       <div style={{ marginBottom:16 }}><Logo /></div>
       <Card style={{ textAlign:'center' }}>
         <div style={{ width:64, height:64, borderRadius:'50%', background:'#DBEAFE', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', fontSize:30 }}>✓</div>
-        <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>Avaliação já respondida</h2>
-        <p style={{ color:'#64748B', fontSize:14, margin:0 }}>Você já enviou a sua avaliação de <strong>{info?.subjectName || '—'}</strong>. Obrigado pela participação!</p>
+        <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>{tr('already_done_title')}</h2>
+        <p style={{ color:'#64748B', fontSize:14, margin:0 }}>{tr('eval_already_body_named', { name: info?.subjectName || '—' })}</p>
       </Card>
     </Shell>;
   }
@@ -239,9 +267,9 @@ export default function PublicEval({ token }) {
       <div style={{ marginBottom:16 }}><Logo /></div>
       <Card style={{ textAlign:'center' }}>
         <div style={{ width:64, height:64, borderRadius:'50%', background:'#DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', fontSize:30 }}>✓</div>
-        <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>Avaliação enviada!</h2>
-        <p style={{ color:'#64748B', fontSize:14, margin:0 }}>Obrigado por avaliar <strong>{info?.subjectName || '—'}</strong>. Sua contribuição foi registrada com segurança.</p>
-        <p style={{ color:'#16A34A', fontSize:12, marginTop:12, fontWeight:600 }}>🔒 Avaliação confidencial — usada de forma agregada.</p>
+        <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>{tr('eval_done_title')}</h2>
+        <p style={{ color:'#64748B', fontSize:14, margin:0 }}>{tr('eval_done_body_named', { name: info?.subjectName || '—' })}</p>
+        <p style={{ color:'#16A34A', fontSize:12, marginTop:12, fontWeight:600 }}>{tr('eval_confidential_note')}</p>
       </Card>
     </Shell>;
   }
@@ -250,38 +278,43 @@ export default function PublicEval({ token }) {
   return (
     <Shell>
       <div style={{ marginBottom:16 }}><Logo /></div>
+      <LangPicker lang={lang} setLang={changeLang} />
       <HeaderBanner />
 
-      {questions.map((q, idx) => (
+      {questions.map((q, idx) => {
+        const hasOpts = Array.isArray(q.options) && q.options.length > 0;
+        const specialized = q.type === 'nps' || q.type === 'scale' || q.type === 'rating' || q.type === 'yesno' || (q.type === 'multiple' && hasOpts);
+        return (
         <Card key={q.id} style={{ marginBottom:14 }}>
           <div style={{ display:'flex', gap:10, marginBottom:14 }}>
             <span style={{ flexShrink:0, width:24, height:24, borderRadius:'50%', background:RED, color:'white', fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }}>{idx+1}</span>
             <p style={{ margin:0, fontSize:15, fontWeight:600, color:'#1E293B', lineHeight:1.4 }}>{q.text}</p>
           </div>
-          {q.type === 'nps'      && <NpsInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
+          {q.type === 'nps'      && <NpsInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
           {q.type === 'scale'    && <ScaleInput options={q.options} value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'rating'   && <RatingInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
-          {q.type === 'yesno'    && <YesNoInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
-          {q.type === 'multiple' && <MultipleInput options={q.options} value={answers[q.id]} onToggle={opt => toggleMulti(q.id, opt)} />}
-          {(q.type === 'text' || !['nps','scale','rating','yesno','multiple'].includes(q.type)) &&
+          {q.type === 'yesno'    && <YesNoInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
+          {q.type === 'multiple' && hasOpts && <MultipleInput options={q.options} value={answers[q.id]} onToggle={opt => toggleMulti(q.id, opt)} tr={tr} />}
+          {!specialized &&
             <textarea value={answers[q.id] || ''} onChange={e => setAns(q.id, e.target.value)} rows={4}
-              placeholder="Digite sua resposta..."
+              placeholder={tr('answer_placeholder')}
               style={{ width:'100%', boxSizing:'border-box', border:'1px solid #E2E8F0', borderRadius:10, padding:'12px 14px', fontSize:14, fontFamily:'inherit', resize:'vertical' }} />}
         </Card>
-      ))}
+        );
+      })}
 
       {errMsg ? <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', color:'#B91C1C', borderRadius:10, padding:'12px 14px', fontSize:14, marginBottom:14 }}>⚠️ {errMsg}</div> : null}
 
       <Card style={{ position:'sticky', bottom:16, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
-        <span style={{ fontSize:13, color:'#64748B' }}>{answeredCount} de {questions.length} respondidas</span>
+        <span style={{ fontSize:13, color:'#64748B' }}>{tr('answered_of', { a: answeredCount, b: questions.length })}</span>
         <button onClick={submit} disabled={submitting}
           style={{ padding:'12px 24px', background: submitting ? '#FCA5A5' : RED, color:'white', border:'none', borderRadius:10, cursor: submitting ? 'default' : 'pointer', fontWeight:700, fontSize:14 }}>
-          {submitting ? 'Enviando...' : 'Enviar avaliação'}
+          {submitting ? tr('sending') : tr('submit_eval')}
         </button>
       </Card>
 
       <p style={{ textAlign:'center', fontSize:11, color:'#94A3B8', marginTop:16 }}>
-        Avaliação confidencial, tratada conforme a Lei nº 13.709/2018 (LGPD), exclusivamente para fins de desenvolvimento profissional interno.
+        {tr('eval_confidential_footer')}
       </p>
     </Shell>
   );
