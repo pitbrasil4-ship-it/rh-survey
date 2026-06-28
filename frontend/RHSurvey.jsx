@@ -2282,6 +2282,7 @@ function LGPDPage() {
 
 // ─── SECURITY PAGE ─────────────────────────────────────────────────────────────
 function SecurityPage() {
+  const { t } = useLang();
   const auditTypeStyle = {
     auth:   "bg-blue-100 text-blue-700",
     create: "bg-purple-100 text-purple-700",
@@ -2289,7 +2290,7 @@ function SecurityPage() {
     export: "bg-amber-100 text-amber-700",
     alert:  "bg-red-100 text-red-700",
   };
-  const auditTypeLabel = { auth:"Autenticação",create:"Criação",data:"Dados",export:"Exportação",alert:"Alerta" };
+  const auditTypeLabel = { auth:"sec_type_auth",create:"sec_type_create",data:"sec_type_data",export:"sec_type_export",alert:"sec_type_alert" };
 
   const [logs, setLogs] = useState([]);
   const [loadingLog, setLoadingLog] = useState(true);
@@ -2297,24 +2298,24 @@ function SecurityPage() {
   const loadAudit = async () => {
     setLoadingLog(true); setLogErr("");
     try { const r = await api.audit.list(); setLogs(r.logs || []); }
-    catch (e) { setLogErr(e.status===403 ? "Apenas administradores podem ver a trilha de auditoria." : (e.message || "Erro ao carregar a auditoria.")); }
+    catch (e) { setLogErr(e.status===403 ? t('sec_audit_403') : (e.message || t('sec_audit_error'))); }
     setLoadingLog(false);
   };
   useEffect(() => { loadAudit(); }, []);
   const fmtDate = (s) => { if(!s) return "—"; try { return new Date(String(s).replace(" ","T")+"Z").toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); } catch { return s; } };
-  const ACT_LABEL = {
-    "auth.login":"Login realizado","auth.logout":"Logout","auth.change_password":"Senha alterada",
-    "respondent.create":"Respondente cadastrado","respondent.import":"Respondentes importados","respondent.consent":"Consentimento registrado","respondent.anonymize":"Respondente anonimizado",
-    "survey.create":"Pesquisa criada","survey.publish":"Pesquisa publicada","survey.delete":"Pesquisa excluída",
-    "results.view":"Resultados visualizados","results.insights":"Insights gerados",
-    "eval.cycle_create":"Ciclo 360° criado","eval.assign":"Avaliador atribuído","eval.unassign":"Avaliador removido",
-    "user.create":"Usuário criado","user.update":"Usuário atualizado","user.delete":"Usuário removido",
+  const ACT_KEY = {
+    "auth.login":"sec_act_login","auth.logout":"sec_act_logout","auth.change_password":"sec_act_change_password",
+    "respondent.create":"sec_act_resp_create","respondent.import":"sec_act_resp_import","respondent.consent":"sec_act_resp_consent","respondent.anonymize":"sec_act_resp_anon",
+    "survey.create":"sec_act_survey_create","survey.publish":"sec_act_survey_publish","survey.delete":"sec_act_survey_delete",
+    "results.view":"sec_act_results_view","results.insights":"sec_act_results_insights",
+    "eval.cycle_create":"sec_act_eval_cycle","eval.assign":"sec_act_eval_assign","eval.unassign":"sec_act_eval_unassign",
+    "user.create":"sec_act_user_create","user.update":"sec_act_user_update","user.delete":"sec_act_user_delete",
   };
-  const actLabel = (log) => ACT_LABEL[log.action] || ((log.action || "Ação") + (log.resource ? ` · ${log.resource}` : ""));
+  const actLabel = (log) => { const k = ACT_KEY[log.action]; return k ? t(k) : ((log.action || t('sec_action_generic')) + (log.resource ? ` · ${log.resource}` : "")); };
   const actType = (a="") => a.startsWith("auth") ? "auth" : a.includes("export") ? "export" : (a.includes("delete")||a.includes("anonym")) ? "alert" : (a.includes("create")||a.includes("assign")||a.includes("publish")) ? "create" : "data";
   const exportAudit = () => {
-    const rows = [["Data","Ação","Tipo","Usuário","Recurso"]];
-    logs.forEach(l => rows.push([fmtDate(l.created_at), actLabel(l), auditTypeLabel[actType(l.action)]||actType(l.action), l.user_name||l.user_email||"—", l.resource||""]));
+    const rows = [[t('lgpd_csv_date'),t('sec_col_action'),t('csv_type'),t('sec_col_user'),t('sec_col_resource')]];
+    logs.forEach(l => rows.push([fmtDate(l.created_at), actLabel(l), t(auditTypeLabel[actType(l.action)]), l.user_name||l.user_email||"—", l.resource||""]));
     downloadCSV(`trilha-auditoria-${new Date().toISOString().slice(0,10)}.csv`, rows);
   };
 
@@ -2325,24 +2326,24 @@ function SecurityPage() {
           <Lock size={20} className="text-emerald-600" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Segurança Cibernética</h1>
-          <p className="text-sm text-slate-500 mt-1">Controles de acesso, criptografia, autenticação e trilha de auditoria.</p>
+          <h1 className="text-2xl font-bold text-slate-800">{t('sec_title')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('sec_subtitle')}</p>
         </div>
       </div>
 
       {/* Medidas de segurança ativas */}
       <div className="bg-white rounded-2xl p-5 border border-green-200 shadow-sm mb-6">
-        <h3 className="font-semibold text-slate-800 text-sm mb-4">Medidas de segurança ativas</h3>
+        <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('sec_measures_title')}</h3>
         <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
           {[
-            "Conexão criptografada (HTTPS/TLS)",
-            "Senhas com hash bcrypt (custo 12)",
-            "Sessão com token JWT + token de atualização",
-            "Limite de requisições (proteção contra abuso)",
-            "Consultas parametrizadas ao banco de dados",
-            "Trilha de auditoria de ações sensíveis",
-            "Conformidade LGPD: consentimento e anonimização",
-            "Cabeçalhos de segurança (Helmet) e CORS restrito",
+            t('sec_m1'),
+            t('sec_m2'),
+            t('sec_m3'),
+            t('sec_m4'),
+            t('sec_m5'),
+            t('sec_m6'),
+            t('sec_m7'),
+            t('sec_m8'),
           ].map((label,i) => (
             <div key={i} className="flex items-center gap-2 text-xs text-slate-700">
               <CheckCircle size={14} className="text-green-500 flex-shrink-0" />
@@ -2355,33 +2356,33 @@ function SecurityPage() {
       {/* Controls */}
       <div className="grid grid-cols-2 gap-5 mb-6">
         <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2"><Key size={15} className="text-purple-500" />Controles de Acesso</h3>
+          <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2"><Key size={15} className="text-purple-500" />{t('sec_access_title')}</h3>
           <div className="space-y-1">
             <div className="py-2 border-b border-slate-50">
-              <div className="text-sm font-medium text-slate-800 mb-1">Perfis de acesso</div>
-              <div className="text-xs text-slate-500 leading-relaxed">Administrador, Gestor e Colaborador — cada ação é liberada conforme o papel do usuário.</div>
+              <div className="text-sm font-medium text-slate-800 mb-1">{t('sec_acc1_t')}</div>
+              <div className="text-xs text-slate-500 leading-relaxed">{t('sec_acc1_d')}</div>
             </div>
             <div className="py-2 border-b border-slate-50">
-              <div className="text-sm font-medium text-slate-800 mb-1">Sessões autenticadas</div>
-              <div className="text-xs text-slate-500 leading-relaxed">Acesso por token JWT com expiração e renovação por token de atualização.</div>
+              <div className="text-sm font-medium text-slate-800 mb-1">{t('sec_acc2_t')}</div>
+              <div className="text-xs text-slate-500 leading-relaxed">{t('sec_acc2_d')}</div>
             </div>
             <div className="py-2">
-              <div className="text-sm font-medium text-slate-800 mb-1">Política de Senha</div>
-              <div className="text-xs text-slate-500 leading-relaxed">Mínimo 12 caracteres · Letras maiúsculas e minúsculas · Números · Símbolos · Hash bcrypt (custo 12)</div>
+              <div className="text-sm font-medium text-slate-800 mb-1">{t('sec_acc3_t')}</div>
+              <div className="text-xs text-slate-500 leading-relaxed">{t('sec_acc3_d')}</div>
             </div>
           </div>
         </div>
 
         <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2"><Database size={15} className="text-blue-500" />Proteção de Dados</h3>
+          <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2"><Database size={15} className="text-blue-500" />{t('sec_data_title')}</h3>
           <div className="space-y-3">
             {[
-              ["Criptografia em trânsito", "HTTPS/TLS em toda a aplicação"],
-              ["Senhas",                   "Hash bcrypt (custo 12)"],
-              ["Banco de dados",           "Consultas parametrizadas (anti-SQL injection)"],
-              ["Validação de entrada",     "Aplicada nas requisições da API"],
-              ["Persistência",             "Banco em volume dedicado (Railway)"],
-              ["Anonimização",             "Disponível em pesquisas anônimas"],
+              [t('sec_dp1_l'), t('sec_dp1_v')],
+              [t('sec_dp2_l'), t('sec_dp2_v')],
+              [t('sec_dp3_l'), t('sec_dp3_v')],
+              [t('sec_dp4_l'), t('sec_dp4_v')],
+              [t('sec_dp5_l'), t('sec_dp5_v')],
+              [t('sec_dp6_l'), t('sec_dp6_v')],
             ].map(([label,value],i) => (
               <div key={i} className="flex items-start justify-between text-xs py-2 border-b border-slate-50 last:border-0 gap-3">
                 <span className="text-slate-600">{label}</span>
@@ -2396,29 +2397,29 @@ function SecurityPage() {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-            <Activity size={15} className="text-slate-500" />Trilha de Auditoria
+            <Activity size={15} className="text-slate-500" />{t('sec_audit_trail')}
           </h3>
           <div className="flex gap-2">
-            <button onClick={loadAudit} disabled={loadingLog} title="Recarregar a trilha de auditoria" className="flex items-center gap-1.5 text-xs border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
-              <RefreshCw size={11} className={loadingLog?"animate-spin":""} />Atualizar
+            <button onClick={loadAudit} disabled={loadingLog} title={t('sec_reload_title')} className="flex items-center gap-1.5 text-xs border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+              <RefreshCw size={11} className={loadingLog?"animate-spin":""} />{t('sec_refresh')}
             </button>
-            <button onClick={exportAudit} disabled={logs.length===0} title="Baixar a trilha em CSV" className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>
-              <Download size={11} />Exportar
+            <button onClick={exportAudit} disabled={logs.length===0} title={t('sec_export_title')} className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>
+              <Download size={11} />{t('sec_export')}
             </button>
           </div>
         </div>
         <div className="divide-y divide-slate-50">
           {loadingLog ? (
-            <div className="px-6 py-8 text-center text-sm text-slate-400">Carregando trilha...</div>
+            <div className="px-6 py-8 text-center text-sm text-slate-400">{t('sec_loading_audit')}</div>
           ) : logErr ? (
             <div className="px-6 py-8 text-center text-sm text-slate-400">{logErr}</div>
           ) : logs.length === 0 ? (
-            <div className="px-6 py-8 text-center text-sm text-slate-400">Nenhum evento registrado ainda.</div>
+            <div className="px-6 py-8 text-center text-sm text-slate-400">{t('sec_no_events')}</div>
           ) : logs.map(log => {
             const type = actType(log.action);
             return (
               <div key={log.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-slate-50 transition-colors">
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${auditTypeStyle[type]}`}>{auditTypeLabel[type]}</span>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${auditTypeStyle[type]}`}>{t(auditTypeLabel[type])}</span>
                 <span className="text-sm text-slate-700 flex-1">{actLabel(log)}</span>
                 <span className="text-xs text-slate-400">{log.user_name || log.user_email || "—"}</span>
                 <span className="text-xs text-slate-400 flex-shrink-0">{fmtDate(log.created_at)}</span>
@@ -2435,6 +2436,7 @@ function SecurityPage() {
 
 // ─── DISTRIBUTION CENTER ───────────────────────────────────────────────────────
 function DistributionCenter() {
+  const { t } = useLang();
   const [surveys, setSurveys]         = useState([]);
   const [respondents, setRespondents] = useState([]);
   const [selectedId, setSelectedId]   = useState("");
@@ -2460,7 +2462,7 @@ function DistributionCenter() {
         setRespondents(rp.respondents || []);
         const pick = list.find(s => s.status === "ativo") || list[0];
         if (pick) setSelectedId(pick.id);
-      } catch (e) { setError(e.message || "Erro ao carregar pesquisas."); }
+      } catch (e) { setError(e.message || t('sl_load_error')); }
       setLoading(false);
     })();
   }, []);
@@ -2470,12 +2472,12 @@ function DistributionCenter() {
   const link     = survey?.public_token ? `${window.location.origin}/r/${survey.public_token}` : "";
   const anon     = !!survey?.anonymous;
 
-  const tplEmail = (s, l) => `Olá,\n\nVocê foi convidado(a) a participar da pesquisa "${s?.name || ""}". Sua opinião é muito importante para o desenvolvimento da nossa organização.\n\nResponda aqui (leva poucos minutos):\n${l}\n\n${(s?.anonymous ? "Esta pesquisa é anônima e está" : "Esta pesquisa está")} em conformidade com a LGPD (Lei nº 13.709/2018).\n\nObrigado pela participação.`;
-  const tplWa    = (s, l) => `Olá! 👋 Você foi convidado(a) para a pesquisa "${s?.name || ""}". Responda em poucos minutos: ${l}  🔒 Em conformidade com a LGPD.`;
+  const tplEmail = (s, l) => t('dist_email_body', { name: s?.name || "", link: l, anon: s?.anonymous ? t('dist_email_anon_yes') : t('dist_email_anon_no') });
+  const tplWa    = (s, l) => t('dist_wa_body', { name: s?.name || "", link: l });
 
   useEffect(() => {
     if (!survey) return;
-    setSubject(`Convite para responder: ${survey.name}`);
+    setSubject(t('dist_subject',{name:survey.name}));
     setEmailBody(tplEmail(survey, link));
     setWaBody(tplWa(survey, link));
     setIncludeEmails(false);
@@ -2505,105 +2507,105 @@ function DistributionCenter() {
   return (
     <div className="p-8">
       <div className="mb-7">
-        <h1 className="text-2xl font-bold text-slate-800">Central de Distribuição</h1>
-        <p className="text-sm text-slate-500 mt-1">Monte o convite e dispare pelo seu e-mail ou WhatsApp, com o link já preenchido.</p>
+        <h1 className="text-2xl font-bold text-slate-800">{t('set_t_dist')}</h1>
+        <p className="text-sm text-slate-500 mt-1">{t('dist_subtitle')}</p>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2 mb-5"><AlertTriangle size={15} />{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />Carregando...</div>
+        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />{t('common_loading')}</div>
       ) : surveys.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 text-center">
           <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background:"#F5F3FF" }}><Send size={20} style={{ color:"#7C3AED" }} /></div>
-          <h3 className="font-semibold text-slate-800 text-sm">Nenhuma pesquisa para distribuir</h3>
-          <p className="text-sm text-slate-500 mt-1">Crie e publique uma pesquisa em “Pesquisas” para gerar o link de distribuição.</p>
+          <h3 className="font-semibold text-slate-800 text-sm">{t('dist_none')}</h3>
+          <p className="text-sm text-slate-500 mt-1">{t('dist_none_sub')}</p>
         </div>
       ) : (
         <>
           <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-5">
-            <label className="text-xs font-medium text-slate-600 block mb-1.5">Pesquisa a distribuir</label>
+            <label className="text-xs font-medium text-slate-600 block mb-1.5">{t('dist_select')}</label>
             <select value={selectedId} onChange={e => setSelectedId(e.target.value)}
               className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-purple-200">
               {surveys.map(s => <option key={s.id} value={s.id}>{s.name} {s.status!=="ativo"?`— ${s.status}`:""}</option>)}
             </select>
             {!isActive && (
               <div className="mt-3 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                <AlertTriangle size={13} />Esta pesquisa não está ativa — o link só funciona após publicá-la em “Pesquisas”.
+                <AlertTriangle size={13} />{t('dist_not_active')}
               </div>
             )}
             <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
-              <span>{respondents.length} respondente(s) cadastrado(s)</span>
+              <span>{t('dist_n_respondents',{n:respondents.length})}</span>
               <span>·</span>
-              <span>{emailRecipients.length} com e-mail e consentimento</span>
+              <span>{t('dist_n_with_email',{n:emailRecipients.length})}</span>
             </div>
           </div>
 
           {/* Link sempre visível */}
           <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-5">
-            <div className="flex items-center gap-2 mb-2"><Link2 size={16} style={{ color:"#5B21B6" }} /><h3 className="font-semibold text-slate-800 text-sm">Link público</h3></div>
+            <div className="flex items-center gap-2 mb-2"><Link2 size={16} style={{ color:"#5B21B6" }} /><h3 className="font-semibold text-slate-800 text-sm">{t('dist_public_link')}</h3></div>
             {link ? (
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
                 <span className="text-xs text-slate-600 truncate flex-1">{link}</span>
-                <button onClick={() => copy(link, "link")} className="text-xs font-semibold flex-shrink-0 px-2 py-1 rounded-lg hover:bg-slate-100" style={{ color:"#5B21B6" }}>{copied==="link"?"Copiado!":"Copiar"}</button>
+                <button onClick={() => copy(link, "link")} className="text-xs font-semibold flex-shrink-0 px-2 py-1 rounded-lg hover:bg-slate-100" style={{ color:"#5B21B6" }}>{copied==="link"?t('sl_copied'):t('dist_copy')}</button>
               </div>
-            ) : <p className="text-xs text-slate-400">Publique a pesquisa para gerar o link.</p>}
+            ) : <p className="text-xs text-slate-400">{t('dist_publish_link')}</p>}
           </div>
 
           <div className="flex gap-2 mb-5">
-            <ChannelBtn id="email" icon={Mail} label="E-mail" />
+            <ChannelBtn id="email" icon={Mail} label={t('sl_email_btn')} />
             <ChannelBtn id="whatsapp" icon={MessageCircle} label="WhatsApp" />
-            <ChannelBtn id="link" icon={Link2} label="Só o link" />
+            <ChannelBtn id="link" icon={Link2} label={t('dist_only_link')} />
           </div>
 
           {channel === "email" && (
             <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-              <h3 className="font-semibold text-slate-800 text-sm mb-4">Mensagem de e-mail</h3>
-              <label className="text-xs font-medium text-slate-600 block mb-1.5">Assunto</label>
+              <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('dist_email_msg')}</h3>
+              <label className="text-xs font-medium text-slate-600 block mb-1.5">{t('dist_subject_label')}</label>
               <input value={subject} onChange={e => setSubject(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-purple-200" />
-              <label className="text-xs font-medium text-slate-600 block mb-1.5">Corpo da mensagem</label>
+              <label className="text-xs font-medium text-slate-600 block mb-1.5">{t('dist_body_label')}</label>
               <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)} rows={9} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-purple-200" style={{ resize:"vertical" }} />
               <label className={`flex items-center gap-2.5 mt-3 py-2 px-3 rounded-xl cursor-pointer ${emailRecipients.length?"bg-slate-50 hover:bg-slate-100":"bg-slate-50 opacity-60"}`}>
                 <input type="checkbox" disabled={emailRecipients.length===0} checked={includeEmails} onChange={e => setIncludeEmails(e.target.checked)} className="w-4 h-4 accent-purple-600" />
-                <span className="text-sm text-slate-700">Preencher destinatários em cópia oculta (Cco) — {emailRecipients.length} respondente(s) com consentimento</span>
+                <span className="text-sm text-slate-700">{t('dist_bcc',{n:emailRecipients.length})}</span>
               </label>
               <div className="flex gap-2 mt-4">
-                <button onClick={openEmail} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}><Send size={14} />Abrir no meu e-mail</button>
-                <button onClick={() => copy(emailBody, "ebody")} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50"><FileText size={14} />{copied==="ebody"?"Copiado!":"Copiar mensagem"}</button>
+                <button onClick={openEmail} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}><Send size={14} />{t('dist_open_email')}</button>
+                <button onClick={() => copy(emailBody, "ebody")} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50"><FileText size={14} />{copied==="ebody"?t('sl_copied'):t('dist_copy_msg')}</button>
               </div>
-              <p className="text-xs text-slate-400 mt-3">Abre o seu programa de e-mail com tudo preenchido — você confere e envia. Para listas grandes, prefira “Copiar mensagem” e colar, ou distribuir só o link.</p>
+              <p className="text-xs text-slate-400 mt-3">{t('dist_email_hint')}</p>
             </div>
           )}
 
           {channel === "whatsapp" && (
             <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-              <h3 className="font-semibold text-slate-800 text-sm mb-4">Mensagem de WhatsApp</h3>
+              <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('dist_wa_msg')}</h3>
               <textarea value={waBody} onChange={e => setWaBody(e.target.value)} rows={5} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-purple-200" style={{ resize:"vertical" }} />
               <div className="flex gap-2 mt-4">
-                <button onClick={openWa} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:"linear-gradient(135deg,#059669,#10B981)" }}><MessageCircle size={14} />Abrir no WhatsApp</button>
-                <button onClick={() => copy(waBody, "wabody")} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50"><FileText size={14} />{copied==="wabody"?"Copiado!":"Copiar mensagem"}</button>
+                <button onClick={openWa} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:"linear-gradient(135deg,#059669,#10B981)" }}><MessageCircle size={14} />{t('dist_open_wa')}</button>
+                <button onClick={() => copy(waBody, "wabody")} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50"><FileText size={14} />{copied==="wabody"?t('sl_copied'):t('dist_copy_msg')}</button>
               </div>
-              <p className="text-xs text-slate-400 mt-3">Abre o WhatsApp com a mensagem pronta — você escolhe o contato ou grupo e envia.</p>
+              <p className="text-xs text-slate-400 mt-3">{t('dist_wa_hint')}</p>
             </div>
           )}
 
           {channel === "link" && (
             <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm text-center">
               <div className="w-16 h-16 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><Link2 size={28} style={{ color:"#5B21B6" }} /></div>
-              <p className="text-sm font-semibold text-slate-800 mb-3">Copie o link e distribua onde quiser</p>
+              <p className="text-sm font-semibold text-slate-800 mb-3">{t('dist_copy_anywhere')}</p>
               {link ? (
                 <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 max-w-md mx-auto">
                   <span className="text-xs text-slate-600 truncate flex-1 text-left">{link}</span>
-                  <button onClick={() => copy(link, "link2")} className="text-xs font-semibold flex-shrink-0" style={{ color:"#5B21B6" }}>{copied==="link2"?"Copiado!":"Copiar"}</button>
+                  <button onClick={() => copy(link, "link2")} className="text-xs font-semibold flex-shrink-0" style={{ color:"#5B21B6" }}>{copied==="link2"?t('sl_copied'):t('dist_copy')}</button>
                 </div>
-              ) : <p className="text-xs text-slate-400">Publique a pesquisa para gerar o link.</p>}
-              <p className="text-xs text-slate-400 mt-3">Intranet, mural, e-mail, grupo de mensagens — o link leva direto à pesquisa.</p>
+              ) : <p className="text-xs text-slate-400">{t('dist_publish_link')}</p>}
+              <p className="text-xs text-slate-400 mt-3">{t('dist_link_hint')}</p>
             </div>
           )}
 
           <div className="rounded-2xl p-4 border border-green-100 flex items-center gap-2 text-xs text-green-700 mt-5" style={{ background:"#F0FDF4" }}>
             <Shield size={14} />
-            {anon ? "Esta pesquisa é anônima. " : ""}As respostas são tratadas conforme a LGPD. Envie convites apenas a quem deu consentimento.
+            {anon ? t('dist_footer_anon') : ""}{t('dist_footer')}
           </div>
         </>
       )}
@@ -2613,6 +2615,7 @@ function DistributionCenter() {
 
 // ─── AI INSIGHTS ──────────────────────────────────────────────────────────────
 function AIInsights() {
+  const { t } = useLang();
   const [surveys,     setSurveys]     = useState([]);
   const [selectedId,  setSelectedId]  = useState(null);
   const [loadingList, setLoadingList] = useState(true);
@@ -2628,7 +2631,7 @@ function AIInsights() {
         setSurveys(list);
         const pick = list.find(s => (s.response_count||0) > 0) || list[0];
         if (pick) setSelectedId(pick.id);
-      } catch (e) { setError(e.message || "Erro ao carregar pesquisas."); }
+      } catch (e) { setError(e.message || t('sl_load_error')); }
       setLoadingList(false);
     })();
   }, []);
@@ -2642,7 +2645,7 @@ function AIInsights() {
       const data = await api.results.insights(selectedId);
       setInsights(data.insights);
     } catch (e) {
-      setError(e.message || "Erro ao gerar a análise. Tente novamente.");
+      setError(e.message || t('ai_gen_error'));
     }
     setLoading(false);
   };
@@ -2655,18 +2658,18 @@ function AIInsights() {
             <Sparkles size={20} className="text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Insights com IA</h1>
-            <p className="text-sm text-slate-500">Análise inteligente dos resultados com recomendações estratégicas para RH.</p>
+            <h1 className="text-2xl font-bold text-slate-800">{t('ai_title')}</h1>
+            <p className="text-sm text-slate-500">{t('ai_subtitle')}</p>
           </div>
         </div>
       </div>
 
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-6">
-        <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-3">Selecione a pesquisa para analisar</label>
+        <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-3">{t('ai_select')}</label>
         {loadingList ? (
-          <div className="flex items-center gap-2 text-slate-400 text-sm py-3"><Loader2 size={16} className="animate-spin" />Carregando pesquisas...</div>
+          <div className="flex items-center gap-2 text-slate-400 text-sm py-3"><Loader2 size={16} className="animate-spin" />{t('sl_loading')}</div>
         ) : surveys.length === 0 ? (
-          <div className="text-slate-400 text-sm py-3">Nenhuma pesquisa criada ainda.</div>
+          <div className="text-slate-400 text-sm py-3">{t('dash_none_created')}</div>
         ) : (
           <>
           <div className="flex gap-2 flex-wrap mb-4">
@@ -2680,7 +2683,7 @@ function AIInsights() {
           </div>
           {selected && (
             <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl mb-4">
-              {[["Respostas",String(selected.response_count||0)],["Categoria",selected.category||"—"],["Status",selected.status||"—"]].map(([lbl,val],i) => (
+              {[[t('rd_responses'),String(selected.response_count||0)],[t('ai_category'),selected.category||"—"],[t('ai_status'),selected.status||"—"]].map(([lbl,val],i) => (
                 <div key={i} className={`flex-1 text-center ${i<2?"border-r border-slate-200":""}`}>
                   <div className="text-sm font-bold text-slate-800">{val}</div>
                   <div className="text-xs text-slate-400">{lbl}</div>
@@ -2693,7 +2696,7 @@ function AIInsights() {
         <button onClick={generateInsights} disabled={loading || !selectedId}
           className="w-full py-3 text-white rounded-xl font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-60 hover:opacity-90"
           style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-          {loading ? <><Loader2 size={16} className="animate-spin" />Analisando com IA...</> : <><Sparkles size={16} />Gerar Análise Completa</>}
+          {loading ? <><Loader2 size={16} className="animate-spin" />{t('ai_analyzing')}</> : <><Sparkles size={16} />{t('ai_generate')}</>}
         </button>
         {error && <p className="text-xs text-red-500 mt-2 text-center">{error}</p>}
       </div>
@@ -2718,7 +2721,7 @@ function AIInsights() {
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <h3 className="font-semibold text-slate-800 text-sm">Resumo Executivo</h3>
+                  <h3 className="font-semibold text-slate-800 text-sm">{t('ai_summary')}</h3>
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${insights.npsClassificacao==="Excelente"?"bg-green-100 text-green-700":insights.npsClassificacao==="Bom"?"bg-blue-100 text-blue-700":"bg-amber-100 text-amber-700"}`}>
                     NPS {insights.npsClassificacao}
                   </span>
@@ -2732,7 +2735,7 @@ function AIInsights() {
             {/* Pontos fortes */}
             <div className="bg-white rounded-2xl p-5 border border-green-100 shadow-sm">
               <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-500" />Pontos Fortes
+                <span className="w-2 h-2 rounded-full bg-green-500" />{t('ai_strengths')}
               </h3>
               <div className="space-y-2">
                 {(insights.pontosFortesArr||[]).map((p,i) => (
@@ -2747,7 +2750,7 @@ function AIInsights() {
             {/* Pontos de atenção */}
             <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm">
               <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-amber-500" />Pontos de Atenção
+                <span className="w-2 h-2 rounded-full bg-amber-500" />{t('ai_attention')}
               </h3>
               <div className="space-y-2">
                 {(insights.pontosAtencaoArr||[]).map((p,i) => (
@@ -2763,7 +2766,7 @@ function AIInsights() {
           {/* Recomendações */}
           <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
             <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
-              <Zap size={15} style={{ color:"#5B21B6" }} />Recomendações Estratégicas
+              <Zap size={15} style={{ color:"#5B21B6" }} />{t('ai_recommendations')}
             </h3>
             <div className="grid grid-cols-2 gap-3">
               {(insights.recomendacoesArr||[]).map((r,i) => (
@@ -2779,7 +2782,7 @@ function AIInsights() {
             {/* Temas */}
             <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
               <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
-                <MessageCircle size={15} className="text-blue-500" />Principais Temas (Respostas Abertas)
+                <MessageCircle size={15} className="text-blue-500" />{t('ai_themes')}
               </h3>
               <div className="space-y-2">
                 {(insights.temasAbertosArr||[]).map((t,i) => (
@@ -2795,13 +2798,13 @@ function AIInsights() {
             <div className="space-y-4">
               <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
                 <h3 className="font-semibold text-red-800 text-sm mb-2 flex items-center gap-2">
-                  <AlertTriangle size={14} className="text-red-500" />Prioridade Imediata
+                  <AlertTriangle size={14} className="text-red-500" />{t('ai_priority')}
                 </h3>
                 <p className="text-xs text-red-700 leading-relaxed">{insights.prioridadeImediata}</p>
               </div>
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5">
                 <h3 className="font-semibold text-blue-800 text-sm mb-2 flex items-center gap-2">
-                  <BarChart2 size={14} className="text-blue-500" />Benchmark de Mercado
+                  <BarChart2 size={14} className="text-blue-500" />{t('ai_benchmark')}
                 </h3>
                 <p className="text-xs text-blue-700 leading-relaxed">{insights.benchmarkTexto}</p>
               </div>
