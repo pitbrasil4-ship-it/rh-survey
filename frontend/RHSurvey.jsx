@@ -649,6 +649,7 @@ function SurveyList({ onCreateNew, onView }) {
   const [surveys, setSurveys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
+  const [translating, setTranslating] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -724,6 +725,15 @@ function SurveyList({ onCreateNew, onView }) {
     const url = `${window.location.origin}/r/${s.token}`;
     const text = t('dist_wa_body',{name:s.name, link:url});
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+  };
+  const handleTranslate = async (s) => {
+    if (translating) return;
+    setTranslating(s.id); setError("");
+    try {
+      const r = await api.surveys.translate(s.id);
+      alert(r && r.demo ? t('sl_translate_demo') : t('sl_translated'));
+    } catch (e) { alert(t('sl_translate_err')); }
+    setTranslating("");
   };
 
   if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('sl_loading')}</div>;
@@ -809,6 +819,7 @@ function SurveyList({ onCreateNew, onView }) {
                   <div className="flex items-center gap-4 mt-4 pt-3.5 border-t border-slate-50">
                     <span className="text-xs text-slate-400 flex items-center gap-1"><Clock size={11} />{s.created}</span>
                     <div className="flex gap-3 ml-auto">
+                      <button onClick={() => handleTranslate(s)} disabled={translating===s.id} title={t('sl_translate_title')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed">{translating===s.id ? <><Loader2 size={11} className="animate-spin" />{t('sl_translating')}</> : <><Sparkles size={11} />{t('sl_translate')}</>}</button>
                       <button onClick={() => handleEmail(s)} disabled={!s.token || s.status!=="ativo"} title={s.status!=="ativo" ? t('sl_publish_send') : t('sl_open_email')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"><Mail size={11} />{t('sl_email_btn')}</button>
                       <button onClick={() => handleCopyLink(s)} disabled={!s.token || s.status!=="ativo"}
                         title={s.status!=="ativo" ? t('sl_publish_link') : t('sl_copy_link_title')}
