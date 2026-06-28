@@ -3,6 +3,22 @@ const { v4: uuid }   = require('uuid');
 const { getDB }      = require('../config/database');
 const { ok, created, err, notFound, badReq } = require('../utils/response');
 const logger         = require('../utils/logger');
+const { translateSurvey, aiEnabled } = require('../utils/translate');
+
+// Grava no banco as traduções (EN/ES) de uma pesquisa já criada e suas perguntas.
+function applyTranslation(db, surveyId, qIds, tr) {
+  const Js = a => (Array.isArray(a) && a.length) ? JSON.stringify(a) : null;
+  db.prepare('UPDATE surveys SET name_en=?, name_es=?, description_en=?, description_es=? WHERE id=?')
+    .run(tr.name_en || null, tr.name_es || null, tr.description_en || null, tr.description_es || null, surveyId);
+  if (Array.isArray(tr.questions)) {
+    const us = db.prepare('UPDATE questions SET text_en=?, text_es=?, options_en=?, options_es=? WHERE id=?');
+    tr.questions.forEach((q, i) => {
+      const qid = qIds[i];
+      if (!qid) return;
+      us.run(q.text_en || null, q.text_es || null, Js(q.options_en), Js(q.options_es), qid);
+    });
+  }
+}
 
 /* GET /surveys */
 function list(req, res) {
@@ -20,7 +36,7 @@ function list(req, res) {
 }
 
 /* POST /surveys */
-function create(req, res) {
+async function create(req, res) {
   try {
     const { name, description, category, targetGroup, anonymous, deadline, questions = [], lgpdBasis } = req.body;
     if (!name) return badReq(res, 'Nome da pesquisa é obrigatório');
@@ -35,15 +51,46 @@ function create(req, res) {
       deadline || null, lgpdBasis || 'consentimento', uuid()
     );
 
+    const qIds = [];
     if (questions.length > 0) {
       const stmt = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es) VALUES (?,?,?,?,?,?,?,?,?,?)');
       const J = a => (Array.isArray(a) && a.length) ? JSON.stringify(a) : null;
-      questions.forEach((q, i) => stmt.run(uuid(), surveyId, i+1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es)));
+      questions.forEach((q, i) => {
+        const qid = uuid(); qIds.push(qid);
+        stmt.run(qid, surveyId, i+1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es));
+      });
     }
+
+    // Tradução automática (IA) do conteúdo para EN/ES ao salvar.
+    // Não bloqueia nem invalida a criação se a IA estiver em modo demo ou falhar.
+    try {
+      const tr = await translateSurvey({ name, description, questions: questions.map(q => ({ text: q.text, options: q.options })) });
+      if (tr) applyTranslation(db, surveyId, qIds, tr);
+    } catch (e) { logger.warn('Tradução automática falhou na criação da pesquisa: ' + e.message); }
 
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(surveyId);
     return created(res, { survey }, 'Pesquisa criada com sucesso');
   } catch (e) { return err(res, 'Erro ao criar pesquisa', 500, e.message); }
+}
+
+/* POST /surveys/:id/translate — (re)gera as traduções EN/ES com IA para uma pesquisa existente */
+async function translateExisting(req, res) {
+  try {
+    const db     = getDB();
+    const survey = db.prepare('SELECT * FROM surveys WHERE id = ? AND tenant_id = ?').get(req.params.id, req.user.tenant_id);
+    if (!survey) return notFound(res, 'Pesquisa');
+    if (!aiEnabled()) return ok(res, { translated: false, demo: true }, 'IA em modo demo — configure ANTHROPIC_API_KEY para traduzir automaticamente.');
+
+    const rows = db.prepare('SELECT id, text, options FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
+    const PJ   = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+    const qIds = rows.map(r => r.id);
+    const questions = rows.map(r => ({ text: r.text, options: PJ(r.options) }));
+
+    const tr = await translateSurvey({ name: survey.name, description: survey.description, questions });
+    if (!tr) return err(res, 'Não foi possível gerar a tradução agora. Tente novamente.', 502);
+    applyTranslation(db, survey.id, qIds, tr);
+    return ok(res, { translated: true }, 'Pesquisa traduzida para EN/ES com IA');
+  } catch (e) { return err(res, 'Erro ao traduzir pesquisa', 500, e.message); }
 }
 
 /* GET /surveys/:id */
@@ -133,4 +180,4 @@ async function generateAI(req, res) {
   } catch (e) { return err(res, 'Erro ao gerar perguntas', 500, e.message); }
 }
 
-module.exports = { list, create, getOne, update, publish, remove, generateAI };
+module.exports = { list, create, getOne, update, publish, remove, generateAI, translateExisting };
