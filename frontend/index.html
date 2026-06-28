@@ -42,18 +42,29 @@
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         height: 100vh; gap: 16px;
       }
-      #logo {
-        width: 56px; height: 56px; background: linear-gradient(135deg,#5B21B6,#7C3AED);
-        border-radius: 16px; display: flex; align-items: center; justify-content: center;
-        font-weight: 800; color: white; font-size: 20px;
-      }
+      #logo { width: 56px; height: 56px; display: block; }
       #loading p { color: #64748B; font-size: 14px; margin: 0; }
     </style>
   </head>
   <body>
     <div id="root">
       <div id="loading">
-        <div id="logo">RH</div>
+        <svg id="logo" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="RH Survey">
+          <defs>
+            <linearGradient id="lbg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1E1B4B"/><stop offset="1" stop-color="#312E81"/></linearGradient>
+            <linearGradient id="lr" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#DC2626"/><stop offset="1" stop-color="#EF4444"/></linearGradient>
+          </defs>
+          <rect width="64" height="64" rx="15" fill="url(#lbg)"/>
+          <g transform="translate(6.2,12.1) scale(0.76)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+            <path d="M26 18 L30 46 L34 33 L44 33 L63 33" stroke="url(#lr)" stroke-width="2.5" opacity="0.4"/>
+            <path d="M5 36 L14 36 L18 27 L22 46 L26 18" stroke="url(#lr)" stroke-width="2.5"/>
+            <line x1="26" y1="18" x2="26" y2="30" stroke="#EF4444" stroke-width="2.5"/>
+            <path d="M20 23 L26 20 L32 23" stroke="#EF4444" stroke-width="2.5"/>
+            <line x1="26" y1="30" x2="22" y2="40" stroke="#EF4444" stroke-width="2.5"/>
+            <line x1="26" y1="30" x2="30" y2="40" stroke="#EF4444" stroke-width="2.5"/>
+            <circle cx="26" cy="12" r="5.5" fill="#EF4444"/>
+          </g>
+        </svg>
         <p>Carregando RH Survey...</p>
       </div>
     </div>
