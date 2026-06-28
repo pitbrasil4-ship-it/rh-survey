@@ -474,12 +474,12 @@ function Dashboard({ setPage }) {
   }, []);
 
   if (loading) return (
-    <div className="p-8 flex items-center justify-center" style={{ minHeight:"60vh" }}>
+    <div className="p-4 md:p-8 flex items-center justify-center" style={{ minHeight:"60vh" }}>
       <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 size={18} className="animate-spin" />{t('dash_loading')}</div>
     </div>
   );
   if (error) return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2">
         <AlertTriangle size={15} />{error}
       </div>
@@ -511,13 +511,13 @@ function Dashboard({ setPage }) {
     .filter(d => d.value > 0);
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-7">
         <h1 className="text-2xl font-bold text-slate-800">{t('dash_welcome')}</h1>
         <p className="text-slate-500 mt-1 text-sm">{t('dash_subtitle')}</p>
       </div>
 
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <KpiCard title={t('kpi_active_surveys')} value={String(active)} subtitle={t('kpi_of_total',{n:totalSurveys})}        icon={ClipboardList} colorClass="bg-purple-500"  />
         <KpiCard title={t('kpi_total_responses')} value={String(totalResp)} subtitle={t('kpi_completed_evals')}             icon={CheckCircle}   colorClass="bg-emerald-500" />
         <KpiCard title={t('kpi_created_surveys')} value={String(totalSurveys)} subtitle={t('kpi_all_status')}                icon={TrendingUp}    colorClass="bg-blue-500"    />
@@ -525,7 +525,7 @@ function Dashboard({ setPage }) {
       </div>
 
       {/* LGPD quick status — dados reais */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-2xl p-4 border border-green-200 shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0"><Shield size={18} className="text-green-600" /></div>
           <div>
@@ -549,7 +549,7 @@ function Dashboard({ setPage }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-5 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-6">
         <div className="col-span-2 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
           <h3 className="font-semibold text-slate-800 text-sm mb-1">{t('dash_responses_by_survey')}</h3>
           <p className="text-xs text-slate-400 mb-5">{t('dash_responses_by_survey_sub')}</p>
@@ -626,7 +626,7 @@ function Dashboard({ setPage }) {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label:t('new_survey'), desc:t('qa_create_desc'),  Icon:Plus,    bg:"bg-purple-500",  target:"surveys"      },
           { label:t('qa_manage_resp'), desc:t('qa_add_participants'),Icon:Users,   bg:"bg-blue-500",    target:"respondents"  },
@@ -743,11 +743,11 @@ function SurveyList({ onCreateNew, onView }) {
     setTranslating("");
   };
 
-  if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('sl_loading')}</div>;
-  if (error)   return <div className="p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
+  if (loading) return <div className="p-4 md:p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('sl_loading')}</div>;
+  if (error)   return <div className="p-4 md:p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('nav_surveys')}</h1>
@@ -978,7 +978,7 @@ function SurveyBuilder({ onBack, initial }) {
   ];
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex items-center gap-4 mb-7">
         <button onClick={onBack} className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl">
           <ChevronRight size={17} className="rotate-180" />
@@ -1007,7 +1007,7 @@ function SurveyBuilder({ onBack, initial }) {
 
       {/* Basic Info */}
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-5">
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div className="col-span-2">
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-2">{t('sb_name_label')}</label>
             <input className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-400 text-sm"
@@ -1033,7 +1033,7 @@ function SurveyBuilder({ onBack, initial }) {
             <Shield size={15} className="text-green-600" />
             <span className="text-sm font-semibold text-green-800">{t('sb_privacy_title')}</span>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <label className="flex items-center gap-3 cursor-pointer">
               <div onClick={() => setAnonymous(!anonymous)}
                 className={`w-10 h-5 rounded-full relative transition-colors ${anonymous?"bg-green-500":"bg-slate-300"}`}>
@@ -1073,7 +1073,7 @@ function SurveyBuilder({ onBack, initial }) {
           {tab==="builder" && (
             <>
               <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('sb_q_type')}</h3>
-              <div className="grid grid-cols-2 gap-2 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
                 {QUESTION_TYPES.map(qt => (
                   <button key={qt.id} onClick={() => setSelType(qt.id)}
                     className={`p-3 rounded-xl text-left border transition-all ${selType===qt.id?"border-purple-400 bg-purple-50":"border-slate-200 hover:bg-slate-50"}`}>
@@ -1374,11 +1374,11 @@ function RespondentManager() {
 
   const pending = respondents.filter(r => !r.consent).length;
 
-  if (loading) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('rm_loading')}</div>;
-  if (error)   return <div className="p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
+  if (loading) return <div className="p-4 md:p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('rm_loading')}</div>;
+  if (error)   return <div className="p-4 md:p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('nav_respondents')}</h1>
@@ -1400,7 +1400,7 @@ function RespondentManager() {
       {showForm && (
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm mb-5">
           <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('rm_new_respondent')}</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-slate-600 block mb-1">{t('rm_name_label')}</label>
               <input value={fName} onChange={e=>setFName(e.target.value)} placeholder={t('rm_name_ph')} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
@@ -1611,7 +1611,7 @@ function Evaluation360() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('nav_evaluation360')}</h1>
@@ -1625,7 +1625,7 @@ function Evaluation360() {
       {creating && (
         <div className="bg-white rounded-2xl p-5 mb-6 border border-purple-200 shadow-sm">
           <h3 className="font-semibold text-slate-800 text-sm mb-3">{t('ev_new_cycle_title')}</h3>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">{t('ev_cycle_name')}</label>
               <input value={form.name} onChange={e => setForm(f => ({ ...f, name:e.target.value }))} placeholder={t('ev_cycle_name_ph')}
@@ -1652,7 +1652,7 @@ function Evaluation360() {
 
       <div className="rounded-2xl p-5 mb-6 border border-purple-100" style={{ background:"linear-gradient(135deg,#f5f3ff,#ede9fe)" }}>
         <h3 className="font-semibold text-purple-800 text-sm mb-3">{t('ev_how_title')}</h3>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           {[["👤","ev_how1_t","ev_how1_d"],["⬆️","ev_how2_t","ev_how2_d"],["↔️","ev_how3_t","ev_how3_d"],["⬇️","ev_how4_t","ev_how4_d"]].map(([e,ti,d],i) => (
             <div key={i} className="bg-white rounded-xl p-3 text-center border border-purple-100">
               <div className="text-xl mb-1">{e}</div>
@@ -1679,7 +1679,7 @@ function Evaluation360() {
           <button onClick={toggleCreate} className="inline-flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}><Plus size={14} />{t('ev_create_first')}</button>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
           {cycles.map(c => {
             const total = c.total_assignments || 0, done = c.completed_assignments || 0;
             const pct = total ? Math.round((done/total)*100) : 0;
@@ -1772,7 +1772,7 @@ function CycleDetail({ cycleId, onBack }) {
   assignments.forEach(a => { (groups[a.subject_id] = groups[a.subject_id] || { name:a.subject_name, items:[] }).items.push(a); });
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700 mb-4">{t('cd_back')}</button>
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -1790,7 +1790,7 @@ function CycleDetail({ cycleId, onBack }) {
         <>
           <div className="bg-white rounded-2xl p-5 mb-6 border border-slate-100 shadow-sm">
             <h3 className="font-semibold text-slate-800 text-sm mb-3">{t('cd_assign_title')}</h3>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('cd_subject')}</label>
                 <select value={form.subjectId} onChange={e => setForm(f => ({ ...f, subjectId:e.target.value }))}
@@ -2069,8 +2069,8 @@ function ResultsDashboard() {
     return () => { alive = false; };
   }, [selectedId]);
 
-  if (loadingList) return <div className="p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('rd_loading')}</div>;
-  if (error)       return <div className="p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
+  if (loadingList) return <div className="p-4 md:p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('rd_loading')}</div>;
+  if (error)       return <div className="p-4 md:p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div></div>;
 
   const survey   = result?.survey;
   const totalR   = survey?.totalResponses ?? 0;
@@ -2096,7 +2096,7 @@ function ResultsDashboard() {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('rd_title')}</h1>
@@ -2132,7 +2132,7 @@ function ResultsDashboard() {
         <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />{t('common_loading')}</div>
       ) : !result ? null : (
       <>
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <KpiCard title={t('rd_responses')} value={String(totalR)} subtitle={t('kpi_completed_evals')} icon={MessageSquare} colorClass="bg-purple-500" />
         <KpiCard title={t('rd_completion_rate')} value={`${compRate}%`} subtitle={t('rd_started_vs_completed')} icon={CheckCircle} colorClass="bg-emerald-500" />
         <KpiCard title={t('rd_nps_score')} value={nps ? String(nps.nps) : "—"} subtitle={nps ? nps.classification : t('rd_no_nps_q')} icon={TrendingUp} colorClass="bg-blue-500" />
@@ -2201,7 +2201,7 @@ function LGPDPage() {
   const totalR = respondents.length;
   const consentPct = totalR ? Math.round(consented/totalR*100) : 0;
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-7">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
@@ -2215,7 +2215,7 @@ function LGPDPage() {
       </div>
 
       {/* Status */}
-      <div className="grid grid-cols-3 gap-4 mb-7">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-7">
         {[
           { label:t('lgpd_legal_basis'), value:t('lgpd_explicit_consent'), status:"ok", icon:CheckCircle },
           { label:t('lgpd_dpo'), value:"dpo@empresa.com", status:"ok", icon:UserCheck },
@@ -2242,7 +2242,7 @@ function LGPDPage() {
           <h3 className="font-semibold text-slate-800 text-sm">{t('lgpd_rights_title')}</h3>
           <p className="text-xs text-slate-400 mt-0.5">{t('lgpd_rights_sub')}</p>
         </div>
-        <div className="grid grid-cols-3 gap-0">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-0">
           {rights.map((r,i) => (
             <div key={i} onClick={() => setExpandedRight(expandedRight===i?null:i)}
               className={`p-5 cursor-pointer transition-colors border-slate-50 ${i<3?"border-b":""} ${i%3!==2?"border-r":""} ${expandedRight===i?"bg-purple-50":"hover:bg-slate-50"}`}>
@@ -2341,7 +2341,7 @@ function SecurityPage() {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-7 flex items-start gap-4">
         <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
           <Lock size={20} className="text-emerald-600" />
@@ -2355,7 +2355,7 @@ function SecurityPage() {
       {/* Medidas de segurança ativas */}
       <div className="bg-white rounded-2xl p-5 border border-green-200 shadow-sm mb-6">
         <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('sec_measures_title')}</h3>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5">
           {[
             t('sec_m1'),
             t('sec_m2'),
@@ -2375,7 +2375,7 @@ function SecurityPage() {
       </div>
 
       {/* Controls */}
-      <div className="grid grid-cols-2 gap-5 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
         <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
           <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2"><Key size={15} className="text-purple-500" />{t('sec_access_title')}</h3>
           <div className="space-y-1">
@@ -2526,7 +2526,7 @@ function DistributionCenter() {
   );
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-7">
         <h1 className="text-2xl font-bold text-slate-800">{t('set_t_dist')}</h1>
         <p className="text-sm text-slate-500 mt-1">{t('dist_subtitle')}</p>
@@ -2672,7 +2672,7 @@ function AIInsights() {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-7">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
@@ -2723,7 +2723,7 @@ function AIInsights() {
       </div>
 
       {loading && (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[...Array(4)].map((_,i) => (
             <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm animate-pulse">
               <div className="h-4 bg-slate-100 rounded w-1/3 mb-3" /><div className="h-3 bg-slate-100 rounded w-full mb-2" /><div className="h-3 bg-slate-100 rounded w-4/5" />
@@ -2752,7 +2752,7 @@ function AIInsights() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             {/* Pontos fortes */}
             <div className="bg-white rounded-2xl p-5 border border-green-100 shadow-sm">
               <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
@@ -2789,7 +2789,7 @@ function AIInsights() {
             <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
               <Zap size={15} style={{ color:"#5B21B6" }} />{t('ai_recommendations')}
             </h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {(insights.recomendacoesArr||[]).map((r,i) => (
                 <div key={i} className="flex items-start gap-3 p-4 bg-purple-50 rounded-xl border border-purple-100">
                   <span className="w-6 h-6 rounded-lg text-white text-xs font-bold flex items-center justify-center flex-shrink-0" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>{i+1}</span>
@@ -2799,7 +2799,7 @@ function AIInsights() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             {/* Temas */}
             <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
               <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
@@ -2863,7 +2863,7 @@ function NotificationCenter({ notifications, setNotifications }) {
   const markRead    = id  => setNotifications(p => p.map(n => n.id===id ? {...n,read:true} : n));
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('nc_title')}</h1>
@@ -3000,7 +3000,7 @@ function TeamManagement() {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('set_t_team')}</h1>
@@ -3042,7 +3042,7 @@ function TeamManagement() {
       {showForm && (
         <div className="bg-purple-50 border border-purple-200 rounded-2xl p-5 mb-6">
           <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('tm_register_new')}</h3>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <div>
               <label className="text-xs font-medium text-slate-600 block mb-1">{t('tm_name')}</label>
               <input className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400 bg-white"
@@ -3073,7 +3073,7 @@ function TeamManagement() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-5 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
         {/* Users table */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -3186,7 +3186,7 @@ function TemplatesLibrary({ onUseTemplate }) {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{tr('tl_title')}</h1>
@@ -3211,7 +3211,7 @@ function TemplatesLibrary({ onUseTemplate }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {filtered.map(t => (
           <div key={t.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-all group">
             <div className="flex items-start justify-between mb-3">
@@ -3331,7 +3331,7 @@ function AdvancedReports() {
   );
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('ar_title')}</h1>
@@ -3354,7 +3354,7 @@ function AdvancedReports() {
         <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />{t('ar_loading')}</div>
       ) : (
         <>
-          <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <Kpi label={t('nav_surveys')} value={totalSurveys} sub={t('ar_n_active',{n:activeSurveys})} />
             <Kpi label={t('ar_total_responses')} value={totalResponses} color="#5B21B6" />
             <Kpi label={t('ar_avg_nps')} value={avgNps==null ? "—" : avgNps} sub={npsVals.length ? t('ar_of_n_surveys',{n:npsVals.length}) : t('ar_no_data')} />
@@ -3417,7 +3417,7 @@ function AdvancedReports() {
 
           {view === "participacao" && (
             <>
-              <div className="grid grid-cols-3 gap-5 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-6">
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 col-span-2">
                   <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('ar_respondents_by_group')}</h3>
                   {totalResp === 0 ? (
@@ -3505,7 +3505,7 @@ function ChangePasswordCard() {
           <p className="text-xs text-slate-400 mt-0.5">{t('cpc_subtitle')}</p>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {field(t('cpc_current'), cur, setCur, t('cpc_ph_current'))}
         {field(t('cpc_new'), nw, setNw, t('cpc_ph_min8'))}
         {field(t('cpc_confirm'), confirm, setConfirm, t('cpc_ph_repeat'))}
@@ -3538,14 +3538,14 @@ function SettingsPage({ setPage }) {
   ];
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-7">
         <h1 className="text-2xl font-bold text-slate-800">{t('set_title')}</h1>
         <p className="text-sm text-slate-500 mt-1">{t('set_subtitle')}</p>
       </div>
       <ChangePasswordCard />
       <h3 className="text-sm font-semibold text-slate-700 mb-3">{t('set_shortcuts')}</h3>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {shortcuts.map(({ title,desc,Icon,dest },i) => (
           <div key={i} onClick={() => setPage(dest)}
             className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-start gap-4 hover:shadow-md transition-all cursor-pointer group">
