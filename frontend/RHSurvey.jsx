@@ -2876,6 +2876,8 @@ function NotificationCenter({ notifications, setNotifications }) {
         )}
       </div>
 
+      <PushToggle />
+
       <div className="flex gap-2 mb-5">
         {[["todas",t('nc_all')],["nao_lidas",t('nc_unread_filter',{n:unread})],["alertas",t('nc_alerts')]].map(([id,label]) => (
           <button key={id} onClick={() => setFilter(id)}
@@ -3573,6 +3575,89 @@ const PAGE_LABELS = {
   lgpd:"LGPD & Privacidade", security:"Segurança", settings:"Configurações",
 };
 
+// ─── PUSH NOTIFICATIONS TOGGLE (PWA) ───────────────────────────────────────────
+function urlB64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+function PushToggle() {
+  const { t } = useLang();
+  const supported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const [enabled, setEnabled]     = useState(false);
+  const [available, setAvailable] = useState(true);
+  const [busy, setBusy]           = useState(false);
+  const [status, setStatus]       = useState("");
+
+  useEffect(() => {
+    if (!supported) return;
+    (async () => {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        setEnabled(!!sub && Notification.permission === "granted");
+      } catch {}
+      try { const r = await api.push.vapidPublic(); setAvailable(!!(r && r.enabled && r.publicKey)); } catch { setAvailable(false); }
+    })();
+  }, [supported]);
+
+  const enable = async () => {
+    setBusy(true); setStatus("");
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { setStatus(t('push_denied')); setBusy(false); return; }
+      const r = await api.push.vapidPublic();
+      if (!r || !r.publicKey) { setStatus(t('push_server_off')); setBusy(false); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(r.publicKey) });
+      await api.push.subscribe(sub.toJSON ? sub.toJSON() : sub);
+      setEnabled(true); setStatus(t('push_on'));
+    } catch (e) { setStatus(t('push_error')); }
+    setBusy(false);
+  };
+
+  const disable = async () => {
+    setBusy(true); setStatus("");
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) { await api.push.unsubscribe(sub.endpoint).catch(() => {}); await sub.unsubscribe().catch(() => {}); }
+      setEnabled(false); setStatus(t('push_off'));
+    } catch (e) { setStatus(t('push_error')); }
+    setBusy(false);
+  };
+
+  const test = async () => {
+    setBusy(true); setStatus("");
+    try { const r = await api.push.test(); setStatus(r && r.disabled ? t('push_server_off') : t('push_test_sent')); }
+    catch { setStatus(t('push_error')); }
+    setBusy(false);
+  };
+
+  if (!supported) return null;
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mb-4 flex items-center gap-3 flex-wrap">
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background:GRAD }}><Bell size={18} /></div>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-semibold text-slate-800">{t('push_title')}</div>
+        <div className="text-xs text-slate-500 leading-snug">{(enabled ? t('push_state_on') : t('push_state_off')) + (status ? " · " + status : "")}</div>
+      </div>
+      {!enabled
+        ? <button onClick={enable} disabled={busy || !available} title={!available ? t('push_server_off') : ""} className="text-xs font-bold text-white rounded-lg px-3 py-2 flex-shrink-0 disabled:opacity-50" style={{ background:GRAD }}>{t('push_enable')}</button>
+        : <div className="flex gap-2 flex-shrink-0">
+            <button onClick={test} disabled={busy} className="text-xs font-medium text-purple-700 border border-purple-200 rounded-lg px-3 py-2 hover:bg-purple-50 disabled:opacity-50">{t('push_test')}</button>
+            <button onClick={disable} disabled={busy} className="text-xs font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50 disabled:opacity-50">{t('push_disable')}</button>
+          </div>
+      }
+    </div>
+  );
+}
+
 // ─── INSTALL PROMPT (PWA) ──────────────────────────────────────────────────────
 function InstallPrompt() {
   const { t } = useLang();
@@ -3643,6 +3728,14 @@ export default function RHSurvey() {
       if (go && valid.includes(go)) setPage(go);
     } catch {}
   }, []);
+  useEffect(() => {
+    try {
+      if ("setAppBadge" in navigator) {
+        if (unreadCount > 0) navigator.setAppBadge(unreadCount).catch(() => {});
+        else if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+      }
+    } catch {}
+  }, [unreadCount]);
 
   useEffect(() => {
     (async () => {
