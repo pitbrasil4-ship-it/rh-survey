@@ -345,7 +345,7 @@ function Sidebar({ page, setPage }) {
           <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold" style={{ background:GRAD }}>RH</div>
           <div>
             <div className="font-bold text-slate-800 text-sm">RH Survey</div>
-            <div className="text-xs text-slate-400 flex items-center gap-1"><Shield size={9} className="text-green-500" />LGPD Compliant</div>
+            <div className="text-xs text-slate-400 flex items-center gap-1"><Shield size={9} className="text-green-500" />{t('side_lgpd')}</div>
           </div>
         </div>
       </div>
@@ -715,14 +715,14 @@ function SurveyList({ onCreateNew, onView }) {
   const handleEmail = (s) => {
     if (!s.token) return;
     const url = `${window.location.origin}/r/${s.token}`;
-    const subject = `Convite para responder: ${s.name}`;
-    const body = `Olá,\n\nVocê foi convidado(a) a participar da pesquisa "${s.name}". Sua opinião é muito importante.\n\nResponda aqui (leva poucos minutos):\n${url}\n\nEm conformidade com a LGPD (Lei nº 13.709/2018).\n\nObrigado pela participação.`;
+    const subject = t('dist_subject',{name:s.name});
+    const body = t('dist_email_body',{name:s.name, link:url, anon: s.anonymous ? t('dist_email_anon_yes') : t('dist_email_anon_no')});
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
   const handleWhatsApp = (s) => {
     if (!s.token) return;
     const url = `${window.location.origin}/r/${s.token}`;
-    const text = `Olá! 👋 Você foi convidado(a) para a pesquisa "${s.name}". Responda em poucos minutos: ${url}  🔒 Em conformidade com a LGPD.`;
+    const text = t('dist_wa_body',{name:s.name, link:url});
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
   };
 
@@ -1343,8 +1343,8 @@ function RespondentManager() {
   const handleConsentRequest = () => {
     const emails = respondents.filter(r => !r.consent && r.email && r.email !== "—" && r.email.includes("@")).map(r => r.email);
     if (emails.length === 0) { alert(t('rm_no_pending_email')); return; }
-    const subject = "Solicitação de consentimento (LGPD) — RGIS Brasil";
-    const body = `Olá,\n\nPara participar das nossas pesquisas internas de avaliação, precisamos do seu consentimento para o tratamento dos seus dados, conforme a LGPD (Lei nº 13.709/2018).\n\nPor favor, responda este e-mail confirmando que você concorda em participar, ou entre em contato com o RH em caso de dúvidas.\n\nObrigado.`;
+    const subject = t('rm_consent_subject');
+    const body = t('rm_consent_body');
     window.location.href = `mailto:?bcc=${encodeURIComponent(emails.join(","))}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
