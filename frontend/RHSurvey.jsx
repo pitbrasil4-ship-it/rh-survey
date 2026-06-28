@@ -3708,6 +3708,18 @@ function SegBar({ pct }) {
 function SegStat({ responses, meta, pct }) {
   return <span className="text-xs text-slate-500 whitespace-nowrap">{responses}/{meta} · {pct==null ? "—" : pct+"%"}</span>;
 }
+function segScoreColor(metric, score) {
+  if (score == null) return "#94A3B8";
+  if (metric === "nps") return score >= 50 ? "#16A34A" : score >= 0 ? "#D97706" : "#DC2626";
+  return "#5B21B6";
+}
+function NotaChip({ metric, score }) {
+  const { t } = useLang();
+  if (score == null) return <span className="text-xs text-slate-300 whitespace-nowrap">—</span>;
+  const col = segScoreColor(metric, score);
+  const lab = metric === "nps" ? "NPS" : t('seg_avg');
+  return <span className="text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ color: col, background: col + "1A" }}>{lab} {score}</span>;
+}
 
 function SegmentResultsPanel({ surveyId }) {
   const { t } = useLang();
@@ -3727,36 +3739,65 @@ function SegmentResultsPanel({ surveyId }) {
   const hasStruct = (data.regionais && data.regionais.length) || (data.departamentos && data.departamentos.length);
   if (!hasStruct) return null;
   const g = data.totals.geral;
+  const M = data.metric;
+  const scoreLabel = M === "nps" ? "NPS" : M === "avg" ? t('seg_avg') : t('seg_score');
   const regsWithKids = data.regionais.filter(r=>r.distritos.length>0);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mt-6">
-      <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2"><Building2 size={15} style={{ color:"#5B21B6" }} />{t('seg_results_title')}</h3>
+      <h3 className="font-semibold text-slate-800 text-sm mb-1 flex items-center gap-2"><Building2 size={15} style={{ color:"#5B21B6" }} />{t('seg_results_title')}</h3>
+      <p className="text-xs text-slate-400 mb-4">{t('seg_legend')}</p>
+
       <div className="rounded-xl p-4 mb-4 text-white" style={{ background:GRAD }}>
-        <div className="flex items-center justify-between"><div className="text-xs opacity-90">{t('seg_corp')}</div><div className="text-xs opacity-90">{g.responses}/{g.meta} {t('seg_responses')}</div></div>
-        <div className="text-3xl font-bold mt-1">{g.pct==null ? "—" : g.pct+"%"}</div>
+        <div className="text-xs opacity-90 mb-2">{t('seg_corp')}</div>
+        <div className="flex items-end gap-8 flex-wrap">
+          <div>
+            <div className="text-xs opacity-80">{scoreLabel}</div>
+            <div className="text-3xl font-bold leading-none mt-1">{g.score==null ? "—" : g.score}</div>
+          </div>
+          <div>
+            <div className="text-xs opacity-80">{t('seg_participation')}</div>
+            <div className="text-3xl font-bold leading-none mt-1">{g.pct==null ? "—" : g.pct+"%"}</div>
+            <div className="text-xs opacity-80 mt-1">{g.responses}/{g.meta} {t('seg_responses')}</div>
+          </div>
+        </div>
       </div>
+
       {regsWithKids.length>0 && <div className="mb-4">
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{t('org_distritos')} · {t('seg_dist_total')}: {data.totals.distritos.responses}/{data.totals.distritos.meta}</div>
         <div className="space-y-3">
           {regsWithKids.map((r,i)=>(
             <div key={i} className="border border-slate-100 rounded-xl p-3">
-              <div className="flex items-center justify-between gap-2 mb-1.5"><span className="text-sm font-semibold text-slate-700">{r.name || t('seg_no_regional')}</span><SegStat responses={r.responses} meta={r.meta} pct={r.pct} /></div>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                <span className="text-sm font-semibold text-slate-700">{r.name || t('seg_no_regional')}</span>
+                <div className="flex items-center gap-2"><NotaChip metric={M} score={r.score} /><SegStat responses={r.responses} meta={r.meta} pct={r.pct} /></div>
+              </div>
               <SegBar pct={r.pct} />
               <div className="mt-2 space-y-1.5 pl-2 border-l-2 border-slate-100">
                 {r.distritos.map((d,j)=>(
-                  <div key={j} className="flex items-center gap-2"><span className="text-xs text-slate-600 flex-1 min-w-0 truncate">{d.name}</span><div className="w-20 sm:w-28"><SegBar pct={d.pct} /></div><SegStat responses={d.responses} meta={d.meta} pct={d.pct} /></div>
+                  <div key={j} className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-slate-600 flex-1 min-w-0 truncate">{d.name}</span>
+                    <NotaChip metric={M} score={d.score} />
+                    <div className="w-14 sm:w-24"><SegBar pct={d.pct} /></div>
+                    <SegStat responses={d.responses} meta={d.meta} pct={d.pct} />
+                  </div>
                 ))}
               </div>
             </div>
           ))}
         </div>
       </div>}
+
       {data.departamentos.length>0 && <div>
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{t('org_departamentos')} · {t('seg_dep_total')}: {data.totals.departamentos.responses}/{data.totals.departamentos.meta}</div>
         <div className="space-y-1.5">
           {data.departamentos.map((d,i)=>(
-            <div key={i} className="flex items-center gap-2"><span className="text-sm text-slate-600 flex-1 min-w-0 truncate">{d.name}</span><div className="w-20 sm:w-28"><SegBar pct={d.pct} /></div><SegStat responses={d.responses} meta={d.meta} pct={d.pct} /></div>
+            <div key={i} className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-slate-600 flex-1 min-w-0 truncate">{d.name}</span>
+              <NotaChip metric={M} score={d.score} />
+              <div className="w-14 sm:w-24"><SegBar pct={d.pct} /></div>
+              <SegStat responses={d.responses} meta={d.meta} pct={d.pct} />
+            </div>
           ))}
         </div>
       </div>}
