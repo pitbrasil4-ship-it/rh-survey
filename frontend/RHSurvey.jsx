@@ -327,6 +327,7 @@ function Sidebar({ page, setPage }) {
     { id:"dashboard",     label:"Dashboard",      Icon:LayoutDashboard },
     { id:"surveys",       label:"Pesquisas",       Icon:ClipboardList   },
     { id:"respondents",   label:"Respondentes",    Icon:Users           },
+    { id:"estrutura",     label:"Estrutura",        Icon:Building2        },
     { id:"evaluation360", label:"Avaliação 360°",  Icon:Target          },
     { id:"results",       label:"Resultados",      Icon:BarChart3       },
     { id:"templates",     label:"Templates",        Icon:FileCheck       },
@@ -3624,6 +3625,137 @@ const PAGE_LABELS = {
   lgpd:"LGPD & Privacidade", security:"Segurança", settings:"Configurações",
 };
 
+// ─── ESTRUTURA ORGANIZACIONAL ──────────────────────────────────────────────────
+function OrgStructure() {
+  const { t } = useLang();
+  const [data, setData]       = useState({ regionais: [], distritos: [], departamentos: [] });
+  const [loading, setLoading] = useState(true);
+  const [err, setErr]         = useState("");
+  const [busy, setBusy]       = useState(false);
+  const [newReg, setNewReg]   = useState("");
+  const [newDist, setNewDist] = useState({ name: "", regionalId: "", meta: "" });
+  const [newDep, setNewDep]   = useState({ name: "", meta: "" });
+  const [edit, setEdit]       = useState(null);
+  const [draft, setDraft]     = useState({});
+
+  const load = async () => {
+    try { const d = await api.org.list(); setData({ regionais: d.regionais||[], distritos: d.distritos||[], departamentos: d.departamentos||[] }); setLoading(false); }
+    catch (e) { setErr((e&&e.message)||t('org_load_err')); setLoading(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const regName = (id) => (data.regionais.find(r => r.id === id) || {}).name || "—";
+  const wrap = async (fn) => { setBusy(true); try { await fn(); await load(); } catch (e) { alert((e&&e.message)||t('org_save_err')); } setBusy(false); };
+  const addRegional = () => { if (!newReg.trim()) return; wrap(async () => { await api.org.createRegional(newReg.trim()); setNewReg(""); }); };
+  const addDistrito = () => { if (!newDist.name.trim()) return; wrap(async () => { await api.org.createDistrito({ name:newDist.name.trim(), regionalId:newDist.regionalId||null, meta:Number(newDist.meta)||0 }); setNewDist({ name:"", regionalId:"", meta:"" }); }); };
+  const addDepartamento = () => { if (!newDep.name.trim()) return; wrap(async () => { await api.org.createDepartamento({ name:newDep.name.trim(), meta:Number(newDep.meta)||0 }); setNewDep({ name:"", meta:"" }); }); };
+  const startEdit = (type, item) => { setEdit({ type, id:item.id }); setDraft({ ...item, meta:item.meta ?? "", regionalId:item.regional_id || "" }); };
+  const cancelEdit = () => { setEdit(null); setDraft({}); };
+  const saveEdit = () => wrap(async () => {
+    if (edit.type === "reg") await api.org.updateRegional(edit.id, draft.name);
+    else if (edit.type === "dist") await api.org.updateDistrito(edit.id, { name:draft.name, regionalId:draft.regionalId||null, meta:Number(draft.meta)||0 });
+    else await api.org.updateDepartamento(edit.id, { name:draft.name, meta:Number(draft.meta)||0 });
+    cancelEdit();
+  });
+  const del = (type, id, name) => { if (!window.confirm(t('org_del_confirm', { name }))) return; wrap(async () => {
+    if (type === "reg") await api.org.deleteRegional(id);
+    else if (type === "dist") await api.org.deleteDistrito(id);
+    else await api.org.deleteDepartamento(id);
+  }); };
+
+  const totDist = data.distritos.reduce((a,d)=>a+(Number(d.meta)||0),0);
+  const totDep  = data.departamentos.reduce((a,d)=>a+(Number(d.meta)||0),0);
+  const ic = "border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-purple-400 bg-white";
+
+  if (loading) return <div className="p-4 md:p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('org_loading')}</div>;
+  if (err) return <div className="p-4 md:p-8"><div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{err}</div></div>;
+
+  const EditActions = () => <><button onClick={saveEdit} disabled={busy} className="text-xs font-semibold text-purple-700">{t('org_save')}</button><button onClick={cancelEdit} className="text-xs text-slate-500">{t('org_cancel')}</button></>;
+  const RowActions = ({ type, item }) => <><button onClick={()=>startEdit(type, item)} className="p-1 text-slate-400 hover:text-purple-600"><Edit size={13} /></button><button onClick={()=>del(type, item.id, item.name)} className="p-1 text-slate-400 hover:text-red-500"><Trash2 size={13} /></button></>;
+
+  return (
+    <div className="p-4 md:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">{t('nav_estrutura')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('org_subtitle')}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        {[[t('org_regionais'), data.regionais.length], [t('org_distritos'), data.distritos.length], [t('org_meta_dist'), totDist], [t('org_meta_dep'), totDep]].map(([lab,val],i)=>(
+          <div key={i} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+            <div className="text-2xl font-bold text-slate-800">{val}</div>
+            <div className="text-xs text-slate-500 mt-0.5">{lab}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+          <h3 className="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2"><Building2 size={15} style={{ color:"#5B21B6" }} />{t('org_regionais')}</h3>
+          <div className="flex gap-2 mb-3">
+            <input className={ic+" flex-1"} placeholder={t('org_regional_ph')} value={newReg} onChange={e=>setNewReg(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addRegional()} />
+            <button onClick={addRegional} disabled={busy} className="text-xs font-bold text-white rounded-lg px-3 py-1.5 disabled:opacity-50 flex items-center gap-1" style={{ background:GRAD }}><Plus size={13} />{t('org_add')}</button>
+          </div>
+          <div className="space-y-1.5">
+            {data.regionais.length===0 && <div className="text-xs text-slate-400 py-2">{t('org_empty_reg')}</div>}
+            {data.regionais.map(r=>(
+              <div key={r.id} className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2">
+                {edit && edit.type==='reg' && edit.id===r.id
+                  ? <><input className={ic+" flex-1"} value={draft.name} onChange={e=>setDraft({...draft, name:e.target.value})} /><EditActions /></>
+                  : <><span className="text-sm text-slate-700 flex-1">{r.name}</span><RowActions type="reg" item={r} /></>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+          <h3 className="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2"><Building2 size={15} style={{ color:"#5B21B6" }} />{t('org_departamentos')}</h3>
+          <div className="flex gap-2 mb-3">
+            <input className={ic+" flex-1"} placeholder={t('org_dep_ph')} value={newDep.name} onChange={e=>setNewDep({...newDep, name:e.target.value})} />
+            <input type="number" min="0" className={ic+" w-20"} placeholder={t('org_meta')} value={newDep.meta} onChange={e=>setNewDep({...newDep, meta:e.target.value})} />
+            <button onClick={addDepartamento} disabled={busy} className="text-xs font-bold text-white rounded-lg px-3 py-1.5 disabled:opacity-50 flex items-center gap-1" style={{ background:GRAD }}><Plus size={13} /></button>
+          </div>
+          <div className="space-y-1.5">
+            {data.departamentos.length===0 && <div className="text-xs text-slate-400 py-2">{t('org_empty_dep')}</div>}
+            {data.departamentos.map(d=>(
+              <div key={d.id} className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2">
+                {edit && edit.type==='dep' && edit.id===d.id
+                  ? <><input className={ic+" flex-1"} value={draft.name} onChange={e=>setDraft({...draft, name:e.target.value})} /><input type="number" min="0" className={ic+" w-16"} value={draft.meta} onChange={e=>setDraft({...draft, meta:e.target.value})} /><EditActions /></>
+                  : <><span className="text-sm text-slate-700 flex-1">{d.name}</span><span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{t('org_meta')}: {d.meta||0}</span><RowActions type="dep" item={d} /></>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mt-5">
+        <h3 className="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2"><Building2 size={15} style={{ color:"#5B21B6" }} />{t('org_distritos')}</h3>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <input className={ic+" flex-1 min-w-[140px]"} placeholder={t('org_dist_ph')} value={newDist.name} onChange={e=>setNewDist({...newDist, name:e.target.value})} />
+          <select className={ic} value={newDist.regionalId} onChange={e=>setNewDist({...newDist, regionalId:e.target.value})}>
+            <option value="">{t('org_regional_none')}</option>
+            {data.regionais.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+          <input type="number" min="0" className={ic+" w-20"} placeholder={t('org_meta')} value={newDist.meta} onChange={e=>setNewDist({...newDist, meta:e.target.value})} />
+          <button onClick={addDistrito} disabled={busy} className="text-xs font-bold text-white rounded-lg px-3 py-1.5 disabled:opacity-50 flex items-center gap-1" style={{ background:GRAD }}><Plus size={13} />{t('org_add')}</button>
+        </div>
+        <div className="space-y-1.5">
+          {data.distritos.length===0 && <div className="text-xs text-slate-400 py-2">{t('org_empty_dist')}</div>}
+          {data.distritos.map(d=>(
+            <div key={d.id} className="flex flex-wrap items-center gap-2 bg-slate-50 rounded-lg px-3 py-2">
+              {edit && edit.type==='dist' && edit.id===d.id
+                ? <><input className={ic+" flex-1 min-w-[120px]"} value={draft.name} onChange={e=>setDraft({...draft, name:e.target.value})} /><select className={ic} value={draft.regionalId} onChange={e=>setDraft({...draft, regionalId:e.target.value})}><option value="">{t('org_regional_none')}</option>{data.regionais.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select><input type="number" min="0" className={ic+" w-16"} value={draft.meta} onChange={e=>setDraft({...draft, meta:e.target.value})} /><EditActions /></>
+                : <><span className="text-sm text-slate-700 flex-1 min-w-[120px]">{d.name}</span><span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">{regName(d.regional_id)}</span><span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{t('org_meta')}: {d.meta||0}</span><RowActions type="dist" item={d} /></>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── PUSH NOTIFICATIONS TOGGLE (PWA) ───────────────────────────────────────────
 function urlB64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -3773,7 +3905,7 @@ export default function RHSurvey() {
   useEffect(() => {
     try {
       const go = new URLSearchParams(window.location.search).get("go");
-      const valid = ["dashboard","surveys","respondents","evaluation360","results","templates","relatorios","equipe","notificacoes","distribuicao","insights","lgpd","security","settings"];
+      const valid = ["dashboard","surveys","respondents","estrutura","evaluation360","results","templates","relatorios","equipe","notificacoes","distribuicao","insights","lgpd","security","settings"];
       if (go && valid.includes(go)) setPage(go);
     } catch {}
   }, []);
@@ -3806,6 +3938,7 @@ export default function RHSurvey() {
       case "dashboard":     return <Dashboard     setPage={handleNav} />;
       case "surveys":       return <SurveyList    onCreateNew={() => setCreating(true)} onView={() => handleNav("results")} />;
       case "respondents":   return <RespondentManager />;
+      case "estrutura":     return <OrgStructure />;
       case "evaluation360": return <Evaluation360 />;
       case "results":       return <ResultsDashboard />;
       case "templates":     return <TemplatesLibrary onUseTemplate={(t) => { setTmpl(t); setCreating(true); }} />;
