@@ -68,6 +68,12 @@ export const api = {
     dashboard: ()         => request('GET', '/results/dashboard'),
     insights:  (surveyId, lang) => request('POST', '/results/insights', { surveyId, lang }),
   },
+  push: {
+    vapidPublic: ()             => request('GET',  '/push/vapid-public'),
+    subscribe:   (subscription) => request('POST', '/push/subscribe', { subscription }),
+    unsubscribe: (endpoint)     => request('POST', '/push/unsubscribe', { endpoint }),
+    test:        ()             => request('POST', '/push/test'),
+  },
   eval: {
     cycles:           ()               => request('GET', '/eval/cycles'),
     createCycle:      (name, surveyId) => request('POST', '/eval/cycles', { name, surveyId }),
