@@ -180,4 +180,22 @@ async function generateAI(req, res) {
   } catch (e) { return err(res, 'Erro ao gerar perguntas', 500, e.message); }
 }
 
-module.exports = { list, create, getOne, update, publish, remove, generateAI, translateExisting };
+/* PUT /surveys/:id/deadline — define, posterga ou remove o prazo; reabre se estava encerrada */
+function setDeadline(req, res) {
+  try {
+    const db     = getDB();
+    const survey = db.prepare('SELECT * FROM surveys WHERE id=? AND tenant_id=? AND status != ?').get(req.params.id, req.user.tenant_id, 'excluido');
+    if (!survey) return notFound(res, 'Pesquisa');
+    const deadline = req.body.deadline || null;
+    const future   = deadline && new Date(deadline).getTime() > Date.now();
+    if (survey.status === 'encerrado' && future) {
+      db.prepare('UPDATE surveys SET deadline=?, status=? WHERE id=?').run(deadline, 'ativo', survey.id);
+    } else {
+      db.prepare('UPDATE surveys SET deadline=? WHERE id=?').run(deadline, survey.id);
+    }
+    const updated = db.prepare('SELECT * FROM surveys WHERE id=?').get(survey.id);
+    return ok(res, { survey: updated }, 'Prazo atualizado');
+  } catch (e) { return err(res, 'Erro ao atualizar prazo', 500, e.message); }
+}
+
+module.exports = { list, create, getOne, update, publish, remove, generateAI, translateExisting, setDeadline };
