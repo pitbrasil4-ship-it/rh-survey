@@ -283,6 +283,7 @@ function LGPDBadge() {
 
 // ─── LGPD CONSENT BANNER ──────────────────────────────────────────────────────
 function LGPDBanner({ onAccept }) {
+  const { t } = useLang();
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 p-4">
       <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl border border-slate-200 p-5 flex items-start gap-4">
@@ -290,20 +291,17 @@ function LGPDBanner({ onAccept }) {
           <Shield size={20} style={{ color: "#5B21B6" }} />
         </div>
         <div className="flex-1">
-          <h3 className="font-semibold text-slate-800 text-sm mb-1">Privacidade & LGPD — Lei Geral de Proteção de Dados</h3>
+          <h3 className="font-semibold text-slate-800 text-sm mb-1">{t('banner_title')}</h3>
           <p className="text-xs text-slate-500 leading-relaxed">
-            Esta plataforma coleta e processa dados pessoais em conformidade com a <strong>Lei nº 13.709/2018 (LGPD)</strong>. 
-            As informações coletadas são utilizadas exclusivamente para fins de avaliação organizacional interna. 
-            Você tem direito de acesso, correção, portabilidade e exclusão dos seus dados a qualquer momento. 
-            Ao continuar, você consente com o tratamento dos seus dados nos termos descritos acima.
+{t('banner_p1')}<strong>{t('banner_law')}</strong>{t('banner_p2')}
           </p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
           <button onClick={onAccept} className="px-4 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
-            Recusar opcionais
+            {t('banner_decline')}
           </button>
           <button onClick={onAccept} className="px-4 py-2 text-xs text-white rounded-xl hover:opacity-90 transition-opacity" style={{ background: GRAD }}>
-            Aceitar e continuar
+            {t('banner_accept')}
           </button>
         </div>
       </div>
@@ -1302,10 +1300,9 @@ function RespondentManager() {
   };
 
   const handleExportCSV = () => {
-    const GLAB = { gestores:"Gestores", fornecedores:"Fornecedores", subordinados:"Subordinados" };
     const rows = [[t('col_name'),t('col_email'),t('col_group'),t('col_department'),t('col_role'),t('col_status'),t('col_consent_lgpd')]];
     filtered.forEach(r => rows.push([
-      r.name, r.email === "—" ? "" : r.email, GLAB[r.group] || r.group,
+      r.name, r.email === "—" ? "" : r.email, t('group_'+r.group),
       r.department === "—" ? "" : r.department, r.role,
       r.consent ? t('status_ativo') : t('status_pendente'), r.consent ? t('rm_collected') : t('status_pendente'),
     ]));
@@ -2141,6 +2138,7 @@ function ResultsDashboard() {
 
 // ─── LGPD PAGE ─────────────────────────────────────────────────────────────────
 function LGPDPage() {
+  const { t } = useLang();
   const [expandedRight, setExpandedRight] = useState(null);
   const [respondents, setRespondents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2157,12 +2155,12 @@ function LGPDPage() {
     try { return new Date(String(s).replace(" ", "T") + "Z").toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }); }
     catch { return s; }
   };
-  const CH_LABEL = { email:"E-mail", whatsapp:"WhatsApp", presencial:"Presencial", link:"Link", web:"Web" };
+  const CH_LABEL = { email:"E-mail", whatsapp:"WhatsApp", presencial:t('lgpd_ch_presencial'), link:"Link", web:"Web" };
   const exportConsentLog = () => {
-    const rows = [["Respondente","E-mail","Consentimento","Data","Canal"]];
+    const rows = [[t('lgpd_csv_respondent'),t('col_email'),t('lgpd_csv_consent'),t('lgpd_csv_date'),t('lgpd_csv_channel')]];
     respondents.forEach(r => rows.push([
       r.name, r.email && r.email !== "—" ? r.email : "",
-      r.consent_given ? "Coletado" : "Pendente",
+      r.consent_given ? t('rm_collected') : t('status_pendente'),
       r.consent_given && r.consent_date ? fmtDate(r.consent_date) : "",
       r.consent_given ? (CH_LABEL[r.consent_channel] || r.consent_channel || "") : "",
     ]));
@@ -2170,14 +2168,17 @@ function LGPDPage() {
   };
 
   const rights = [
-    { icon:"👁️", title:"Acesso",         desc:"O titular pode solicitar confirmação da existência do tratamento e acesso aos dados.",   art:"Art. 18, I e II" },
-    { icon:"✏️", title:"Correção",        desc:"Dados incompletos, inexatos ou desatualizados devem ser corrigidos a pedido do titular.", art:"Art. 18, III"    },
-    { icon:"🗑️", title:"Exclusão",        desc:"Dados desnecessários ou tratados em desconformidade podem ser eliminados.",              art:"Art. 18, VI"     },
-    { icon:"📦", title:"Portabilidade",   desc:"O titular pode solicitar a portabilidade dos dados para outro fornecedor.",               art:"Art. 18, V"      },
-    { icon:"🚫", title:"Oposição",        desc:"O titular pode opor-se ao tratamento realizado sem consentimento.",                      art:"Art. 18, IX"     },
-    { icon:"📋", title:"Informação",      desc:"O titular tem direito de ser informado sobre o compartilhamento de dados.",              art:"Art. 18, VII"    },
+    { icon:"👁️", title:t('lgpd_r_access'),         desc:t('lgpd_rd_access'),   art:"Art. 18, I e II" },
+    { icon:"✏️", title:t('lgpd_r_correct'),        desc:t('lgpd_rd_correct'), art:"Art. 18, III"    },
+    { icon:"🗑️", title:t('lgpd_r_delete'),        desc:t('lgpd_rd_delete'),              art:"Art. 18, VI"     },
+    { icon:"📦", title:t('lgpd_r_port'),   desc:t('lgpd_rd_port'),               art:"Art. 18, V"      },
+    { icon:"🚫", title:t('lgpd_r_oppose'),        desc:t('lgpd_rd_oppose'),                      art:"Art. 18, IX"     },
+    { icon:"📋", title:t('lgpd_r_info'),      desc:t('lgpd_rd_info'),              art:"Art. 18, VII"    },
   ];
 
+  const consented = respondents.filter(r => r.consent_given).length;
+  const totalR = respondents.length;
+  const consentPct = totalR ? Math.round(consented/totalR*100) : 0;
   return (
     <div className="p-8">
       <div className="mb-7">
@@ -2186,8 +2187,8 @@ function LGPDPage() {
             <Shield size={20} className="text-green-600" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">LGPD & Privacidade</h1>
-            <p className="text-sm text-slate-500">Conformidade com a Lei Geral de Proteção de Dados nº 13.709/2018</p>
+            <h1 className="text-2xl font-bold text-slate-800">{t('lgpd_title')}</h1>
+            <p className="text-sm text-slate-500">{t('lgpd_subtitle')}</p>
           </div>
         </div>
       </div>
@@ -2195,12 +2196,12 @@ function LGPDPage() {
       {/* Status */}
       <div className="grid grid-cols-3 gap-4 mb-7">
         {[
-          { label:"Base Legal",          value:"Consentimento explícito",        status:"ok",      icon:CheckCircle },
-          { label:"Encarregado (DPO)",   value:"dpo@empresa.com",                status:"ok",      icon:UserCheck   },
-          { label:"Relatório de Impacto",value:"Atualizado em 01/04/2025",       status:"ok",      icon:FileText    },
-          { label:"Retenção de Dados",   value:"12 meses após coleta",           status:"ok",      icon:Database    },
-          { label:"Consentimentos",      value:"75% coletados (6/8)",            status:"warning", icon:AlertTriangle},
-          { label:"Próxima Revisão",     value:"01/07/2025",                     status:"info",    icon:Clock       },
+          { label:t('lgpd_legal_basis'), value:t('lgpd_explicit_consent'), status:"ok", icon:CheckCircle },
+          { label:t('lgpd_dpo'), value:"dpo@empresa.com", status:"ok", icon:UserCheck },
+          { label:t('lgpd_impact_report'), value:t('lgpd_impact_val'), status:"ok", icon:FileText },
+          { label:t('lgpd_retention'), value:t('lgpd_retention_val'), status:"ok", icon:Database },
+          { label:t('lgpd_consents'), value:t('lgpd_collected_count',{pct:consentPct,n:consented,total:totalR}), status:consentPct>=100?"ok":"warning", icon:AlertTriangle},
+          { label:t('lgpd_next_review'), value:"01/07/2025", status:"info", icon:Clock },
         ].map(({ label,value,status,icon:Icon },i) => (
           <div key={i} className={`bg-white rounded-2xl p-4 border shadow-sm flex items-start gap-3 ${status==="ok"?"border-green-200":status==="warning"?"border-amber-200":"border-blue-200"}`}>
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${status==="ok"?"bg-green-100":status==="warning"?"bg-amber-100":"bg-blue-100"}`}>
@@ -2217,8 +2218,8 @@ function LGPDPage() {
       {/* Rights */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm mb-6">
         <div className="px-6 py-4 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-800 text-sm">Direitos dos Titulares — Art. 18 da LGPD</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Funcionalidades disponíveis para atendimento de solicitações</p>
+          <h3 className="font-semibold text-slate-800 text-sm">{t('lgpd_rights_title')}</h3>
+          <p className="text-xs text-slate-400 mt-0.5">{t('lgpd_rights_sub')}</p>
         </div>
         <div className="grid grid-cols-3 gap-0">
           {rights.map((r,i) => (
@@ -2240,32 +2241,32 @@ function LGPDPage() {
       {/* Consent Log */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-800 text-sm">Registro de Consentimentos</h3>
-          <button onClick={exportConsentLog} disabled={respondents.length===0} title="Baixar o registro de consentimentos em CSV" className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>
-            <Download size={12} />Exportar log
+          <h3 className="font-semibold text-slate-800 text-sm">{t('lgpd_consent_log')}</h3>
+          <button onClick={exportConsentLog} disabled={respondents.length===0} title={t('lgpd_export_log_title')} className="flex items-center gap-1.5 text-xs font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color:"#5B21B6" }}>
+            <Download size={12} />{t('lgpd_export_log')}
           </button>
         </div>
         <table className="w-full">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100">
-              {["Respondente","E-mail","Consentimento","Data","Canal"].map(h => (
+              {[t('lgpd_csv_respondent'),t('col_email'),t('lgpd_csv_consent'),t('lgpd_csv_date'),t('lgpd_csv_channel')].map(h => (
                 <th key={h} className="text-left text-xs font-semibold text-slate-500 px-5 py-3">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">Carregando...</td></tr>
+              <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">{t('common_loading')}</td></tr>
             ) : respondents.length === 0 ? (
-              <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">Nenhum respondente cadastrado ainda.</td></tr>
+              <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-400">{t('lgpd_no_respondents')}</td></tr>
             ) : respondents.map((r,i) => (
               <tr key={r.id} className={`hover:bg-slate-50 ${i<respondents.length-1?"border-b border-slate-50":""}`}>
                 <td className="px-5 py-3 text-sm font-medium text-slate-800">{r.name}</td>
                 <td className="px-5 py-3 text-sm text-slate-600">{r.email && r.email!=="—" ? r.email : "—"}</td>
                 <td className="px-5 py-3">
                   {r.consent_given
-                    ? <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full"><CheckCircle size={10} />Coletado</span>
-                    : <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full"><Clock size={10} />Pendente</span>
+                    ? <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full"><CheckCircle size={10} />{t('rm_collected')}</span>
+                    : <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full"><Clock size={10} />{t('status_pendente')}</span>
                   }
                 </td>
                 <td className="px-5 py-3 text-xs text-slate-500">{r.consent_given && r.consent_date ? fmtDate(r.consent_date) : "—"}</td>
@@ -2815,16 +2816,17 @@ function AIInsights() {
 
 // ─── NOTIFICATION CENTER ──────────────────────────────────────────────────────
 function NotificationCenter({ notifications, setNotifications }) {
+  const { t } = useLang();
   const [filter, setFilter] = useState("todas");
   const unread = notifications.filter(n => !n.read).length;
 
   const typeIcon = {
-    response:{ icon:"💬", bg:"bg-blue-100",   label:"Resposta"   },
-    alert:   { icon:"⚠️", bg:"bg-amber-100",  label:"Alerta"     },
-    ai:      { icon:"✨", bg:"bg-purple-100",  label:"IA"         },
-    deadline:{ icon:"⏰", bg:"bg-red-100",     label:"Prazo"      },
-    success: { icon:"✅", bg:"bg-green-100",   label:"Sucesso"    },
-    security:{ icon:"🔒", bg:"bg-slate-100",   label:"Segurança"  },
+    response:{ icon:"💬", bg:"bg-blue-100",   label:"notif_type_response"   },
+    alert:   { icon:"⚠️", bg:"bg-amber-100",  label:"notif_type_alert"     },
+    ai:      { icon:"✨", bg:"bg-purple-100",  label:"notif_type_ai"         },
+    deadline:{ icon:"⏰", bg:"bg-red-100",     label:"notif_type_deadline"      },
+    success: { icon:"✅", bg:"bg-green-100",   label:"notif_type_success"    },
+    security:{ icon:"🔒", bg:"bg-slate-100",   label:"notif_type_security"  },
   };
 
   const filtered = notifications.filter(n => {
@@ -2840,18 +2842,18 @@ function NotificationCenter({ notifications, setNotifications }) {
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Notificações</h1>
-          <p className="text-sm text-slate-500 mt-1">{unread > 0 ? `${unread} notificação${unread>1?"s":""} não lida${unread>1?"s":""}` : "Todas as notificações em dia ✓"}</p>
+          <h1 className="text-2xl font-bold text-slate-800">{t('nc_title')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{unread > 0 ? (unread>1 ? t('nc_unread_many',{n:unread}) : t('nc_unread_one')) : t('nc_all_clear')}</p>
         </div>
         {unread > 0 && (
           <button onClick={markAllRead} className="flex items-center gap-2 px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50">
-            <CheckCircle size={14} />Marcar todas como lidas
+            <CheckCircle size={14} />{t('nc_mark_all')}
           </button>
         )}
       </div>
 
       <div className="flex gap-2 mb-5">
-        {[["todas","Todas"],["nao_lidas",`Não lidas (${unread})`],["alertas","Alertas"]].map(([id,label]) => (
+        {[["todas",t('nc_all')],["nao_lidas",t('nc_unread_filter',{n:unread})],["alertas",t('nc_alerts')]].map(([id,label]) => (
           <button key={id} onClick={() => setFilter(id)}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${filter===id?"text-white":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
             style={filter===id?{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }:{}}>
@@ -2862,16 +2864,16 @@ function NotificationCenter({ notifications, setNotifications }) {
 
       <div className="space-y-2">
         {filtered.map(n => {
-          const t = typeIcon[n.type] || typeIcon.success;
+          const ti = typeIcon[n.type] || typeIcon.success;
           return (
             <div key={n.id} onClick={() => markRead(n.id)}
               className={`flex items-start gap-4 p-4 rounded-2xl border cursor-pointer transition-all hover:shadow-sm ${n.read?"bg-white border-slate-100":"bg-purple-50 border-purple-100"}`}>
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${t.bg}`}>{t.icon}</div>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${ti.bg}`}>{ti.icon}</div>
               <div className="flex-1 min-w-0">
                 <p className={`text-sm leading-relaxed ${n.read?"text-slate-600":"text-slate-800 font-medium"}`}>{n.text}</p>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-xs text-slate-400">{n.time}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${t.bg} text-slate-600`}>{t.label}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${ti.bg} text-slate-600`}>{t(ti.label)}</span>
                 </div>
               </div>
               {!n.read && <span className="w-2.5 h-2.5 rounded-full bg-purple-500 mt-1 flex-shrink-0" />}
@@ -2881,7 +2883,7 @@ function NotificationCenter({ notifications, setNotifications }) {
         {filtered.length === 0 && (
           <div className="text-center py-12 text-slate-400">
             <div className="text-4xl mb-3">🔔</div>
-            <p className="text-sm font-medium">Nenhuma notificação encontrada</p>
+            <p className="text-sm font-medium">{t('nc_none')}</p>
           </div>
         )}
       </div>
@@ -3137,6 +3139,7 @@ function TeamManagement() {
 
 // ─── TEMPLATES LIBRARY ────────────────────────────────────────────────────────
 function TemplatesLibrary({ onUseTemplate }) {
+  const { t: tr } = useLang();
   const [search,   setSearch]   = useState("");
   const [category, setCategory] = useState("Todos");
 
@@ -3159,8 +3162,8 @@ function TemplatesLibrary({ onUseTemplate }) {
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Biblioteca de Templates</h1>
-          <p className="text-sm text-slate-500 mt-1">Pesquisas prontas e validadas, conformes com a LGPD. Use e personalize.</p>
+          <h1 className="text-2xl font-bold text-slate-800">{tr('tl_title')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{tr('tl_subtitle')}</p>
         </div>
       </div>
 
@@ -3168,14 +3171,14 @@ function TemplatesLibrary({ onUseTemplate }) {
         <div className="relative flex-1 max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:border-purple-400"
-            placeholder="Buscar template ou tag..." value={search} onChange={e => setSearch(e.target.value)} />
+            placeholder={tr('tl_search')} value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <div className="flex gap-2 overflow-x-auto">
           {cats.map(c => (
             <button key={c} onClick={() => setCategory(c)}
               className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-medium transition-all ${category===c?"text-white":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
               style={category===c?{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }:{}}>
-              {c}
+              {c==="Todos" ? tr('common_all') : c}
             </button>
           ))}
         </div>
@@ -3192,7 +3195,7 @@ function TemplatesLibrary({ onUseTemplate }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${catColors[t.category]||"bg-slate-100 text-slate-600"}`}>{t.category}</span>
-                  <span className="text-xs text-slate-400">{t.questions.length} perguntas</span>
+                  <span className="text-xs text-slate-400">{tr('tl_n_questions',{n:t.questions.length})}</span>
                 </div>
               </div>
             </div>
@@ -3205,7 +3208,7 @@ function TemplatesLibrary({ onUseTemplate }) {
               <button onClick={() => onUseTemplate && onUseTemplate(t)}
                 className="flex-1 py-2 text-xs text-white rounded-xl font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1"
                 style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-                <Plus size={11} />Usar Template
+                <Plus size={11} />{tr('tl_use')}
               </button>
             </div>
           </div>
@@ -3432,6 +3435,7 @@ function AdvancedReports() {
 
 // ─── SETTINGS PAGE ─────────────────────────────────────────────────────────────
 function ChangePasswordCard() {
+  const { t } = useLang();
   const [cur,     setCur]     = useState("");
   const [nw,      setNw]      = useState("");
   const [confirm, setConfirm] = useState("");
@@ -3440,17 +3444,17 @@ function ChangePasswordCard() {
 
   async function submit() {
     setMsg(null);
-    if (!cur || !nw)            { setMsg({ type:"err", text:"Preencha a senha atual e a nova." }); return; }
-    if (nw.length < 8)          { setMsg({ type:"err", text:"A nova senha deve ter no mínimo 8 caracteres." }); return; }
-    if (nw !== confirm)         { setMsg({ type:"err", text:"A confirmação não confere com a nova senha." }); return; }
-    if (nw === cur)             { setMsg({ type:"err", text:"A nova senha deve ser diferente da atual." }); return; }
+    if (!cur || !nw)            { setMsg({ type:"err", text:t('cpc_fill_both') }); return; }
+    if (nw.length < 8)          { setMsg({ type:"err", text:t('cpc_min8') }); return; }
+    if (nw !== confirm)         { setMsg({ type:"err", text:t('cpc_mismatch') }); return; }
+    if (nw === cur)             { setMsg({ type:"err", text:t('cpc_must_differ') }); return; }
     setSaving(true);
     try {
       await api.auth.changePassword(cur, nw);
-      setMsg({ type:"ok", text:"Senha alterada com sucesso!" });
+      setMsg({ type:"ok", text:t('cpc_success') });
       setCur(""); setNw(""); setConfirm("");
     } catch (e) {
-      setMsg({ type:"err", text:e.message || "Erro ao alterar a senha." });
+      setMsg({ type:"err", text:e.message || t('cpc_error') });
     }
     setSaving(false);
   }
@@ -3470,14 +3474,14 @@ function ChangePasswordCard() {
           <Key size={18} style={{ color:"#5B21B6" }} />
         </div>
         <div>
-          <h3 className="font-semibold text-slate-800 text-sm">Trocar Senha</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Altere a senha da sua conta. Você será desconectado das outras sessões.</p>
+          <h3 className="font-semibold text-slate-800 text-sm">{t('cpc_title')}</h3>
+          <p className="text-xs text-slate-400 mt-0.5">{t('cpc_subtitle')}</p>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-3">
-        {field("Senha atual", cur, setCur, "Sua senha atual")}
-        {field("Nova senha", nw, setNw, "Mínimo 8 caracteres")}
-        {field("Confirmar nova senha", confirm, setConfirm, "Repita a nova senha")}
+        {field(t('cpc_current'), cur, setCur, t('cpc_ph_current'))}
+        {field(t('cpc_new'), nw, setNw, t('cpc_ph_min8'))}
+        {field(t('cpc_confirm'), confirm, setConfirm, t('cpc_ph_repeat'))}
       </div>
       {msg && (
         <div className={`mt-3 text-sm rounded-xl px-4 py-2.5 flex items-center gap-2 ${msg.type==="ok"?"bg-green-50 border border-green-200 text-green-700":"bg-red-50 border border-red-200 text-red-700"}`}>
@@ -3488,7 +3492,7 @@ function ChangePasswordCard() {
         <button onClick={submit} disabled={saving}
           className="px-4 py-2.5 text-white rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-60 flex items-center gap-2"
           style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-          {saving ? <><Loader2 size={14} className="animate-spin" />Salvando...</> : <><Key size={14} />Alterar senha</>}
+          {saving ? <><Loader2 size={14} className="animate-spin" />{t('common_saving')}</> : <><Key size={14} />{t('cpc_submit')}</>}
         </button>
       </div>
     </div>
@@ -3496,23 +3500,24 @@ function ChangePasswordCard() {
 }
 
 function SettingsPage({ setPage }) {
+  const { t } = useLang();
   const shortcuts = [
-    { title:"Equipe & Acesso",         desc:"Usuários, papéis e permissões",             Icon:Users,     dest:"equipe"       },
-    { title:"Notificações",            desc:"Alertas e lembretes gerados do sistema",    Icon:Bell,      dest:"notificacoes" },
-    { title:"Central de Distribuição", desc:"Envio de pesquisas por e-mail e WhatsApp",   Icon:Send,      dest:"distribuicao" },
-    { title:"Relatórios Avançados",    desc:"Indicadores, comparativos e exportação",    Icon:BarChart3, dest:"relatorios"   },
-    { title:"LGPD & Privacidade",      desc:"Consentimentos e direitos do titular",      Icon:Shield,    dest:"lgpd"         },
-    { title:"Segurança",               desc:"Medidas de proteção e trilha de auditoria", Icon:Lock,      dest:"security"     },
+    { title:t('set_t_team'), desc:t('set_d_team'), Icon:Users, dest:"equipe" },
+    { title:t('set_t_notif'), desc:t('set_d_notif'), Icon:Bell, dest:"notificacoes" },
+    { title:t('set_t_dist'), desc:t('set_d_dist'), Icon:Send, dest:"distribuicao" },
+    { title:t('set_t_reports'), desc:t('set_d_reports'), Icon:BarChart3, dest:"relatorios" },
+    { title:t('set_t_lgpd'), desc:t('set_d_lgpd'), Icon:Shield, dest:"lgpd" },
+    { title:t('set_t_sec'), desc:t('set_d_sec'), Icon:Lock, dest:"security" },
   ];
 
   return (
     <div className="p-8">
       <div className="mb-7">
-        <h1 className="text-2xl font-bold text-slate-800">Configurações</h1>
-        <p className="text-sm text-slate-500 mt-1">Altere sua senha e acesse rapidamente as áreas da plataforma.</p>
+        <h1 className="text-2xl font-bold text-slate-800">{t('set_title')}</h1>
+        <p className="text-sm text-slate-500 mt-1">{t('set_subtitle')}</p>
       </div>
       <ChangePasswordCard />
-      <h3 className="text-sm font-semibold text-slate-700 mb-3">Atalhos</h3>
+      <h3 className="text-sm font-semibold text-slate-700 mb-3">{t('set_shortcuts')}</h3>
       <div className="grid grid-cols-2 gap-4">
         {shortcuts.map(({ title,desc,Icon,dest },i) => (
           <div key={i} onClick={() => setPage(dest)}
