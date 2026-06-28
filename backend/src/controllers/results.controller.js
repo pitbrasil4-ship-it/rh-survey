@@ -1,7 +1,7 @@
 'use strict';
 const { getDB }                                       = require('../config/database');
 const { calculateNPS, calculateAverage, calculateFrequency } = require('../utils/nps');
-const { ok, err, notFound }                           = require('../utils/response');
+const { ok, err, notFound, badReq }                   = require('../utils/response');
 
 /* GET /results/:surveyId */
 function getSurveyResults(req, res) {
@@ -171,4 +171,48 @@ async function getInsights(req, res) {
   } catch (e) { return err(res, 'Erro ao gerar insights', 500, e.message); }
 }
 
-module.exports = { getSurveyResults, getDashboard, getInsights };
+/* GET /results/segments?surveyId= — participação consolidada por distrito → regional → corporação e por departamento */
+function getSegments(req, res) {
+  try {
+    const db = getDB(); const t = req.user.tenant_id;
+    const surveyId = req.query.surveyId;
+    if (!surveyId) return badReq(res, 'surveyId é obrigatório');
+    const survey = db.prepare('SELECT id, name FROM surveys WHERE id=? AND tenant_id=?').get(surveyId, t);
+    if (!survey) return notFound(res, 'Pesquisa');
+
+    const distCount = {};
+    db.prepare("SELECT distrito_id, COUNT(*) c FROM responses WHERE survey_id=? AND completed_at IS NOT NULL AND distrito_id IS NOT NULL GROUP BY distrito_id").all(surveyId).forEach(r => distCount[r.distrito_id] = r.c);
+    const depCount = {};
+    db.prepare("SELECT departamento_id, COUNT(*) c FROM responses WHERE survey_id=? AND completed_at IS NOT NULL AND departamento_id IS NOT NULL GROUP BY departamento_id").all(surveyId).forEach(r => depCount[r.departamento_id] = r.c);
+
+    const regionais     = db.prepare('SELECT id, name FROM regionais WHERE tenant_id=? ORDER BY name').all(t);
+    const distritos     = db.prepare('SELECT id, name, regional_id, meta FROM distritos WHERE tenant_id=? ORDER BY name').all(t);
+    const departamentos = db.prepare('SELECT id, name, meta FROM departamentos WHERE tenant_id=? ORDER BY name').all(t);
+    const pct = (r, m) => m > 0 ? Math.round((r / m) * 100) : null;
+
+    const distOut = distritos.map(d => ({ name: d.name, regional_id: d.regional_id, responses: distCount[d.id] || 0, meta: d.meta || 0, pct: pct(distCount[d.id] || 0, d.meta || 0) }));
+    const strip = ({ regional_id, ...x }) => x;
+    const regOut = regionais.map(rg => {
+      const kids = distOut.filter(d => d.regional_id === rg.id);
+      const responses = kids.reduce((a, d) => a + d.responses, 0);
+      const meta = kids.reduce((a, d) => a + d.meta, 0);
+      return { name: rg.name, responses, meta, pct: pct(responses, meta), distritos: kids.map(strip) };
+    });
+    const semReg = distOut.filter(d => !d.regional_id);
+    if (semReg.length) {
+      const responses = semReg.reduce((a, d) => a + d.responses, 0);
+      const meta = semReg.reduce((a, d) => a + d.meta, 0);
+      regOut.push({ name: null, responses, meta, pct: pct(responses, meta), distritos: semReg.map(strip) });
+    }
+    const depOut = departamentos.map(d => ({ name: d.name, responses: depCount[d.id] || 0, meta: d.meta || 0, pct: pct(depCount[d.id] || 0, d.meta || 0) }));
+
+    const sum = (arr, k) => arr.reduce((a, x) => a + x[k], 0);
+    const distTot = { responses: sum(distOut, 'responses'), meta: sum(distOut, 'meta') }; distTot.pct = pct(distTot.responses, distTot.meta);
+    const depTot  = { responses: sum(depOut, 'responses'),  meta: sum(depOut, 'meta')  }; depTot.pct  = pct(depTot.responses, depTot.meta);
+    const geral   = { responses: distTot.responses + depTot.responses, meta: distTot.meta + depTot.meta }; geral.pct = pct(geral.responses, geral.meta);
+
+    return ok(res, { survey: { id: survey.id, name: survey.name }, regionais: regOut, departamentos: depOut, totals: { distritos: distTot, departamentos: depTot, geral } }, 'ok');
+  } catch (e) { return err(res, 'Erro ao consolidar resultados', 500, e.message); }
+}
+
+module.exports = { getSurveyResults, getDashboard, getInsights, getSegments };
