@@ -77,6 +77,7 @@ async function getInsights(req, res) {
   try {
     const db     = getDB();
     const id     = req.body.surveyId || req.params.surveyId;
+    const lang   = (req.body.lang === 'en' || req.body.lang === 'es') ? req.body.lang : 'pt';
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ? AND tenant_id = ?').get(id, req.user.tenant_id);
     if (!survey) return notFound(res, 'Pesquisa');
 
@@ -113,31 +114,59 @@ async function getInsights(req, res) {
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey || apiKey === 'your-anthropic-key-here') {
-      // Modo demo — relatório a partir dos números reais, sem texto gerado por IA.
+      // Modo demo — relatório a partir dos números reais, no idioma selecionado.
+      const D = {
+        pt: {
+          resumo: `A pesquisa "${survey.name}" recebeu ${totalResp} resposta(s) concluída(s), com taxa de conclusão de ${taxaConclusao}%.` + (overallNps !== null ? ` O NPS geral é ${overallNps}.` : ''),
+          fortes: ['Configure a ANTHROPIC_API_KEY no servidor para gerar a análise completa com IA.'],
+          atencao: totalResp === 0 ? ['Esta pesquisa ainda não recebeu respostas.'] : ['Modo demo — recomendações detalhadas requerem IA ativa.'],
+          recom: ['Ativar a IA real para recomendações estratégicas.'],
+          prio: 'Configurar a chave de IA (ANTHROPIC_API_KEY) no Railway.',
+          bench: 'Comparação com benchmarks disponível com IA real.',
+        },
+        en: {
+          resumo: `The survey "${survey.name}" received ${totalResp} completed response(s), with a completion rate of ${taxaConclusao}%.` + (overallNps !== null ? ` The overall NPS is ${overallNps}.` : ''),
+          fortes: ['Set ANTHROPIC_API_KEY on the server to generate the full AI analysis.'],
+          atencao: totalResp === 0 ? ['This survey has not received any responses yet.'] : ['Demo mode — detailed recommendations require active AI.'],
+          recom: ['Enable real AI for strategic recommendations.'],
+          prio: 'Configure the AI key (ANTHROPIC_API_KEY) on Railway.',
+          bench: 'Benchmark comparison available with real AI.',
+        },
+        es: {
+          resumo: `La encuesta "${survey.name}" recibió ${totalResp} respuesta(s) completada(s), con una tasa de finalización del ${taxaConclusao}%.` + (overallNps !== null ? ` El NPS general es ${overallNps}.` : ''),
+          fortes: ['Configura ANTHROPIC_API_KEY en el servidor para generar el análisis completo con IA.'],
+          atencao: totalResp === 0 ? ['Esta encuesta aún no ha recibido respuestas.'] : ['Modo demostración — las recomendaciones detalladas requieren IA activa.'],
+          recom: ['Activar la IA real para recomendaciones estratégicas.'],
+          prio: 'Configurar la clave de IA (ANTHROPIC_API_KEY) en Railway.',
+          bench: 'Comparación con benchmarks disponible con IA real.',
+        },
+      }[lang];
       return ok(res, { insights: {
-        resumo: `A pesquisa "${survey.name}" recebeu ${totalResp} resposta(s) concluída(s), com taxa de conclusão de ${taxaConclusao}%.` + (overallNps !== null ? ` O NPS geral é ${overallNps} (${npsClass}).` : ''),
+        resumo: D.resumo,
         npsClassificacao: npsClass,
-        pontosFortesArr: ['Configure a ANTHROPIC_API_KEY no servidor para gerar a análise completa com IA.'],
-        pontosAtencaoArr: totalResp === 0 ? ['Esta pesquisa ainda não recebeu respostas.'] : ['Modo demo — recomendações detalhadas requerem IA ativa.'],
-        recomendacoesArr: ['Ativar a IA real para recomendações estratégicas.'],
+        pontosFortesArr: D.fortes,
+        pontosAtencaoArr: D.atencao,
+        recomendacoesArr: D.recom,
         temasAbertosArr: [],
-        prioridadeImediata: 'Configurar a chave de IA (ANTHROPIC_API_KEY) no Railway.',
-        benchmarkTexto: 'Comparação com benchmarks disponível com IA real.',
+        prioridadeImediata: D.prio,
+        benchmarkTexto: D.bench,
       }, demo: true }, 'Insights em modo demo (configure ANTHROPIC_API_KEY)');
     }
 
+    const LANGNAME = { pt: 'português do Brasil', en: 'English', es: 'español' }[lang];
     const summary = { nome: survey.name, categoria: survey.category, respostas: totalResp, taxaConclusao, npsGeral: overallNps, perguntas };
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6', max_tokens: 1200,
-        messages: [{ role: 'user', content: `Você é especialista em RH e People Analytics no Brasil. Analise os dados REAIS desta pesquisa organizacional e gere um relatório executivo.\n\nDados:\n${JSON.stringify(summary, null, 2)}\n\nRetorne APENAS JSON puro (sem markdown) neste formato exato:\n{"resumo":"2-3 frases","npsClassificacao":"Excelente|Bom|Neutro|Ruim","pontosFortesArr":["..."],"pontosAtencaoArr":["..."],"recomendacoesArr":["..."],"temasAbertosArr":["..."],"prioridadeImediata":"...","benchmarkTexto":"..."}` }]
+        messages: [{ role: 'user', content: `Você é especialista em RH e People Analytics. Analise os dados REAIS desta pesquisa organizacional e gere um relatório executivo.\n\nDados:\n${JSON.stringify(summary, null, 2)}\n\nRetorne APENAS JSON puro (sem markdown) neste formato exato (mantenha as CHAVES exatamente como estão):\n{"resumo":"2-3 frases","npsClassificacao":"","pontosFortesArr":["..."],"pontosAtencaoArr":["..."],"recomendacoesArr":["..."],"temasAbertosArr":["..."],"prioridadeImediata":"...","benchmarkTexto":"..."}\n\nIMPORTANTE: Escreva TODOS os valores de texto em ${LANGNAME}. Não traduza as chaves do JSON. Deixe "npsClassificacao" como string vazia.` }]
       })
     });
     const data = await resp.json();
     const raw  = (data.content?.[0]?.text || '{}').replace(/```json|```/g, '').trim();
     const insights = JSON.parse(raw);
+    insights.npsClassificacao = npsClass; // token PT determinístico p/ a cor do selo; o front traduz o rótulo exibido.
     return ok(res, { insights }, 'Insights gerados com IA');
   } catch (e) { return err(res, 'Erro ao gerar insights', 500, e.message); }
 }
