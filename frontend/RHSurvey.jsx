@@ -2629,7 +2629,7 @@ function DistributionCenter() {
 
 // ─── AI INSIGHTS ──────────────────────────────────────────────────────────────
 function AIInsights() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [surveys,     setSurveys]     = useState([]);
   const [selectedId,  setSelectedId]  = useState(null);
   const [loadingList, setLoadingList] = useState(true);
@@ -2656,7 +2656,7 @@ function AIInsights() {
     if (!selectedId) return;
     setLoading(true); setInsights(null); setError("");
     try {
-      const data = await api.results.insights(selectedId);
+      const data = await api.results.insights(selectedId, lang);
       setInsights(data.insights);
     } catch (e) {
       setError(e.message || t('ai_gen_error'));
@@ -2737,7 +2737,7 @@ function AIInsights() {
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className="font-semibold text-slate-800 text-sm">{t('ai_summary')}</h3>
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${insights.npsClassificacao==="Excelente"?"bg-green-100 text-green-700":insights.npsClassificacao==="Bom"?"bg-blue-100 text-blue-700":"bg-amber-100 text-amber-700"}`}>
-                    NPS {insights.npsClassificacao}
+                    NPS {({Excelente:t('nps_exc'),Bom:t('nps_bom'),Neutro:t('nps_neu'),Ruim:t('nps_rui')}[insights.npsClassificacao]) || insights.npsClassificacao}
                   </span>
                 </div>
                 <p className="text-sm text-slate-600 leading-relaxed">{insights.resumo}</p>
