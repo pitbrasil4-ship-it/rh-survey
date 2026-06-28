@@ -286,21 +286,21 @@ function LGPDBanner({ onAccept }) {
   const { t } = useLang();
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 p-4">
-      <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl border border-slate-200 p-5 flex items-start gap-4">
-        <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
-          <Shield size={20} style={{ color: "#5B21B6" }} />
+      <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl border border-slate-200 p-4 md:p-5 flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+        <div className="flex items-start gap-3 md:gap-4 min-w-0 flex-1">
+          <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
+            <Shield size={20} style={{ color: "#5B21B6" }} />
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-slate-800 text-sm mb-1">{t('banner_title')}</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">{t('banner_p1')}<strong>{t('banner_law')}</strong>{t('banner_p2')}</p>
+          </div>
         </div>
-        <div className="flex-1">
-          <h3 className="font-semibold text-slate-800 text-sm mb-1">{t('banner_title')}</h3>
-          <p className="text-xs text-slate-500 leading-relaxed">
-{t('banner_p1')}<strong>{t('banner_law')}</strong>{t('banner_p2')}
-          </p>
-        </div>
-        <div className="flex gap-2 flex-shrink-0">
-          <button onClick={onAccept} className="px-4 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
+        <div className="flex gap-2 flex-shrink-0 md:self-center">
+          <button onClick={onAccept} className="flex-1 md:flex-none px-4 py-2 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
             {t('banner_decline')}
           </button>
-          <button onClick={onAccept} className="px-4 py-2 text-xs text-white rounded-xl hover:opacity-90 transition-opacity" style={{ background: GRAD }}>
+          <button onClick={onAccept} className="flex-1 md:flex-none px-4 py-2 text-xs text-white rounded-xl hover:opacity-90 transition-opacity" style={{ background: GRAD }}>
             {t('banner_accept')}
           </button>
         </div>
