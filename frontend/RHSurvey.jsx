@@ -749,7 +749,7 @@ function SurveyList({ onCreateNew, onView }) {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-7">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('nav_surveys')}</h1>
           <p className="text-sm text-slate-500 mt-1">{t('sl_subtitle')}</p>
@@ -759,7 +759,7 @@ function SurveyList({ onCreateNew, onView }) {
         </button>
       </div>
 
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex flex-wrap items-center gap-3 mb-5">
         <div className="relative flex-1 max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:border-purple-400"
@@ -790,7 +790,7 @@ function SurveyList({ onCreateNew, onView }) {
                         <h3 className="font-semibold text-slate-800">{s.name}</h3>
                         {s.anonymous && <LGPDBadge />}
                       </div>
-                      <div className="flex items-center gap-2 mt-1.5">
+                      <div className="flex flex-wrap items-center gap-2 mt-1.5">
                         <Badge status={s.status} /><GroupBadge group={s.type} />
                         <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{s.category}</span>
                         {s.anonymous && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1"><EyeOff size={10} />{t('sl_anon')}</span>}
@@ -824,9 +824,9 @@ function SurveyList({ onCreateNew, onView }) {
                       <div className="text-xs text-slate-400">{t('sl_completion')}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 mt-4 pt-3.5 border-t border-slate-50">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-4 pt-3.5 border-t border-slate-50">
                     <span className="text-xs text-slate-400 flex items-center gap-1"><Clock size={11} />{s.created}</span>
-                    <div className="flex gap-3 ml-auto">
+                    <div className="flex flex-wrap gap-3 ml-auto">
                       <button onClick={() => handleTranslate(s)} disabled={translating===s.id} title={t('sl_translate_title')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed">{translating===s.id ? <><Loader2 size={11} className="animate-spin" />{t('sl_translating')}</> : <><Sparkles size={11} />{t('sl_translate')}</>}</button>
                       <button onClick={() => handleEmail(s)} disabled={!s.token || s.status!=="ativo"} title={s.status!=="ativo" ? t('sl_publish_send') : t('sl_open_email')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"><Mail size={11} />{t('sl_email_btn')}</button>
                       <button onClick={() => handleCopyLink(s)} disabled={!s.token || s.status!=="ativo"}
@@ -1380,7 +1380,7 @@ function RespondentManager() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-7">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('nav_respondents')}</h1>
           <p className="text-sm text-slate-500 mt-1">{t('rm_subtitle')}</p>
@@ -1613,7 +1613,7 @@ function Evaluation360() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-7">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('nav_evaluation360')}</h1>
           <p className="text-sm text-slate-500 mt-1">{t('ev_subtitle')}</p>
@@ -1775,7 +1775,7 @@ function CycleDetail({ cycleId, onBack }) {
   return (
     <div className="p-4 md:p-8">
       <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700 mb-4">{t('cd_back')}</button>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{cycle?.name || t('cd_cycle_fallback')}</h1>
           <p className="text-sm text-slate-500 mt-1">{t('cd_questionnaire_label')}: {cycle?.survey_name || "—"}</p>
@@ -2098,7 +2098,7 @@ function ResultsDashboard() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-7">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('rd_title')}</h1>
           <p className="text-sm text-slate-500 mt-1">{t('rd_subtitle')}</p>
@@ -2865,7 +2865,7 @@ function NotificationCenter({ notifications, setNotifications }) {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-7">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('nc_title')}</h1>
           <p className="text-sm text-slate-500 mt-1">{unread > 0 ? (unread>1 ? t('nc_unread_many',{n:unread}) : t('nc_unread_one')) : t('nc_all_clear')}</p>
@@ -3002,7 +3002,7 @@ function TeamManagement() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-7">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('set_t_team')}</h1>
           <p className="text-sm text-slate-500 mt-1">{t('tm_subtitle')}</p>
@@ -3188,14 +3188,14 @@ function TemplatesLibrary({ onUseTemplate }) {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-7">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{tr('tl_title')}</h1>
           <p className="text-sm text-slate-500 mt-1">{tr('tl_subtitle')}</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex flex-wrap items-center gap-3 mb-5">
         <div className="relative flex-1 max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:border-purple-400"
@@ -3333,7 +3333,7 @@ function AdvancedReports() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-7">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{t('ar_title')}</h1>
           <p className="text-sm text-slate-500 mt-1">{t('ar_subtitle')}</p>
@@ -3788,7 +3788,7 @@ export default function RHSurvey() {
       )}
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
         <TopBar title={creating ? translate(lang,"new_survey") : translate(lang,"title_"+page)} unreadCount={unreadCount} onBell={() => handleNav("notificacoes")} onMenu={() => setNavOpen(true)} showMenu={isMobile} />
-        <main style={{ flex:1, overflowY:"auto" }}>{renderContent()}</main>
+        <main style={{ flex:1, overflowY:"auto", overflowX:"hidden" }}>{renderContent()}</main>
       </div>
       {!lgpdOk && <LGPDBanner onAccept={() => setLgpdOk(true)} />}
       <InstallPrompt />
