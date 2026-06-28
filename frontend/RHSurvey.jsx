@@ -1491,12 +1491,12 @@ function RespondentManager() {
           placeholder={t('rm_search_ph')} value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100">
-              {[t('col_name'),t('col_email'),t('col_group'),t('col_department'),t('col_status'),t('col_consent_lgpd'),t('col_actions')].map(h => (
-                <th key={h} className="text-left text-xs font-semibold text-slate-500 px-4 py-3">{h}</th>
+              {[t('col_name'),t('col_email'),t('col_group'),t('col_department'),t('col_status'),t('col_consent_lgpd'),t('col_actions')].map((h,hi,arr) => (
+                <th key={h} className={`text-left text-xs font-semibold text-slate-500 px-4 py-3 whitespace-nowrap ${hi===arr.length-1?"sticky right-0 bg-slate-50 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.08)]":""}`}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -1524,7 +1524,7 @@ function RespondentManager() {
                     : <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full"><AlertTriangle size={10} />{t('status_pendente')}</span>
                   }
                 </td>
-                <td className="px-4 py-3.5">
+                <td className="px-4 py-3.5 sticky right-0 bg-white shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.08)]">
                   <div className="flex items-center gap-1">
                     {!r.consent && (
                       <button onClick={() => handleConsent(r)} title={t('rm_register_consent')}
