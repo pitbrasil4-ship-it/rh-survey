@@ -124,6 +124,16 @@ function initSchema() {
   try { db.exec("ALTER TABLE surveys ADD COLUMN name_es TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE surveys ADD COLUMN description_en TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE surveys ADD COLUMN description_es TEXT"); } catch (e) {}
+  // Assinaturas de notificações Web Push (PWA).
+  try { db.exec(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    user_id TEXT,
+    endpoint TEXT UNIQUE,
+    p256dh TEXT,
+    auth TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
 }
 
 module.exports = { getDB };
