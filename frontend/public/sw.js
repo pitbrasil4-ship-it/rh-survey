@@ -49,3 +49,33 @@ self.addEventListener('fetch', (e) => {
       .catch(() => caches.match(req).then((hit) => hit || (req.mode === 'navigate' ? caches.match('/offline.html') : caches.match('/index.html'))))
   );
 });
+
+// ─── Notificações Web Push ─────────────────────────────────────────────────────
+self.addEventListener('push', (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch (err) { data = { title: 'RH Survey', body: e.data ? e.data.text() : '' }; }
+  const title = data.title || 'RH Survey';
+  const options = {
+    body: data.body || '',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: data.tag || undefined,
+    data: { url: data.url || '/' },
+  };
+  e.waitUntil(
+    self.registration.showNotification(title, options).then(() => {
+      if (self.navigator && self.navigator.setAppBadge) { self.navigator.setAppBadge().catch(() => {}); }
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || '/';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) { if ('focus' in c) { try { c.navigate(url); } catch (err) {} return c.focus(); } }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    })
+  );
+});
