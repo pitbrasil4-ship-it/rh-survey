@@ -4,7 +4,7 @@ import { LANGS, t as translate, getStoredLang, storeLang, LangContext, useLang }
 import LogoMark from "./src/LogoMark.jsx";
 import {
   LayoutDashboard, ClipboardList, Users, BarChart3, Settings, Plus, Search,
-  Bell, TrendingUp, CheckCircle, Clock, Send, Sparkles, Download, Eye, Edit,
+  Bell, TrendingUp, CheckCircle, Clock, CalendarClock, Send, Sparkles, Download, Eye, Edit,
   Trash2, X, Loader2, Target, Award, Mail, Link2, ChevronDown, ArrowUpRight,
   UserCheck, Building2, MessageSquare, ChevronRight, Shield, Lock, AlertTriangle,
   FileText, Key, Activity, EyeOff, Database, RefreshCw, Info,
@@ -659,35 +659,33 @@ function SurveyList({ onCreateNew, onView }) {
   const [error,   setError]   = useState("");
   const [translating, setTranslating] = useState("");
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const [sv, rs] = await Promise.all([
-          api.surveys.list(),
-          api.respondents.list().catch(() => ({ respondents: [] })),
-        ]);
-        const audience = (rs.respondents || []).length;
-        const mapped = (sv.surveys || []).map(s => ({
-          id:         s.id,
-          name:       s.name,
-          type:       s.target_group || "subordinados",
-          status:     s.status,
-          responses:  s.response_count || 0,
-          total:      audience || s.response_count || 0,
-          created:    s.created_at ? new Date(s.created_at).toLocaleDateString("pt-BR") : "—",
-          category:   s.category || "—",
-          nps:        0,
-          anonymous:  !!s.anonymous,
-          token:      s.public_token || "",
-        }));
-        if (alive) { setSurveys(mapped); setLoading(false); }
-      } catch (e) {
-        if (alive) { setError(e.message || t('sl_load_error')); setLoading(false); }
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
+  const load = async () => {
+    try {
+      const [sv, rs] = await Promise.all([
+        api.surveys.list(),
+        api.respondents.list().catch(() => ({ respondents: [] })),
+      ]);
+      const audience = (rs.respondents || []).length;
+      const mapped = (sv.surveys || []).map(s => ({
+        id:         s.id,
+        name:       s.name,
+        type:       s.target_group || "subordinados",
+        status:     s.status,
+        responses:  s.response_count || 0,
+        total:      audience || s.response_count || 0,
+        created:    s.created_at ? new Date(s.created_at).toLocaleDateString("pt-BR") : "—",
+        deadline:   s.deadline || null,
+        category:   s.category || "—",
+        nps:        0,
+        anonymous:  !!s.anonymous,
+        token:      s.public_token || "",
+      }));
+      setSurveys(mapped); setLoading(false);
+    } catch (e) {
+      setError(e.message || t('sl_load_error')); setLoading(false);
+    }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
   const filtered = surveys.filter(s => {
     const ms = s.name.toLowerCase().includes(search.toLowerCase());
@@ -742,6 +740,27 @@ function SurveyList({ onCreateNew, onView }) {
       alert(r && r.demo ? t('sl_translate_demo') : t('sl_translated'));
     } catch (e) { alert(t('sl_translate_err')); }
     setTranslating("");
+  };
+
+  const [dlSurvey, setDlSurvey] = useState(null);
+  const [dlValue,  setDlValue]  = useState("");
+  const [dlSaving, setDlSaving] = useState(false);
+  const openDeadline = (s) => { setDlSurvey(s); setDlValue(s.deadline ? String(s.deadline).slice(0,10) : ""); };
+  const saveDeadline = async (clear) => {
+    setDlSaving(true);
+    try {
+      await api.surveys.setDeadline(dlSurvey.id, clear ? null : (dlValue ? dlValue + "T23:59:59-03:00" : null));
+      setDlSurvey(null); await load();
+    } catch (e) { alert((e && e.message) || t('sl_deadline_err')); }
+    setDlSaving(false);
+  };
+  const deadlineInfo = (s) => {
+    if (!s.deadline) return null;
+    const days = Math.ceil((new Date(s.deadline).getTime() - Date.now()) / 86400000);
+    if (days < 0)  return { label: t('sl_dl_closed'), cls: "bg-red-50 text-red-600" };
+    if (days === 0) return { label: t('sl_dl_today'),  cls: "bg-amber-50 text-amber-700" };
+    const dt = new Date(s.deadline).toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit" });
+    return { label: t('sl_dl_on', { date: dt, days }), cls: days <= 3 ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500" };
   };
 
   if (loading) return <div className="p-4 md:p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('sl_loading')}</div>;
@@ -826,6 +845,7 @@ function SurveyList({ onCreateNew, onView }) {
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-4 pt-3.5 border-t border-slate-50">
                     <span className="text-xs text-slate-400 flex items-center gap-1"><Clock size={11} />{s.created}</span>
+                    {deadlineInfo(s) && <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1 ${deadlineInfo(s).cls}`}><CalendarClock size={11} />{deadlineInfo(s).label}</span>}
                     <div className="flex flex-wrap gap-3 ml-auto">
                       <button onClick={() => handleTranslate(s)} disabled={translating===s.id} title={t('sl_translate_title')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed">{translating===s.id ? <><Loader2 size={11} className="animate-spin" />{t('sl_translating')}</> : <><Sparkles size={11} />{t('sl_translate')}</>}</button>
                       <button onClick={() => handleEmail(s)} disabled={!s.token || s.status!=="ativo"} title={s.status!=="ativo" ? t('sl_publish_send') : t('sl_open_email')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"><Mail size={11} />{t('sl_email_btn')}</button>
@@ -835,6 +855,7 @@ function SurveyList({ onCreateNew, onView }) {
                         {copiedId===s.id ? <><CheckCircle size={11} />{t('sl_copied')}</> : <><Link2 size={11} />{t('sl_copy_link')}</>}
                       </button>
                       <button onClick={() => handleWhatsApp(s)} disabled={!s.token || s.status!=="ativo"} title={s.status!=="ativo" ? t('sl_publish_send') : t('sl_open_whatsapp')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-green-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"><Send size={11} />WhatsApp</button>
+                      <button onClick={() => openDeadline(s)} title={t('sl_deadline_title')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium"><CalendarClock size={11} />{t('sl_deadline_btn')}</button>
                     </div>
                   </div>
                 </div>
@@ -843,6 +864,26 @@ function SurveyList({ onCreateNew, onView }) {
           );
         })}
       </div>
+
+      {dlSurvey && (
+        <div onClick={() => !dlSaving && setDlSurvey(null)} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3" style={{ background:"rgba(15,23,42,0.45)" }}>
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background:GRAD }}><CalendarClock size={17} /></div>
+              <h3 className="font-semibold text-slate-800 text-sm">{t('sl_deadline_title')}</h3>
+            </div>
+            <p className="text-xs text-slate-500 mb-3 truncate">{dlSurvey.name}</p>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('sl_deadline_date')}</label>
+            <input type="date" value={dlValue} onChange={e => setDlValue(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-purple-400 bg-white" />
+            <p className="text-[11px] text-slate-400 mt-1">{t('sb_deadline_hint')}</p>
+            <div className="flex flex-wrap gap-2 mt-4">
+              <button onClick={() => saveDeadline(false)} disabled={dlSaving} className="flex-1 text-xs font-bold text-white rounded-lg px-3 py-2 disabled:opacity-50" style={{ background:GRAD }}>{dlSaving ? t('sl_deadline_saving') : t('sl_deadline_save')}</button>
+              {dlSurvey.deadline && <button onClick={() => saveDeadline(true)} disabled={dlSaving} className="text-xs font-medium text-red-600 border border-red-200 rounded-lg px-3 py-2 hover:bg-red-50 disabled:opacity-50">{t('sl_deadline_remove')}</button>}
+              <button onClick={() => setDlSurvey(null)} disabled={dlSaving} className="text-xs font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50 disabled:opacity-50">{t('sl_deadline_cancel')}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -868,6 +909,7 @@ function SurveyBuilder({ onBack, initial }) {
   const [lgpdOk,    setLgpdOk]   = useState(false);
   const [targetGroup, setTargetGroup] = useState("Gestores");
   const [category,    setCategory]    = useState("Avaliação 360°");
+  const [deadline,    setDeadline]    = useState(initial?.deadline ? String(initial.deadline).slice(0,10) : "");
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState(null);
   const [importErr,   setImportErr]   = useState("");
@@ -887,6 +929,7 @@ function SurveyBuilder({ onBack, initial }) {
         category,
         targetGroup: GROUP_MAP[targetGroup] || "todos",
         anonymous,
+        deadline: deadline ? deadline + "T23:59:59-03:00" : null,
         questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es })),
         lgpdBasis: "consentimento",
       });
@@ -1025,6 +1068,11 @@ function SurveyBuilder({ onBack, initial }) {
             <select value={category} onChange={e => setCategory(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white">
               {[["Avaliação 360°",t('cat_360')],["NPS","NPS"],["Clima Organizacional",t('cat_climate')],["Feedback",t('cat_feedback')]].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
             </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('sb_deadline')}</label>
+            <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white" />
+            <p className="text-[11px] text-slate-400 mt-1">{t('sb_deadline_hint')}</p>
           </div>
         </div>
 
