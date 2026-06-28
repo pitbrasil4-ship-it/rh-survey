@@ -56,6 +56,7 @@ export const api = {
     create:     (data)     => request('POST', '/surveys', data),
     generateAI: (context, count) => request('POST', '/surveys/generate-ai', { context, count }),
     translate:  (id)       => request('POST', `/surveys/${id}/translate`),
+    setDeadline: (id, deadline) => request('PUT', `/surveys/${id}/deadline`, { deadline }),
   },
   respondents: {
     list:   ()     => request('GET', '/respondents'),
