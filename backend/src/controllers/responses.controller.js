@@ -8,7 +8,7 @@ const { hashIP }   = require('../utils/crypto');
 function getPublic(req, res) {
   try {
     const db     = getDB();
-    const survey = db.prepare("SELECT id, name, description, category, anonymous FROM surveys WHERE public_token = ? AND status = 'ativo'").get(req.params.token);
+    const survey = db.prepare("SELECT id, name, name_en, name_es, description, description_en, description_es, category, anonymous FROM surveys WHERE public_token = ? AND status = 'ativo'").get(req.params.token);
     if (!survey) return notFound(res, 'Pesquisa');
     const questions = db.prepare('SELECT id, order_num, type, text, text_en, text_es, options, options_en, options_es FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
     const PJ = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
