@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -47,9 +47,46 @@
     </div>
     <script type="module" src="/src/main.jsx"></script>
     <script>
+      // Captura o convite de instalação (Android/Chrome) o quanto antes.
+      window.__bipEvent = null;
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__bipEvent = e;
+        window.dispatchEvent(new Event('pwa-installable'));
+      });
+      window.addEventListener('appinstalled', function () {
+        window.__bipEvent = null;
+        window.dispatchEvent(new Event('pwa-installed'));
+      });
+
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
-          navigator.serviceWorker.register('/sw.js').catch(function () {});
+          navigator.serviceWorker.register('/sw.js').then(function (reg) {
+            function showUpdateBanner(worker) {
+              if (!worker || document.getElementById('sw-update-banner')) return;
+              var b = document.createElement('div');
+              b.id = 'sw-update-banner';
+              b.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));z-index:99999;background:#0F172A;color:#fff;padding:10px 12px 10px 16px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.28);display:flex;gap:12px;align-items:center;font:500 14px system-ui,-apple-system,sans-serif;max-width:92vw';
+              var span = document.createElement('span'); span.textContent = 'Nova versão disponível';
+              var btn = document.createElement('button'); btn.textContent = 'Atualizar';
+              btn.style.cssText = 'background:linear-gradient(135deg,#5B21B6,#7C3AED);color:#fff;border:0;border-radius:9px;padding:7px 14px;font-weight:700;cursor:pointer';
+              btn.onclick = function () { btn.textContent = '...'; worker.postMessage({ type: 'SKIP_WAITING' }); };
+              b.appendChild(span); b.appendChild(btn); document.body.appendChild(b);
+            }
+            if (reg.waiting && navigator.serviceWorker.controller) showUpdateBanner(reg.waiting);
+            reg.addEventListener('updatefound', function () {
+              var nw = reg.installing;
+              if (!nw) return;
+              nw.addEventListener('statechange', function () {
+                if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBanner(nw);
+              });
+            });
+          }).catch(function () {});
+
+          var refreshing = false;
+          navigator.serviceWorker.addEventListener('controllerchange', function () {
+            if (refreshing) return; refreshing = true; window.location.reload();
+          });
         });
       }
     </script>
