@@ -55,6 +55,7 @@ export const api = {
     list:       ()         => request('GET', '/surveys'),
     create:     (data)     => request('POST', '/surveys', data),
     generateAI: (context, count) => request('POST', '/surveys/generate-ai', { context, count }),
+    translate:  (id)       => request('POST', `/surveys/${id}/translate`),
   },
   respondents: {
     list:   ()     => request('GET', '/respondents'),
@@ -74,6 +75,9 @@ export const api = {
     addAssignment:    (cycleId, data)  => request('POST', `/eval/cycles/${cycleId}/assignments`, data),
     removeAssignment: (id)             => request('DELETE', `/eval/assignments/${id}`),
     results:          (cycleId)        => request('GET', `/eval/results/${cycleId}`),
+  },
+  audit: {
+    list: () => request('GET', '/audit'),
   },
   auth: {
     changePassword: (currentPassword, newPassword) => request('POST', '/auth/change-password', { currentPassword, newPassword }),
