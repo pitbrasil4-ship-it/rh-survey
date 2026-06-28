@@ -2202,6 +2202,7 @@ function ResultsDashboard() {
       )}
       </>
       )}
+      <SegmentResultsPanel surveyId={selectedId} />
     </div>
   );
 }
@@ -2680,6 +2681,7 @@ function DistributionCenter() {
           </div>
         </>
       )}
+      <SegmentLinksPanel surveyId={selectedId} />
     </div>
   );
 }
@@ -3624,6 +3626,143 @@ const PAGE_LABELS = {
   insights:"Insights com IA",
   lgpd:"LGPD & Privacidade", security:"Segurança", settings:"Configurações",
 };
+
+// ─── SEGMENTAÇÃO: PAINÉIS ──────────────────────────────────────────────────────
+function segCopy(text) {
+  if (navigator.clipboard) return navigator.clipboard.writeText(text).catch(() => segFallbackCopy(text));
+  return segFallbackCopy(text);
+}
+function segFallbackCopy(text) { const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch{} document.body.removeChild(ta); return Promise.resolve(); }
+
+function SegLinkRow({ name, token }) {
+  const { t } = useLang();
+  const [copied, setCopied] = useState(false);
+  const url = `${window.location.origin}/r/${token}`;
+  const copy = () => { segCopy(url); setCopied(true); setTimeout(()=>setCopied(false), 1800); };
+  return (
+    <div className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2">
+      <span className="text-sm text-slate-700 flex-1 min-w-0 truncate">{name}</span>
+      <button onClick={copy} className="text-xs font-medium text-purple-700 border border-purple-200 rounded-lg px-2.5 py-1 hover:bg-purple-50 flex items-center gap-1 flex-shrink-0">
+        {copied ? <><CheckCircle size={12} />{t('seg_copied')}</> : <><Link2 size={12} />{t('seg_copy')}</>}
+      </button>
+    </div>
+  );
+}
+
+function SegmentLinksPanel({ surveyId }) {
+  const { t } = useLang();
+  const [links, setLinks]     = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy]       = useState(false);
+
+  useEffect(() => {
+    if (!surveyId) { setLinks(null); return; }
+    let alive = true;
+    (async () => { setLoading(true); try { const d = await api.surveys.listSegmentLinks(surveyId); if (alive) setLinks({ distritos:d.distritos||[], departamentos:d.departamentos||[] }); } catch { if (alive) setLinks({ distritos:[], departamentos:[] }); } if (alive) setLoading(false); })();
+    return () => { alive = false; };
+  }, [surveyId]);
+
+  const generate = async () => { setBusy(true); try { const d = await api.surveys.segmentLinks(surveyId); setLinks({ distritos:d.distritos||[], departamentos:d.departamentos||[] }); } catch (e) { alert((e&&e.message)||""); } setBusy(false); };
+
+  if (!surveyId) return null;
+  const hasLinks = links && (links.distritos.length>0 || links.departamentos.length>0);
+  const byReg = {};
+  (links?.distritos||[]).forEach(d => { const k = d.regional || "__none__"; (byReg[k]=byReg[k]||[]).push(d); });
+  const regKeys = Object.keys(byReg).sort((a,b)=> a==="__none__"?1 : b==="__none__"?-1 : a.localeCompare(b));
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mt-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+        <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Building2 size={15} style={{ color:"#5B21B6" }} />{t('seg_links_title')}</h3>
+        <button onClick={generate} disabled={busy} className="text-xs font-bold text-white rounded-lg px-3 py-1.5 disabled:opacity-50 flex items-center gap-1" style={{ background:GRAD }}>{busy ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}{hasLinks ? t('seg_regenerate') : t('seg_generate')}</button>
+      </div>
+      <p className="text-xs text-slate-500 mb-3">{t('seg_links_desc')}</p>
+      {loading ? <div className="text-xs text-slate-400 py-3 flex items-center gap-2"><Loader2 size={14} className="animate-spin" />{t('seg_loading')}</div>
+       : !hasLinks ? <div className="text-xs text-slate-400 py-3">{t('seg_no_structure')}</div>
+       : <div className="space-y-4">
+           {regKeys.length>0 && <div>
+             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{t('org_distritos')}</div>
+             <div className="space-y-3">
+               {regKeys.map(rk => (
+                 <div key={rk}>
+                   <div className="text-xs font-medium text-purple-700 mb-1.5">{rk==="__none__" ? t('seg_no_regional') : rk}</div>
+                   <div className="space-y-1.5">{byReg[rk].map((d,i)=><SegLinkRow key={i} name={d.name} token={d.token} />)}</div>
+                 </div>
+               ))}
+             </div>
+           </div>}
+           {links.departamentos.length>0 && <div>
+             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{t('org_departamentos')}</div>
+             <div className="space-y-1.5">{links.departamentos.map((d,i)=><SegLinkRow key={i} name={d.name} token={d.token} />)}</div>
+           </div>}
+         </div>}
+    </div>
+  );
+}
+
+function SegBar({ pct }) {
+  const p = pct==null ? 0 : Math.min(100, pct);
+  const col = pct==null ? "#CBD5E1" : pct>=70 ? "#16A34A" : pct>=40 ? "#D97706" : "#DC2626";
+  return <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden w-full"><div className="h-full rounded-full" style={{ width:`${p}%`, background:col }} /></div>;
+}
+function SegStat({ responses, meta, pct }) {
+  return <span className="text-xs text-slate-500 whitespace-nowrap">{responses}/{meta} · {pct==null ? "—" : pct+"%"}</span>;
+}
+
+function SegmentResultsPanel({ surveyId }) {
+  const { t } = useLang();
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!surveyId) { setData(null); return; }
+    let alive = true;
+    (async () => { setLoading(true); try { const d = await api.results.segments(surveyId); if (alive) setData(d); } catch { if (alive) setData(null); } if (alive) setLoading(false); })();
+    return () => { alive = false; };
+  }, [surveyId]);
+
+  if (!surveyId) return null;
+  if (loading) return <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mt-6 text-xs text-slate-400 flex items-center gap-2"><Loader2 size={14} className="animate-spin" />{t('seg_loading')}</div>;
+  if (!data) return null;
+  const hasStruct = (data.regionais && data.regionais.length) || (data.departamentos && data.departamentos.length);
+  if (!hasStruct) return null;
+  const g = data.totals.geral;
+  const regsWithKids = data.regionais.filter(r=>r.distritos.length>0);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mt-6">
+      <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2"><Building2 size={15} style={{ color:"#5B21B6" }} />{t('seg_results_title')}</h3>
+      <div className="rounded-xl p-4 mb-4 text-white" style={{ background:GRAD }}>
+        <div className="flex items-center justify-between"><div className="text-xs opacity-90">{t('seg_corp')}</div><div className="text-xs opacity-90">{g.responses}/{g.meta} {t('seg_responses')}</div></div>
+        <div className="text-3xl font-bold mt-1">{g.pct==null ? "—" : g.pct+"%"}</div>
+      </div>
+      {regsWithKids.length>0 && <div className="mb-4">
+        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{t('org_distritos')} · {t('seg_dist_total')}: {data.totals.distritos.responses}/{data.totals.distritos.meta}</div>
+        <div className="space-y-3">
+          {regsWithKids.map((r,i)=>(
+            <div key={i} className="border border-slate-100 rounded-xl p-3">
+              <div className="flex items-center justify-between gap-2 mb-1.5"><span className="text-sm font-semibold text-slate-700">{r.name || t('seg_no_regional')}</span><SegStat responses={r.responses} meta={r.meta} pct={r.pct} /></div>
+              <SegBar pct={r.pct} />
+              <div className="mt-2 space-y-1.5 pl-2 border-l-2 border-slate-100">
+                {r.distritos.map((d,j)=>(
+                  <div key={j} className="flex items-center gap-2"><span className="text-xs text-slate-600 flex-1 min-w-0 truncate">{d.name}</span><div className="w-20 sm:w-28"><SegBar pct={d.pct} /></div><SegStat responses={d.responses} meta={d.meta} pct={d.pct} /></div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>}
+      {data.departamentos.length>0 && <div>
+        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{t('org_departamentos')} · {t('seg_dep_total')}: {data.totals.departamentos.responses}/{data.totals.departamentos.meta}</div>
+        <div className="space-y-1.5">
+          {data.departamentos.map((d,i)=>(
+            <div key={i} className="flex items-center gap-2"><span className="text-sm text-slate-600 flex-1 min-w-0 truncate">{d.name}</span><div className="w-20 sm:w-28"><SegBar pct={d.pct} /></div><SegStat responses={d.responses} meta={d.meta} pct={d.pct} /></div>
+          ))}
+        </div>
+      </div>}
+    </div>
+  );
+}
 
 // ─── ESTRUTURA ORGANIZACIONAL ──────────────────────────────────────────────────
 function OrgStructure() {
