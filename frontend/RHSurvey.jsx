@@ -7,7 +7,7 @@ import {
   Trash2, X, Loader2, Target, Award, Mail, Link2, ChevronDown, ArrowUpRight,
   UserCheck, Building2, MessageSquare, ChevronRight, Shield, Lock, AlertTriangle,
   FileText, Key, Activity, EyeOff, Database, RefreshCw, Info,
-  FileCheck, Zap, MessageCircle, BarChart2, Star, LogOut
+  FileCheck, Zap, MessageCircle, BarChart2, Star, LogOut, Menu
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -405,13 +405,20 @@ function Sidebar({ page, setPage }) {
 }
 
 // ─── TOPBAR ────────────────────────────────────────────────────────────────────
-function TopBar({ title, unreadCount, onBell }) {
+function TopBar({ title, unreadCount, onBell, onMenu, showMenu }) {
   const { t, lang, setLang } = useLang();
   return (
-    <div className="bg-white border-b border-slate-100 px-8 py-3.5 flex items-center justify-between sticky top-0 z-10">
-      <div className="text-sm text-slate-400">
-        RH Survey <span className="mx-1 text-slate-300">/</span>
-        <span className="text-slate-700 font-medium">{title}</span>
+    <div className="bg-white border-b border-slate-100 px-4 md:px-8 py-3.5 flex items-center justify-between sticky top-0 z-10">
+      <div className="flex items-center gap-2 min-w-0">
+        {showMenu && (
+          <button onClick={onMenu} aria-label="Menu" className="p-2 -ml-1 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
+            <Menu size={20} />
+          </button>
+        )}
+        <div className="text-sm text-slate-400 truncate">
+          <span className="hidden sm:inline">RH Survey <span className="mx-1 text-slate-300">/</span></span>
+          <span className="text-slate-700 font-medium">{title}</span>
+        </div>
       </div>
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
@@ -422,7 +429,7 @@ function TopBar({ title, unreadCount, onBell }) {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-100 rounded-full">
+        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-100 rounded-full">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
           <span className="text-xs text-green-700 font-medium">{t('system_secure')}</span>
         </div>
@@ -3575,6 +3582,13 @@ export default function RHSurvey() {
   const [lang,     setLang]    = useState(getStoredLang);
   const changeLang = (l) => { setLang(l); storeLang(l); };
   const unreadCount = notifications.filter(n => !n.read).length;
+  const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < 768);
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -3588,7 +3602,7 @@ export default function RHSurvey() {
     })();
   }, []);
 
-  const handleNav = p => { setCreating(false); setTmpl(null); setPage(p); };
+  const handleNav = p => { setCreating(false); setTmpl(null); setPage(p); setNavOpen(false); };
 
   const renderContent = () => {
     if (creating) return <SurveyBuilder onBack={() => { setCreating(false); setTmpl(null); }} initial={tmpl} />;
@@ -3614,9 +3628,18 @@ export default function RHSurvey() {
   return (
     <LangContext.Provider value={{ lang, setLang: changeLang, t: (k, v) => translate(lang, k, v) }}>
     <div style={{ display:"flex", height:"100vh", overflow:"hidden", background:"#F8FAFC", fontFamily:"system-ui,-apple-system,sans-serif" }}>
-      <Sidebar page={creating?"surveys":page} setPage={handleNav} />
-      <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-        <TopBar title={creating ? translate(lang,"new_survey") : translate(lang,"title_"+page)} unreadCount={unreadCount} onBell={() => handleNav("notificacoes")} />
+      {isMobile ? (
+        <>
+          {navOpen && <div onClick={() => setNavOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.45)", zIndex:40 }} />}
+          <div style={{ position:"fixed", top:0, left:0, height:"100%", zIndex:50, transform: navOpen ? "translateX(0)" : "translateX(-110%)", transition:"transform .25s ease", boxShadow: navOpen ? "2px 0 20px rgba(0,0,0,0.18)" : "none" }}>
+            <Sidebar page={creating?"surveys":page} setPage={handleNav} />
+          </div>
+        </>
+      ) : (
+        <Sidebar page={creating?"surveys":page} setPage={handleNav} />
+      )}
+      <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
+        <TopBar title={creating ? translate(lang,"new_survey") : translate(lang,"title_"+page)} unreadCount={unreadCount} onBell={() => handleNav("notificacoes")} onMenu={() => setNavOpen(true)} showMenu={isMobile} />
         <main style={{ flex:1, overflowY:"auto" }}>{renderContent()}</main>
       </div>
       {!lgpdOk && <LGPDBanner onAccept={() => setLgpdOk(true)} />}
