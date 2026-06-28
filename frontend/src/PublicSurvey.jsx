@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LANGS, t, storeLang } from './i18n.js';
+import LogoMark from './LogoMark.jsx';
 
 function initialLang() {
   try { const s = localStorage.getItem('rh_lang'); if (LANGS.some(l => l.code === s)) return s; } catch {}
@@ -47,7 +48,7 @@ async function pub(method, token, body) {
 function Logo() {
   return (
     <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-      <div style={{ width:38, height:38, borderRadius:10, background:RED, display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:800, fontSize:15 }}>RH</div>
+      <LogoMark size={38} />
       <div style={{ fontWeight:800, color:'#0F172A', fontSize:17, lineHeight:1 }}>RH<span style={{ color:RED }}>Survey</span><div style={{ fontSize:9, color:'#94A3B8', fontWeight:600, letterSpacing:1, marginTop:2 }}>RGIS BRASIL</div></div>
     </div>
   );
