@@ -134,6 +134,16 @@ function initSchema() {
     auth TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   )`); } catch (e) {}
+  // Estrutura organizacional: regionais, distritos (cada um numa regional) e departamentos. Com meta de respondentes.
+  try { db.exec(`CREATE TABLE IF NOT EXISTS regionais (
+    id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS distritos (
+    id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT NOT NULL, regional_id TEXT, meta INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS departamentos (
+    id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT NOT NULL, meta INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
 }
 
 module.exports = { getDB };
