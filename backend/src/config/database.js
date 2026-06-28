@@ -119,6 +119,11 @@ function initSchema() {
   // Migração idempotente: opções de resposta traduzidas (EN/ES).
   try { db.exec("ALTER TABLE questions ADD COLUMN options_en TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE questions ADD COLUMN options_es TEXT"); } catch (e) {}
+  // Migração idempotente: título e descrição da pesquisa traduzidos (EN/ES).
+  try { db.exec("ALTER TABLE surveys ADD COLUMN name_en TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE surveys ADD COLUMN name_es TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE surveys ADD COLUMN description_en TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE surveys ADD COLUMN description_es TEXT"); } catch (e) {}
 }
 
 module.exports = { getDB };
