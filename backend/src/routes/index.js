@@ -9,4 +9,5 @@ router.use('/results',     require('./results.routes'));
 router.use('/eval',        require('./eval.routes'));
 router.use('/audit',       require('./audit.routes'));
 router.use('/lgpd',        require('./lgpd.routes'));
+router.use('/push',        require('./push.routes'));
 module.exports = router;
