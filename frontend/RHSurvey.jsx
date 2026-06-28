@@ -830,6 +830,7 @@ function SurveyList({ onCreateNew, onView }) {
 
 // ─── SURVEY BUILDER ────────────────────────────────────────────────────────────
 function SurveyBuilder({ onBack, initial }) {
+  const { t } = useLang();
   const [tab,       setTab]       = useState("builder");
   const [surveyName,setSurveyName]= useState(initial?.name || "");
   const [questions, setQuestions] = useState(
@@ -857,9 +858,9 @@ function SurveyBuilder({ onBack, initial }) {
 
   const handleSubmit = async (publishNow) => {
     setError(null);
-    if (!surveyName.trim())     { setError("Dê um nome à pesquisa."); return; }
-    if (questions.length === 0) { setError("Adicione pelo menos uma pergunta antes de salvar."); return; }
-    if (publishNow && !lgpdOk)  { setError("Confirme a conformidade LGPD antes de publicar."); return; }
+    if (!surveyName.trim())     { setError(t('sb_name_required')); return; }
+    if (questions.length === 0) { setError(t('sb_min_one_q')); return; }
+    if (publishNow && !lgpdOk)  { setError(t('sb_confirm_lgpd')); return; }
     setSaving(true);
     try {
       const result = await api.surveys.create({
@@ -874,7 +875,7 @@ function SurveyBuilder({ onBack, initial }) {
       if (publishNow && id) await api.post(`/surveys/${id}/publish`);
       onBack();
     } catch (e) {
-      setError((e && e.message) || "Erro ao salvar a pesquisa.");
+      setError((e && e.message) || t('sb_save_error'));
       setSaving(false);
     }
   };
@@ -892,7 +893,7 @@ function SurveyBuilder({ onBack, initial }) {
       const data = await api.surveys.generateAI(aiContext, 6);
       setAiQs(data.questions || []);
     } catch (e) {
-      setAiQs([{ text:(e && e.message) || "Erro ao gerar. Verifique a conexão e tente novamente.", type:"text" }]);
+      setAiQs([{ text:(e && e.message) || t('sb_ai_error'), type:"text" }]);
     }
     setAiLoading(false);
   };
@@ -935,27 +936,27 @@ function SurveyBuilder({ onBack, initial }) {
         const { rows, delim } = parseCSVText(await file.text());
         result = rowsToQuestions(rows, delim);
       } else {
-        setImportErr("Formato não suportado. Use um arquivo .xlsx, .csv ou .json.");
+        setImportErr(t('sb_import_unsupported'));
         return;
       }
       if (!result.questions.length) {
-        setImportErr("Nenhuma pergunta encontrada. Verifique se há uma coluna “Pergunta” preenchida.");
+        setImportErr(t('sb_import_none'));
         return;
       }
       setQuestions(p => [...p, ...result.questions]);
-      const bits = [`${result.questions.length} pergunta(s) importada(s)`];
-      if (result.skipped) bits.push(`${result.skipped} linha(s) vazia(s) ignorada(s)`);
-      if (result.unknown) bits.push(`${result.unknown} com tipo não reconhecido → tratada(s) como texto`);
+      const bits = [t('sb_imported_n',{n:result.questions.length})];
+      if (result.skipped) bits.push(t('sb_skipped_n',{n:result.skipped}));
+      if (result.unknown) bits.push(t('sb_unknown_n',{n:result.unknown}));
       setImportInfo(bits.join(" · "));
     } catch (err) {
-      setImportErr("Não foi possível ler o arquivo. Confira se é um Excel/CSV válido." + (err && err.message ? ` (${err.message})` : ""));
+      setImportErr(t('sb_import_read_error') + (err && err.message ? ` (${err.message})` : ""));
     }
   };
 
   const tabs = [
-    { id:"builder", label:"✏️ Criar Perguntas" },
-    { id:"ai",      label:"✨ Gerar com IA"    },
-    { id:"import",  label:"📥 Importar"        },
+    { id:"builder", label:"sb_tab_builder" },
+    { id:"ai",      label:"sb_tab_ai"    },
+    { id:"import",  label:"sb_tab_import"        },
   ];
 
   return (
@@ -965,17 +966,17 @@ function SurveyBuilder({ onBack, initial }) {
           <ChevronRight size={17} className="rotate-180" />
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Nova Pesquisa</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Configure, adicione perguntas e defina proteções de privacidade.</p>
+          <h1 className="text-2xl font-bold text-slate-800">{t('new_survey')}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{t('sb_subtitle')}</p>
         </div>
         <div className="ml-auto flex gap-3">
           <button onClick={() => handleSubmit(false)} disabled={saving}
             className="px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2">
-            {saving ? <><Loader2 size={14} className="animate-spin" />Salvando...</> : "Salvar Rascunho"}
+            {saving ? <><Loader2 size={14} className="animate-spin" />{t('common_saving')}</> : t('sb_save_draft')}
           </button>
-          <button onClick={() => handleSubmit(true)} disabled={saving || !lgpdOk} title={!lgpdOk?"Confirme os termos LGPD antes de publicar":""}
+          <button onClick={() => handleSubmit(true)} disabled={saving || !lgpdOk} title={!lgpdOk?t('sb_confirm_lgpd_title'):""}
             className="px-4 py-2 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity flex items-center gap-2" style={{ background:GRAD }}>
-            {saving ? <><Loader2 size={14} className="animate-spin" />Publicando...</> : <><Send size={14} />Publicar Pesquisa</>}
+            {saving ? <><Loader2 size={14} className="animate-spin" />{t('sb_publishing')}</> : <><Send size={14} />{t('sb_publish')}</>}
           </button>
         </div>
       </div>
@@ -990,20 +991,20 @@ function SurveyBuilder({ onBack, initial }) {
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-5">
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div className="col-span-2">
-            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-2">Nome da Pesquisa *</label>
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide block mb-2">{t('sb_name_label')}</label>
             <input className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-400 text-sm"
-              placeholder="Ex: Avaliação de Gestores Q3 2025" value={surveyName} onChange={e => setSurveyName(e.target.value)} />
+              placeholder={t('sb_name_ph')} value={surveyName} onChange={e => setSurveyName(e.target.value)} />
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Público-Alvo</label>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('sb_target')}</label>
             <select value={targetGroup} onChange={e => setTargetGroup(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white">
-              {["Gestores","Fornecedores","Subordinados","Todos"].map(o => <option key={o}>{o}</option>)}
+              {["Gestores","Fornecedores","Subordinados","Todos"].map(o => <option key={o} value={o}>{o==="Todos"?t('common_all'):t('group_'+GROUP_MAP[o])}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Categoria</label>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('sb_category')}</label>
             <select value={category} onChange={e => setCategory(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white">
-              {["Avaliação 360°","NPS","Clima Organizacional","Feedback"].map(o => <option key={o}>{o}</option>)}
+              {[["Avaliação 360°",t('cat_360')],["NPS","NPS"],["Clima Organizacional",t('cat_climate')],["Feedback",t('cat_feedback')]].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>
         </div>
@@ -1012,7 +1013,7 @@ function SurveyBuilder({ onBack, initial }) {
         <div className="border border-green-200 rounded-xl p-4 bg-green-50">
           <div className="flex items-center gap-2 mb-3">
             <Shield size={15} className="text-green-600" />
-            <span className="text-sm font-semibold text-green-800">Configurações de Privacidade (LGPD)</span>
+            <span className="text-sm font-semibold text-green-800">{t('sb_privacy_title')}</span>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <label className="flex items-center gap-3 cursor-pointer">
@@ -1021,8 +1022,8 @@ function SurveyBuilder({ onBack, initial }) {
                 <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${anonymous?"translate-x-5":"translate-x-0.5"}`} />
               </div>
               <div>
-                <div className="text-xs font-medium text-slate-700">Respostas Anônimas</div>
-                <div className="text-xs text-slate-500">Não vincula resposta ao respondente</div>
+                <div className="text-xs font-medium text-slate-700">{t('sb_anon_label')}</div>
+                <div className="text-xs text-slate-500">{t('sb_anon_desc')}</div>
               </div>
             </label>
             <label className="flex items-start gap-3 cursor-pointer" onClick={() => setLgpdOk(!lgpdOk)}>
@@ -1030,8 +1031,8 @@ function SurveyBuilder({ onBack, initial }) {
                 {lgpdOk && <span className="text-white text-xs font-bold">✓</span>}
               </div>
               <div>
-                <div className="text-xs font-medium text-slate-700">Confirmo conformidade LGPD *</div>
-                <div className="text-xs text-slate-500">Dados coletados com base legal e finalidade definida</div>
+                <div className="text-xs font-medium text-slate-700">{t('sb_lgpd_confirm_label')}</div>
+                <div className="text-xs text-slate-500">{t('sb_lgpd_confirm_desc')}</div>
               </div>
             </label>
           </div>
@@ -1039,11 +1040,11 @@ function SurveyBuilder({ onBack, initial }) {
       </div>
 
       <div className="flex gap-2 mb-5">
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${tab===t.id?"text-white":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-            style={tab===t.id?{ background:GRAD }:{}}>
-            {t.label}
+        {tabs.map(tb => (
+          <button key={tb.id} onClick={() => setTab(tb.id)}
+            className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${tab===tb.id?"text-white":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+            style={tab===tb.id?{ background:GRAD }:{}}>
+            {t(tb.label)}
           </button>
         ))}
       </div>
@@ -1053,31 +1054,31 @@ function SurveyBuilder({ onBack, initial }) {
         <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
           {tab==="builder" && (
             <>
-              <h3 className="font-semibold text-slate-800 text-sm mb-4">Tipo de Pergunta</h3>
+              <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('sb_q_type')}</h3>
               <div className="grid grid-cols-2 gap-2 mb-4">
                 {QUESTION_TYPES.map(qt => (
                   <button key={qt.id} onClick={() => setSelType(qt.id)}
                     className={`p-3 rounded-xl text-left border transition-all ${selType===qt.id?"border-purple-400 bg-purple-50":"border-slate-200 hover:bg-slate-50"}`}>
                     <div className="text-base mb-0.5">{qt.icon}</div>
-                    <div className="text-xs font-semibold text-slate-700 leading-tight">{qt.label}</div>
-                    <div className="text-xs text-slate-400 mt-0.5 leading-tight">{qt.desc}</div>
+                    <div className="text-xs font-semibold text-slate-700 leading-tight">{t('qtype_'+qt.id+'_label')}</div>
+                    <div className="text-xs text-slate-400 mt-0.5 leading-tight">{t('qtype_'+qt.id+'_desc')}</div>
                   </button>
                 ))}
               </div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Pergunta (Português)</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">{t('sb_q_pt')}</label>
               <textarea className="w-full border border-slate-200 rounded-xl px-3 py-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-purple-400 resize-none"
-                placeholder="Digite o texto da pergunta..." rows={2} value={newQ} onChange={e => setNewQ(e.target.value)} />
-              <label className="block text-xs font-semibold text-slate-600 mt-3 mb-1">Pergunta (English) <span className="font-normal text-slate-400">— opcional</span></label>
+                placeholder={t('sb_q_pt_ph')} rows={2} value={newQ} onChange={e => setNewQ(e.target.value)} />
+              <label className="block text-xs font-semibold text-slate-600 mt-3 mb-1">{t('sb_q_en')} <span className="font-normal text-slate-400">{t('sb_optional')}</span></label>
               <textarea className="w-full border border-slate-200 rounded-xl px-3 py-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-purple-400 resize-none"
-                placeholder="Question text in English..." rows={2} value={newQEn} onChange={e => setNewQEn(e.target.value)} />
-              <label className="block text-xs font-semibold text-slate-600 mt-3 mb-1">Pregunta (Español) <span className="font-normal text-slate-400">— opcional</span></label>
+                placeholder={t('sb_q_en_ph')} rows={2} value={newQEn} onChange={e => setNewQEn(e.target.value)} />
+              <label className="block text-xs font-semibold text-slate-600 mt-3 mb-1">{t('sb_q_es')} <span className="font-normal text-slate-400">{t('sb_optional')}</span></label>
               <textarea className="w-full border border-slate-200 rounded-xl px-3 py-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-purple-400 resize-none"
-                placeholder="Texto de la pregunta en español..." rows={2} value={newQEs} onChange={e => setNewQEs(e.target.value)} />
-              <p className="text-xs text-slate-400 mt-2">Deixe EN/ES em branco para usar o português em todos os idiomas.</p>
+                placeholder={t('sb_q_es_ph')} rows={2} value={newQEs} onChange={e => setNewQEs(e.target.value)} />
+              <p className="text-xs text-slate-400 mt-2">{t('sb_q_hint')}</p>
               <button onClick={addQ} disabled={!newQ.trim()}
                 className="w-full mt-3 py-2.5 text-sm font-medium text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
                 style={{ background:GRAD }}>
-                + Adicionar Pergunta
+                {t('sb_add_q')}
               </button>
             </>
           )}
@@ -1086,27 +1087,27 @@ function SurveyBuilder({ onBack, initial }) {
             <>
               <div className="flex items-center gap-2 mb-3">
                 <Sparkles size={16} style={{ color:"#5B21B6" }} />
-                <h3 className="font-semibold text-slate-800 text-sm">Gerador com IA</h3>
+                <h3 className="font-semibold text-slate-800 text-sm">{t('sb_ai_gen')}</h3>
               </div>
               <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-100 rounded-xl mb-3">
                 <Info size={13} className="text-blue-500 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-blue-700 leading-relaxed">A IA gera perguntas respeitando boas práticas de privacidade. Não insira dados pessoais no campo abaixo.</p>
+                <p className="text-xs text-blue-700 leading-relaxed">{t('sb_ai_info')}</p>
               </div>
               <textarea className="w-full border border-slate-200 rounded-xl px-3 py-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-purple-400 resize-none"
-                placeholder="Ex: Avaliar liderança e comunicação do gestor de vendas pelos membros da equipe no último trimestre..."
+                placeholder={t('sb_ai_ph')}
                 rows={5} value={aiContext} onChange={e => setAiContext(e.target.value)} />
               <button onClick={generateAI} disabled={aiLoading||!aiContext.trim()}
                 className="w-full mt-3 py-2.5 text-sm font-medium text-white rounded-xl flex items-center justify-center gap-2 disabled:opacity-60 hover:opacity-90"
                 style={{ background:GRAD }}>
-                {aiLoading ? <><Loader2 size={14} className="animate-spin" />Gerando...</> : <><Sparkles size={14} />Gerar com IA</>}
+                {aiLoading ? <><Loader2 size={14} className="animate-spin" />{t('sb_generating')}</> : <><Sparkles size={14} />{t('sb_gen_ai')}</>}
               </button>
               {aiQs.length>0 && (
                 <div className="mt-4">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-slate-600">{aiQs.length} perguntas geradas</span>
+                    <span className="text-xs font-semibold text-slate-600">{t('sb_n_generated',{n:aiQs.length})}</span>
                     <button onClick={() => setQuestions(p => [...p,...aiQs.map((q,i) => ({ id:Date.now()+i,...q }))])}
                       className="text-xs font-semibold hover:opacity-80" style={{ color:"#5B21B6" }}>
-                      Adicionar todas
+                      {t('sb_add_all')}
                     </button>
                   </div>
                   <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -1115,7 +1116,7 @@ function SurveyBuilder({ onBack, initial }) {
                         <div className="flex-1 min-w-0">
                           <p className="text-xs text-slate-700 leading-relaxed">{q.text}</p>
                           <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[q.type]||"bg-slate-100 text-slate-600"}`}>
-                            {TYPE_LABELS[q.type]||q.type}
+                            {t('type_'+q.type)}
                           </span>
                         </div>
                         <button onClick={() => setQuestions(p => [...p,{ id:Date.now()+i,...q }])}
@@ -1132,25 +1133,25 @@ function SurveyBuilder({ onBack, initial }) {
 
           {tab==="import" && (
             <>
-              <h3 className="font-semibold text-slate-800 text-sm mb-4">Importar Perguntas</h3>
+              <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('sb_import_q')}</h3>
               <label className="block border-2 border-dashed border-slate-200 rounded-xl p-6 text-center mb-4 cursor-pointer hover:border-purple-300 transition-colors">
                 <div className="text-3xl mb-2">📄</div>
-                <p className="text-sm text-slate-600 mb-1">Clique para selecionar o arquivo</p>
-                <p className="text-xs text-slate-400">.xlsx, .csv ou .json</p>
-                <span className="inline-block mt-3 px-4 py-2 text-white text-xs rounded-xl" style={{ background:GRAD }}>Selecionar Arquivo</span>
+                <p className="text-sm text-slate-600 mb-1">{t('sb_click_select')}</p>
+                <p className="text-xs text-slate-400">{t('sb_formats')}</p>
+                <span className="inline-block mt-3 px-4 py-2 text-white text-xs rounded-xl" style={{ background:GRAD }}>{t('sb_select_file')}</span>
                 <input type="file" accept=".xlsx,.xls,.csv,.json,text/csv,application/json" onChange={onImportFile} className="hidden" />
               </label>
               {importErr  && <div className="mb-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm flex items-center gap-2"><AlertTriangle size={14} />{importErr}</div>}
               {importInfo && <div className="mb-3 bg-green-50 border border-green-200 text-green-700 rounded-xl px-3 py-2 text-sm flex items-center gap-2"><CheckCircle size={14} />{importInfo}</div>}
               <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold text-slate-600 mb-2">Formato da planilha</p>
-                <p className="text-xs text-slate-500 mb-2 leading-relaxed">Uma pergunta por linha, com estas colunas:</p>
+                <p className="text-xs font-semibold text-slate-600 mb-2">{t('sb_sheet_format')}</p>
+                <p className="text-xs text-slate-500 mb-2 leading-relaxed">{t('sb_one_per_row')}</p>
                 <ul className="text-xs text-slate-600 space-y-1.5 mb-3 list-disc pl-4">
-                  <li><strong>Pergunta</strong> — o texto da pergunta (obrigatório).</li>
-                  <li><strong>Tipo</strong> — nps, escala, estrelas, sim/não, múltipla ou texto.</li>
-                  <li><strong>Opções</strong> — apenas para escala e múltipla; separadas por “;”.</li>
+                  <li><strong>{t('sb_col_q')}</strong>{t('sb_col_q_desc')}</li>
+                  <li><strong>{t('sb_col_type')}</strong>{t('sb_col_type_desc')}</li>
+                  <li><strong>{t('sb_col_opts')}</strong>{t('sb_col_opts_desc')}</li>
                 </ul>
-                <p className="text-xs text-slate-400">As perguntas importadas aparecem ao lado para você revisar antes de publicar.</p>
+                <p className="text-xs text-slate-400">{t('sb_import_hint')}</p>
               </div>
             </>
           )}
@@ -1159,17 +1160,17 @@ function SurveyBuilder({ onBack, initial }) {
         {/* RIGHT */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col">
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-            <h3 className="font-semibold text-slate-800 text-sm">Perguntas do Questionário</h3>
+            <h3 className="font-semibold text-slate-800 text-sm">{t('sb_questionnaire')}</h3>
             <span className="text-xs bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full font-medium">
-              {questions.length} pergunta{questions.length!==1?"s":""}
+              {questions.length===1 ? t('sb_q_count_one') : t('sb_q_count_many',{n:questions.length})}
             </span>
           </div>
           <div className="flex-1 p-5 space-y-2 overflow-y-auto" style={{ minHeight:300 }}>
             {questions.length===0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-10">
                 <div className="text-4xl mb-3">📝</div>
-                <p className="text-sm font-medium text-slate-500">Nenhuma pergunta ainda</p>
-                <p className="text-xs text-slate-400 mt-1">Use o painel ao lado para criar ou importar</p>
+                <p className="text-sm font-medium text-slate-500">{t('sb_no_q_yet')}</p>
+                <p className="text-xs text-slate-400 mt-1">{t('sb_no_q_hint')}</p>
               </div>
             ) : questions.map((q,i) => (
               <div key={q.id} className="flex items-start gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-100 group">
@@ -1177,7 +1178,7 @@ function SurveyBuilder({ onBack, initial }) {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-slate-800 leading-relaxed">{q.text}</p>
                   <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[q.type]||"bg-slate-100 text-slate-600"}`}>
-                    {TYPE_LABELS[q.type]||q.type}
+                    {t('type_'+q.type)}
                   </span>
                 </div>
                 <button onClick={() => setQuestions(p => p.filter(x => x.id!==q.id))}
@@ -1534,12 +1535,12 @@ function RespondentManager() {
 // ─── 360° EVALUATION ──────────────────────────────────────────────────────────
 // ─── EVALUATION 360° ─────────────────────────────────────────────────────────
 const EVAL_RELS = [
-  { v:"auto",        label:"Autoavaliação" },
-  { v:"gestor",      label:"Gestor" },
-  { v:"par",         label:"Par (colega)" },
-  { v:"subordinado", label:"Subordinado" },
+  { v:"auto",        label:"ev_rel_auto" },
+  { v:"gestor",      label:"ev_rel_gestor" },
+  { v:"par",         label:"ev_rel_par" },
+  { v:"subordinado", label:"ev_rel_subordinado" },
 ];
-const EVAL_REL_LABEL = { auto:"Autoavaliação", gestor:"Gestor", par:"Par", subordinado:"Subordinado" };
+const EVAL_REL_LABEL = { auto:"ev_rel_auto", gestor:"ev_rel_gestor", par:"ev_rel_par_short", subordinado:"ev_rel_subordinado" };
 function score360Color(v) {
   if (v === null || v === undefined) return "bg-slate-100 text-slate-400";
   if (v >= 80) return "bg-green-100 text-green-700";
@@ -1549,6 +1550,7 @@ function score360Color(v) {
 }
 
 function Evaluation360() {
+  const { t } = useLang();
   const [view, setView]         = useState("list");   // "list" | "detail"
   const [activeCycle, setActive]= useState(null);
   const [cycles, setCycles]     = useState([]);
@@ -1562,7 +1564,7 @@ function Evaluation360() {
   const load = async () => {
     setLoading(true); setError("");
     try { const r = await api.eval.cycles(); setCycles(r.cycles || []); }
-    catch (e) { setError(e.message || "Erro ao carregar ciclos."); }
+    catch (e) { setError(e.message || t('ev_load_error')); }
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -1575,14 +1577,14 @@ function Evaluation360() {
   };
 
   const submitCreate = async () => {
-    if (!form.name.trim() || !form.surveyId) { setError("Informe o nome do ciclo e escolha o questionário."); return; }
+    if (!form.name.trim() || !form.surveyId) { setError(t('ev_form_required')); return; }
     setSaving(true); setError("");
     try {
       const r = await api.eval.createCycle(form.name.trim(), form.surveyId);
       setForm({ name:"", surveyId:"" }); setCreating(false);
       await load();
       if (r.cycle) { setActive(r.cycle.id); setView("detail"); }
-    } catch (e) { setError(e.message || "Erro ao criar ciclo."); }
+    } catch (e) { setError(e.message || t('ev_create_error')); }
     setSaving(false);
   };
 
@@ -1594,69 +1596,69 @@ function Evaluation360() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Avaliação 360°</h1>
-          <p className="text-sm text-slate-500 mt-1">Ciclos de avaliação com múltiplas perspectivas e anonimização LGPD.</p>
+          <h1 className="text-2xl font-bold text-slate-800">{t('nav_evaluation360')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('ev_subtitle')}</p>
         </div>
         <button onClick={toggleCreate} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}>
-          <Plus size={14} />Novo Ciclo
+          <Plus size={14} />{t('ev_new_cycle')}
         </button>
       </div>
 
       {creating && (
         <div className="bg-white rounded-2xl p-5 mb-6 border border-purple-200 shadow-sm">
-          <h3 className="font-semibold text-slate-800 text-sm mb-3">Novo ciclo de avaliação</h3>
+          <h3 className="font-semibold text-slate-800 text-sm mb-3">{t('ev_new_cycle_title')}</h3>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Nome do ciclo</label>
-              <input value={form.name} onChange={e => setForm(f => ({ ...f, name:e.target.value }))} placeholder="Ex: Ciclo 360° Liderança Q3"
+              <label className="block text-xs font-medium text-slate-500 mb-1">{t('ev_cycle_name')}</label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name:e.target.value }))} placeholder={t('ev_cycle_name_ph')}
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Questionário (pesquisa)</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">{t('ev_questionnaire')}</label>
               <select value={form.surveyId} onChange={e => setForm(f => ({ ...f, surveyId:e.target.value }))}
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-200">
-                <option value="">Selecione...</option>
-                {surveys.map(s => <option key={s.id} value={s.id}>{s.name}{s.question_count!=null?` (${s.question_count} perguntas)`:""}</option>)}
+                <option value="">{t('ev_select_opt')}</option>
+                {surveys.map(s => <option key={s.id} value={s.id}>{s.name}{s.question_count!=null?` (${t('tl_n_questions',{n:s.question_count})})`:""}</option>)}
               </select>
             </div>
           </div>
-          <p className="text-xs text-slate-400 mt-2">O questionário deve ter perguntas de escala, nota/NPS ou estrelas para gerar a matriz. Crie-o antes em “Pesquisas”.</p>
+          <p className="text-xs text-slate-400 mt-2">{t('ev_form_hint')}</p>
           <div className="flex gap-2 mt-3">
             <button onClick={submitCreate} disabled={saving} className="px-4 py-2 text-white rounded-xl text-sm hover:opacity-90 disabled:opacity-50" style={{ background:GRAD }}>
-              {saving ? "Criando..." : "Criar ciclo"}
+              {saving ? t('ev_creating') : t('ev_create_cycle')}
             </button>
-            <button onClick={() => { setCreating(false); setError(""); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">Cancelar</button>
+            <button onClick={() => { setCreating(false); setError(""); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">{t('common_cancel')}</button>
           </div>
         </div>
       )}
 
       <div className="rounded-2xl p-5 mb-6 border border-purple-100" style={{ background:"linear-gradient(135deg,#f5f3ff,#ede9fe)" }}>
-        <h3 className="font-semibold text-purple-800 text-sm mb-3">Como funciona a Avaliação 360°</h3>
+        <h3 className="font-semibold text-purple-800 text-sm mb-3">{t('ev_how_title')}</h3>
         <div className="grid grid-cols-4 gap-3">
-          {[["👤","Autoavaliação","O colaborador se avalia"],["⬆️","Gestor avalia","O líder avalia o colaborador"],["↔️","Pares avaliam","Colegas avaliam entre si"],["⬇️","Equipe avalia","Subordinados avaliam o gestor"]].map(([e,t,d],i) => (
+          {[["👤","ev_how1_t","ev_how1_d"],["⬆️","ev_how2_t","ev_how2_d"],["↔️","ev_how3_t","ev_how3_d"],["⬇️","ev_how4_t","ev_how4_d"]].map(([e,ti,d],i) => (
             <div key={i} className="bg-white rounded-xl p-3 text-center border border-purple-100">
               <div className="text-xl mb-1">{e}</div>
-              <div className="text-xs font-semibold text-slate-700">{t}</div>
-              <div className="text-xs text-slate-400 mt-0.5 leading-tight">{d}</div>
+              <div className="text-xs font-semibold text-slate-700">{t(ti)}</div>
+              <div className="text-xs text-slate-400 mt-0.5 leading-tight">{t(d)}</div>
             </div>
           ))}
         </div>
         <div className="mt-3 flex items-center gap-2 text-xs text-purple-700 bg-white bg-opacity-70 px-3 py-2 rounded-xl border border-purple-100">
           <Shield size={12} className="text-green-600" />
-          As avaliações são confidenciais e usadas de forma agregada, conforme a LGPD. Os avaliadores não são identificados nos resultados.
+          {t('ev_confidential')}
         </div>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2 mb-5"><AlertTriangle size={15} />{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />Carregando ciclos...</div>
+        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />{t('ev_loading')}</div>
       ) : cycles.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 text-center">
           <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background:"#F5F3FF" }}><Target size={22} style={{ color:"#7C3AED" }} /></div>
-          <h3 className="font-semibold text-slate-800 text-sm">Nenhum ciclo de avaliação ainda</h3>
-          <p className="text-sm text-slate-500 mt-1 mb-4">Crie um ciclo, escolha o questionário e atribua avaliadores por relação.</p>
-          <button onClick={toggleCreate} className="inline-flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}><Plus size={14} />Criar primeiro ciclo</button>
+          <h3 className="font-semibold text-slate-800 text-sm">{t('ev_no_cycles')}</h3>
+          <p className="text-sm text-slate-500 mt-1 mb-4">{t('ev_no_cycles_sub')}</p>
+          <button onClick={toggleCreate} className="inline-flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm hover:opacity-90" style={{ background:GRAD }}><Plus size={14} />{t('ev_create_first')}</button>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-5">
@@ -1668,19 +1670,19 @@ function Evaluation360() {
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <h3 className="font-semibold text-slate-800 text-sm">{c.name}</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">{c.survey_name || "Sem questionário"}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{c.survey_name || t('ev_no_questionnaire')}</p>
                   </div>
                   <Badge status={c.status} />
                 </div>
                 <div className="flex items-center gap-5 mb-4">
-                  <div><div className="text-xl font-bold text-slate-800">{c.subjects||0}</div><div className="text-xs text-slate-400">Avaliados</div></div>
-                  <div><div className="text-xl font-bold" style={{ color:"#5B21B6" }}>{done}/{total}</div><div className="text-xs text-slate-400">Respostas</div></div>
+                  <div><div className="text-xl font-bold text-slate-800">{c.subjects||0}</div><div className="text-xs text-slate-400">{t('ev_subjects')}</div></div>
+                  <div><div className="text-xl font-bold" style={{ color:"#5B21B6" }}>{done}/{total}</div><div className="text-xs text-slate-400">{t('rd_responses')}</div></div>
                   <div className="flex-1">
-                    <div className="flex justify-between text-xs text-slate-500 mb-1"><span>Conclusão</span><span className="font-medium">{pct}%</span></div>
+                    <div className="flex justify-between text-xs text-slate-500 mb-1"><span>{t('sl_completion')}</span><span className="font-medium">{pct}%</span></div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${pct}%`, background:GRAD }} /></div>
                   </div>
                 </div>
-                <button onClick={() => { setActive(c.id); setView("detail"); }} className="w-full py-2 text-xs border rounded-xl hover:opacity-80" style={{ borderColor:"#5B21B6", color:"#5B21B6" }}>Abrir ciclo</button>
+                <button onClick={() => { setActive(c.id); setView("detail"); }} className="w-full py-2 text-xs border rounded-xl hover:opacity-80" style={{ borderColor:"#5B21B6", color:"#5B21B6" }}>{t('ev_open_cycle')}</button>
               </div>
             );
           })}
@@ -1691,6 +1693,7 @@ function Evaluation360() {
 }
 
 function CycleDetail({ cycleId, onBack }) {
+  const { t } = useLang();
   const [data, setData]         = useState(null);   // { cycle, assignments }
   const [matrix, setMatrix]     = useState([]);
   const [respondents, setResp]  = useState([]);
@@ -1710,7 +1713,7 @@ function CycleDetail({ cycleId, onBack }) {
         api.respondents.list().catch(() => ({ respondents:[] })),
       ]);
       setData(d); setMatrix(res.matrix || []); setResp(rp.respondents || []);
-    } catch (e) { setError(e.message || "Erro ao carregar o ciclo."); }
+    } catch (e) { setError(e.message || t('cd_load_error')); }
     setLoading(false);
   };
   useEffect(() => { load(); }, [cycleId]);
@@ -1724,7 +1727,7 @@ function CycleDetail({ cycleId, onBack }) {
   };
 
   const submitAssign = async () => {
-    if (!form.subjectId || !form.relationship) { setError("Escolha o avaliado e a relação."); return; }
+    if (!form.subjectId || !form.relationship) { setError(t('cd_assign_required')); return; }
     setSaving(true); setError(""); setLastLink("");
     try {
       const r = await api.eval.addAssignment(cycleId, {
@@ -1735,14 +1738,14 @@ function CycleDetail({ cycleId, onBack }) {
       if (r.assignment) setLastLink(linkFor(r.assignment.token));
       setForm(f => ({ ...f, evaluatorName:"", evaluatorEmail:"" }));
       await load();
-    } catch (e) { setError(e.message || "Erro ao atribuir avaliador."); }
+    } catch (e) { setError(e.message || t('cd_assign_error')); }
     setSaving(false);
   };
 
   const removeAssign = async (id) => {
-    if (!window.confirm("Remover esta atribuição?")) return;
+    if (!window.confirm(t('cd_remove_confirm'))) return;
     try { await api.eval.removeAssignment(id); await load(); }
-    catch (e) { setError(e.message || "Erro ao remover."); }
+    catch (e) { setError(e.message || t('cd_remove_error')); }
   };
 
   const cycle = data?.cycle;
@@ -1752,11 +1755,11 @@ function CycleDetail({ cycleId, onBack }) {
 
   return (
     <div className="p-8">
-      <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700 mb-4">← Voltar aos ciclos</button>
+      <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700 mb-4">{t('cd_back')}</button>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">{cycle?.name || "Ciclo"}</h1>
-          <p className="text-sm text-slate-500 mt-1">Questionário: {cycle?.survey_name || "—"}</p>
+          <h1 className="text-2xl font-bold text-slate-800">{cycle?.name || t('cd_cycle_fallback')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('cd_questionnaire_label')}: {cycle?.survey_name || "—"}</p>
         </div>
         {cycle && <Badge status={cycle.status} />}
       </div>
@@ -1764,57 +1767,57 @@ function CycleDetail({ cycleId, onBack }) {
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2 mb-5"><AlertTriangle size={15} />{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />Carregando...</div>
+        <div className="flex items-center justify-center text-slate-400 text-sm gap-2 py-16"><Loader2 size={18} className="animate-spin" />{t('common_loading')}</div>
       ) : (
         <>
           <div className="bg-white rounded-2xl p-5 mb-6 border border-slate-100 shadow-sm">
-            <h3 className="font-semibold text-slate-800 text-sm mb-3">Atribuir avaliador</h3>
+            <h3 className="font-semibold text-slate-800 text-sm mb-3">{t('cd_assign_title')}</h3>
             <div className="grid grid-cols-4 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Avaliado</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('cd_subject')}</label>
                 <select value={form.subjectId} onChange={e => setForm(f => ({ ...f, subjectId:e.target.value }))}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-200">
-                  <option value="">Selecione...</option>
+                  <option value="">{t('ev_select_opt')}</option>
                   {respondents.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Relação</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('cd_relationship')}</label>
                 <select value={form.relationship} onChange={e => setForm(f => ({ ...f, relationship:e.target.value }))}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-200">
-                  {EVAL_RELS.map(r => <option key={r.v} value={r.v}>{r.label}</option>)}
+                  {EVAL_RELS.map(r => <option key={r.v} value={r.v}>{t(r.label)}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Nome do avaliador <span className="text-slate-300">(opcional)</span></label>
-                <input value={form.evaluatorName} onChange={e => setForm(f => ({ ...f, evaluatorName:e.target.value }))} placeholder="Para sua referência"
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('cd_evaluator_name')} <span className="text-slate-300">{t('cd_optional')}</span></label>
+                <input value={form.evaluatorName} onChange={e => setForm(f => ({ ...f, evaluatorName:e.target.value }))} placeholder={t('cd_eval_name_ph')}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">E-mail <span className="text-slate-300">(opcional)</span></label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('col_email')} <span className="text-slate-300">{t('cd_optional')}</span></label>
                 <input value={form.evaluatorEmail} onChange={e => setForm(f => ({ ...f, evaluatorEmail:e.target.value }))} placeholder="email@empresa.com"
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
               </div>
             </div>
-            {respondents.length === 0 && <p className="text-xs text-amber-600 mt-2">Você ainda não tem respondentes cadastrados. Adicione-os em “Respondentes” para escolher o avaliado.</p>}
+            {respondents.length === 0 && <p className="text-xs text-amber-600 mt-2">{t('cd_no_respondents')}</p>}
             <div className="mt-3">
               <button onClick={submitAssign} disabled={saving} className="px-4 py-2 text-white rounded-xl text-sm hover:opacity-90 disabled:opacity-50" style={{ background:GRAD }}>
-                {saving ? "Gerando link..." : "Atribuir e gerar link"}
+                {saving ? t('cd_generating_link') : t('cd_assign_generate')}
               </button>
             </div>
             {lastLink && (
               <div className="mt-3 flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
                 <CheckCircle size={15} className="text-green-600 flex-shrink-0" />
                 <input readOnly value={lastLink} className="flex-1 bg-transparent text-xs text-slate-600 focus:outline-none" />
-                <button onClick={() => copy(lastLink.split("/eval/")[1], "last")} className="text-xs font-medium px-2 py-1 rounded-lg hover:bg-green-100" style={{ color:"#16A34A" }}>{copiedId==="last"?"Copiado!":"Copiar"}</button>
+                <button onClick={() => copy(lastLink.split("/eval/")[1], "last")} className="text-xs font-medium px-2 py-1 rounded-lg hover:bg-green-100" style={{ color:"#16A34A" }}>{copiedId==="last"?t('sl_copied'):t('dist_copy')}</button>
               </div>
             )}
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm mb-6 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-semibold text-slate-800 text-sm">Avaliadores atribuídos</h3></div>
+            <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-semibold text-slate-800 text-sm">{t('cd_assigned_evaluators')}</h3></div>
             {Object.keys(groups).length === 0 ? (
-              <div className="px-6 py-8 text-center text-sm text-slate-400">Nenhum avaliador atribuído ainda. Use o formulário acima.</div>
+              <div className="px-6 py-8 text-center text-sm text-slate-400">{t('cd_no_assigned')}</div>
             ) : (
               <div className="divide-y divide-slate-50">
                 {Object.entries(groups).map(([sid, g]) => (
@@ -1822,18 +1825,18 @@ function CycleDetail({ cycleId, onBack }) {
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-7 h-7 rounded-full text-white text-xs font-bold flex items-center justify-center" style={{ background:GRAD }}>{(g.name||"?").charAt(0)}</div>
                       <span className="text-sm font-semibold text-slate-800">{g.name || "—"}</span>
-                      <span className="text-xs text-slate-400">· {g.items.length} avaliador{g.items.length!==1?"es":""}</span>
+                      <span className="text-xs text-slate-400">· {g.items.length===1 ? t('cd_n_evaluators_one') : t('cd_n_evaluators_many',{n:g.items.length})}</span>
                     </div>
                     <div className="space-y-1.5 pl-9">
                       {g.items.map(a => (
                         <div key={a.id} className="flex items-center gap-3 text-sm">
-                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 w-28 text-center flex-shrink-0">{EVAL_REL_LABEL[a.relationship]||a.relationship}</span>
-                          <span className="text-slate-600 flex-1 truncate">{a.evaluator_name || a.evaluator_email || "Avaliador sem nome"}</span>
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 w-28 text-center flex-shrink-0">{t(EVAL_REL_LABEL[a.relationship]||('ev_rel_'+a.relationship))}</span>
+                          <span className="text-slate-600 flex-1 truncate">{a.evaluator_name || a.evaluator_email || t('cd_unnamed_evaluator')}</span>
                           {a.completed
-                            ? <span className="flex items-center gap-1 text-xs text-green-600 flex-shrink-0"><CheckCircle size={13} />Concluído</span>
-                            : <span className="flex items-center gap-1 text-xs text-amber-500 flex-shrink-0"><Clock size={13} />Pendente</span>}
-                          <button onClick={() => copy(a.token, a.id)} title="Copiar link do avaliador" className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-700 flex-shrink-0"><Link2 size={13} />{copiedId===a.id?"Copiado!":"Link"}</button>
-                          <button onClick={() => removeAssign(a.id)} title="Remover" className="text-slate-300 hover:text-red-500 flex-shrink-0"><Trash2 size={13} /></button>
+                            ? <span className="flex items-center gap-1 text-xs text-green-600 flex-shrink-0"><CheckCircle size={13} />{t('cd_completed')}</span>
+                            : <span className="flex items-center gap-1 text-xs text-amber-500 flex-shrink-0"><Clock size={13} />{t('status_pendente')}</span>}
+                          <button onClick={() => copy(a.token, a.id)} title={t('cd_copy_link_title')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-700 flex-shrink-0"><Link2 size={13} />{copiedId===a.id?t('sl_copied'):t('cd_link')}</button>
+                          <button onClick={() => removeAssign(a.id)} title={t('cd_remove')} className="text-slate-300 hover:text-red-500 flex-shrink-0"><Trash2 size={13} /></button>
                         </div>
                       ))}
                     </div>
@@ -1845,17 +1848,17 @@ function CycleDetail({ cycleId, onBack }) {
 
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100">
-              <h3 className="font-semibold text-slate-800 text-sm">Matriz de resultados</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Scores normalizados de 0 a 100 por perspectiva · só respostas concluídas</p>
+              <h3 className="font-semibold text-slate-800 text-sm">{t('cd_matrix')}</h3>
+              <p className="text-xs text-slate-400 mt-0.5">{t('cd_matrix_sub')}</p>
             </div>
             {matrix.length === 0 ? (
-              <div className="px-6 py-8 text-center text-sm text-slate-400">Sem resultados ainda. Os scores aparecem conforme os avaliadores respondem.</div>
+              <div className="px-6 py-8 text-center text-sm text-slate-400">{t('cd_no_results')}</div>
             ) : (
               <table className="w-full">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">
-                    {["Avaliado","👤 Auto","⬆️ Gestor","↔️ Par","⬇️ Subord.","📊 Geral"].map(h => (
-                      <th key={h} className={`text-xs font-semibold text-slate-500 px-5 py-3 ${h==="Avaliado"?"text-left":"text-center"}`}>{h}</th>
+                    {[["cd_m_subject",true],["cd_m_auto"],["cd_m_gestor"],["cd_m_par"],["cd_m_subord"],["cd_m_overall"]].map(([h,left]) => (
+                      <th key={h} className={`text-xs font-semibold text-slate-500 px-5 py-3 ${left?"text-left":"text-center"}`}>{t(h)}</th>
                     ))}
                   </tr>
                 </thead>
@@ -2896,6 +2899,7 @@ function NotificationCenter({ notifications, setNotifications }) {
 
 // ─── TEAM MANAGEMENT ──────────────────────────────────────────────────────────
 function TeamManagement() {
+  const { t } = useLang();
   const [users,    setUsers]    = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState("");
@@ -2915,16 +2919,16 @@ function TeamManagement() {
   };
 
   const PERMISSIONS = [
-    ["Criar pesquisas",         true,  true,  false],
-    ["Editar pesquisas",        true,  true,  false],
-    ["Excluir pesquisas",       true,  false, false],
-    ["Ver resultados",          true,  true,  true ],
-    ["Exportar relatórios",     true,  true,  false],
-    ["Gerenciar respondentes",  true,  true,  false],
-    ["Gerenciar equipe",        true,  false, false],
-    ["Configurações LGPD",      true,  false, false],
-    ["Usar IA",                 true,  true,  false],
-    ["Responder avaliações",    true,  true,  true ],
+    ["perm_create_survey",      true,  true,  false],
+    ["perm_edit_survey",        true,  true,  false],
+    ["perm_delete_survey",      true,  false, false],
+    ["perm_view_results",       true,  true,  true ],
+    ["perm_export_reports",     true,  true,  false],
+    ["perm_manage_respondents", true,  true,  false],
+    ["perm_manage_team",        true,  false, false],
+    ["perm_lgpd_settings",      true,  false, false],
+    ["perm_use_ai",             true,  true,  false],
+    ["perm_answer_evals",       true,  true,  true ],
   ];
 
   async function loadUsers() {
@@ -2933,7 +2937,7 @@ function TeamManagement() {
       const data = await api.users.list();
       setUsers(data.users || []);
     } catch (e) {
-      setError(e.message || "Não foi possível carregar os usuários.");
+      setError(e.message || t('tm_load_error'));
     }
     setLoading(false);
   }
@@ -2941,7 +2945,7 @@ function TeamManagement() {
   useEffect(() => { loadUsers(); }, []);
 
   async function handleCreate() {
-    if (!newName || !newEmail) { setError("Preencha nome e e-mail."); return; }
+    if (!newName || !newEmail) { setError(t('tm_fill_name_email')); return; }
     setSaving(true); setError(""); setTempPw(null);
     try {
       const data = await api.users.create({ name:newName, email:newEmail, role:newRole });
@@ -2949,20 +2953,20 @@ function TeamManagement() {
       setNewName(""); setNewEmail(""); setNewRole("viewer"); setShowForm(false);
       await loadUsers();
     } catch (e) {
-      setError(e.message || "Erro ao criar usuário.");
+      setError(e.message || t('tm_create_error'));
     }
     setSaving(false);
   }
 
   async function handleRoleChange(id, role) {
     try { await api.users.update(id, { role }); await loadUsers(); }
-    catch (e) { setError(e.message || "Erro ao alterar papel."); }
+    catch (e) { setError(e.message || t('tm_role_error')); }
   }
 
   async function handleDeactivate(id, name) {
-    if (!window.confirm(`Desativar o acesso de "${name}"? A pessoa não poderá mais entrar no sistema.`)) return;
+    if (!window.confirm(t('tm_deactivate_confirm',{name}))) return;
     try { await api.users.remove(id); await loadUsers(); }
-    catch (e) { setError(e.message || "Erro ao desativar usuário."); }
+    catch (e) { setError(e.message || t('tm_deactivate_error')); }
   }
 
   function copyPw() {
@@ -2979,13 +2983,13 @@ function TeamManagement() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-7">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Equipe & Acesso</h1>
-          <p className="text-sm text-slate-500 mt-1">Cadastre colaboradores e defina o papel de cada um. As credenciais são enviadas pelo RH.</p>
+          <h1 className="text-2xl font-bold text-slate-800">{t('set_t_team')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('tm_subtitle')}</p>
         </div>
         <button onClick={() => { setShowForm(!showForm); setTempPw(null); setError(""); }}
           className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm font-medium hover:opacity-90"
           style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-          <Plus size={15} />Cadastrar Usuário
+          <Plus size={15} />{t('tm_register_user')}
         </button>
       </div>
 
@@ -3001,12 +3005,12 @@ function TeamManagement() {
           <div className="flex items-start gap-3">
             <CheckCircle size={18} className="text-green-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <h3 className="font-semibold text-green-800 text-sm">Usuário "{tempName}" criado com sucesso</h3>
-              <p className="text-xs text-green-700 mt-1 mb-3">Compartilhe esta senha temporária com a pessoa para o primeiro acesso. Ela aparece apenas uma vez.</p>
+              <h3 className="font-semibold text-green-800 text-sm">{t('tm_user_created',{name:tempName})}</h3>
+              <p className="text-xs text-green-700 mt-1 mb-3">{t('tm_temp_pw_hint')}</p>
               <div className="flex items-center gap-2">
                 <code className="bg-white border border-green-300 rounded-lg px-3 py-2 text-sm font-mono text-green-800 flex-1">{tempPw}</code>
                 <button onClick={copyPw} className="px-3 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700">
-                  {copied ? "Copiado!" : "Copiar"}
+                  {copied ? t('sl_copied') : t('dist_copy')}
                 </button>
               </div>
             </div>
@@ -3017,35 +3021,35 @@ function TeamManagement() {
 
       {showForm && (
         <div className="bg-purple-50 border border-purple-200 rounded-2xl p-5 mb-6">
-          <h3 className="font-semibold text-slate-800 text-sm mb-4">Cadastrar novo usuário</h3>
+          <h3 className="font-semibold text-slate-800 text-sm mb-4">{t('tm_register_new')}</h3>
           <div className="grid grid-cols-4 gap-3">
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">Nome</label>
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('tm_name')}</label>
               <input className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400 bg-white"
-                placeholder="Nome completo" value={newName} onChange={e => setNewName(e.target.value)} />
+                placeholder={t('tm_name_ph')} value={newName} onChange={e => setNewName(e.target.value)} />
             </div>
             <div className="col-span-2">
-              <label className="text-xs font-medium text-slate-600 block mb-1">E-mail corporativo</label>
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('tm_corp_email')}</label>
               <input className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400 bg-white"
                 placeholder="nome@rgis.com.br" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">Papel</label>
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('tm_role')}</label>
               <select className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white" value={newRole} onChange={e => setNewRole(e.target.value)}>
-                <option value="admin">Administrador</option>
-                <option value="manager">Gestor</option>
-                <option value="viewer">Colaborador</option>
+                <option value="admin">{t('role_admin')}</option>
+                <option value="manager">{t('role_manager')}</option>
+                <option value="viewer">{t('role_viewer')}</option>
               </select>
             </div>
           </div>
           <div className="flex gap-2 mt-3">
             <button onClick={handleCreate} disabled={saving}
               className="px-4 py-2 text-white text-sm rounded-xl font-medium hover:opacity-90 disabled:opacity-60" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
-              {saving ? <><Loader2 size={13} className="inline mr-1.5 animate-spin" />Criando...</> : <><Plus size={13} className="inline mr-1.5" />Criar usuário</>}
+              {saving ? <><Loader2 size={13} className="inline mr-1.5 animate-spin" />{t('tm_creating')}</> : <><Plus size={13} className="inline mr-1.5" />{t('tm_create_user')}</>}
             </button>
-            <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-white">Cancelar</button>
+            <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-white">{t('common_cancel')}</button>
           </div>
-          <p className="text-xs text-slate-400 mt-2">Uma senha temporária será gerada automaticamente para o primeiro acesso.</p>
+          <p className="text-xs text-slate-400 mt-2">{t('tm_temp_pw_note')}</p>
         </div>
       )}
 
@@ -3053,15 +3057,15 @@ function TeamManagement() {
         {/* Users table */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="font-semibold text-slate-800 text-sm">Usuários {loading ? "" : `(${users.length})`}</h3>
-            {!loading && <button onClick={loadUsers} className="text-xs text-purple-600 font-medium hover:opacity-80">Atualizar</button>}
+            <h3 className="font-semibold text-slate-800 text-sm">{t('tm_users')} {loading ? "" : `(${users.length})`}</h3>
+            {!loading && <button onClick={loadUsers} className="text-xs text-purple-600 font-medium hover:opacity-80">{t('sec_refresh')}</button>}
           </div>
           {loading ? (
             <div className="flex items-center justify-center py-16 text-slate-400 text-sm gap-2">
-              <Loader2 size={18} className="animate-spin" />Carregando usuários...
+              <Loader2 size={18} className="animate-spin" />{t('tm_loading')}
             </div>
           ) : users.length === 0 ? (
-            <div className="text-center py-16 text-slate-400 text-sm">Nenhum usuário cadastrado ainda.</div>
+            <div className="text-center py-16 text-slate-400 text-sm">{t('tm_no_users')}</div>
           ) : (
             <div className="divide-y divide-slate-50">
               {users.map(u => {
@@ -3075,21 +3079,21 @@ function TeamManagement() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-slate-800 truncate">{u.name}</span>
-                        {!u.active && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">Inativo</span>}
+                        {!u.active && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{t('rd_inactive')}</span>}
                       </div>
                       <div className="text-xs text-slate-400 truncate">{u.email}</div>
-                      <div className="text-xs text-slate-400">Último acesso: {fmtDate(u.last_login)}</div>
+                      <div className="text-xs text-slate-400">{t('tm_last_login')}: {fmtDate(u.last_login)}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <select value={u.role} onChange={e => handleRoleChange(u.id, e.target.value)}
                         className={`text-xs font-semibold px-2 py-1 rounded-lg border-0 cursor-pointer ${r.bg}`}>
-                        <option value="admin">Administrador</option>
-                        <option value="manager">Gestor</option>
-                        <option value="viewer">Colaborador</option>
+                        <option value="admin">{t('role_admin')}</option>
+                        <option value="manager">{t('role_manager')}</option>
+                        <option value="viewer">{t('role_viewer')}</option>
                       </select>
                       {u.active && (
                         <button onClick={() => handleDeactivate(u.id, u.name)}
-                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Desativar acesso">
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title={t('tm_deactivate_title')}>
                           <Trash2 size={13} />
                         </button>
                       )}
@@ -3104,22 +3108,22 @@ function TeamManagement() {
         {/* Permission matrix */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100">
-            <h3 className="font-semibold text-slate-800 text-sm">Matriz de Permissões</h3>
+            <h3 className="font-semibold text-slate-800 text-sm">{t('tm_perm_matrix')}</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="text-left text-xs font-semibold text-slate-500 px-5 py-3">Ação</th>
-                  <th className="text-center text-xs font-semibold text-purple-600 px-3 py-3">Admin</th>
-                  <th className="text-center text-xs font-semibold text-blue-600 px-3 py-3">Gestor</th>
-                  <th className="text-center text-xs font-semibold text-slate-500 px-3 py-3">Colab.</th>
+                  <th className="text-left text-xs font-semibold text-slate-500 px-5 py-3">{t('sec_col_action')}</th>
+                  <th className="text-center text-xs font-semibold text-purple-600 px-3 py-3">{t('tm_admin_short')}</th>
+                  <th className="text-center text-xs font-semibold text-blue-600 px-3 py-3">{t('role_manager')}</th>
+                  <th className="text-center text-xs font-semibold text-slate-500 px-3 py-3">{t('tm_collab_short')}</th>
                 </tr>
               </thead>
               <tbody>
                 {PERMISSIONS.map(([action, adm, mgr, viw], i) => (
                   <tr key={i} className={`${i<PERMISSIONS.length-1?"border-b border-slate-50":""} hover:bg-slate-50`}>
-                    <td className="px-5 py-2.5 text-xs text-slate-700">{action}</td>
+                    <td className="px-5 py-2.5 text-xs text-slate-700">{t(action)}</td>
                     {[adm, mgr, viw].map((ok, j) => (
                       <td key={j} className="px-3 py-2.5 text-center">
                         {ok
