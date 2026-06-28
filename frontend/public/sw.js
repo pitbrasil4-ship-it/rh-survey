@@ -1,6 +1,6 @@
 // Service worker do RH Survey (PWA).
 // Não interfere nas chamadas à API (outro domínio). Suporta atualização sob demanda.
-const CACHE = 'rh-survey-v3';
+const CACHE = 'rh-survey-v4';
 const APP_SHELL = ['/', '/index.html', '/offline.html', '/favicon.svg?v=3', '/site.webmanifest', '/icon-192.png?v=3', '/icon-512.png?v=3', '/apple-touch-icon.png?v=3'];
 
 self.addEventListener('install', (e) => {
