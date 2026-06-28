@@ -1,9 +1,10 @@
 // Service worker do RH Survey (PWA).
 // Não interfere nas chamadas à API (outro domínio). Suporta atualização sob demanda.
-const CACHE = 'rh-survey-v2';
-const APP_SHELL = ['/', '/index.html', '/offline.html', '/favicon.svg', '/site.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
+const CACHE = 'rh-survey-v3';
+const APP_SHELL = ['/', '/index.html', '/offline.html', '/favicon.svg?v=3', '/site.webmanifest', '/icon-192.png?v=3', '/icon-512.png?v=3', '/apple-touch-icon.png?v=3'];
 
 self.addEventListener('install', (e) => {
+  self.skipWaiting(); // ativa a nova versão imediatamente para limpar ícones antigos do cache
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(APP_SHELL).catch(() => {})));
 });
 
