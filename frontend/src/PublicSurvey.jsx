@@ -174,6 +174,7 @@ export default function PublicSurvey({ token }) {
       try {
         const data = await pub('GET', token);
         if (!alive) return;
+        if (data.closed) { setSurvey(data.survey); setState('closed'); return; }
         setSurvey(data.survey);
         setQuestions(data.questions || []);
         setState('ready');
@@ -239,6 +240,19 @@ export default function PublicSurvey({ token }) {
         <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>{tr('done_title')}</h2>
         <p style={{ color:'#64748B', fontSize:14, margin:0 }}>{tr('done_body')}</p>
         {survey && survey.anonymous ? <p style={{ color:'#16A34A', fontSize:12, marginTop:12, fontWeight:600 }}>{tr('anon_note')}</p> : null}
+      </Card>
+    </Shell>;
+  }
+
+  if (state === 'closed') {
+    const nm = (lang !== 'pt' && survey && survey['name_'+lang]) ? survey['name_'+lang] : (survey && survey.name);
+    return <Shell>
+      <div style={{ marginBottom:16 }}><Logo /></div>
+      <Card style={{ textAlign:'center' }}>
+        <div style={{ width:64, height:64, borderRadius:'50%', background:'#FEE2E2', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', fontSize:30 }}>🔒</div>
+        <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>{tr('survey_closed_title')}</h2>
+        {nm ? <p style={{ color:'#334155', fontSize:14, fontWeight:600, margin:'0 0 6px' }}>{nm}</p> : null}
+        <p style={{ color:'#64748B', fontSize:14, margin:0 }}>{tr('survey_closed_body')}</p>
       </Card>
     </Shell>;
   }
