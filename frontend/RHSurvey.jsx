@@ -2023,6 +2023,29 @@ function CycleDetail({ cycleId, onBack }) {
 }
 
 // ─── RESULTS ───────────────────────────────────────────────────────────────────
+function SegPerQuestion({ segScores }) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  if (!segScores || !segScores.length) return null;
+  const col = p => p >= 70 ? "#16A34A" : p >= 40 ? "#D97706" : "#DC2626";
+  return (
+    <div className="mt-1.5 mb-3 px-1">
+      <button onClick={() => setOpen(o => !o)} className="text-xs font-medium text-purple-700 flex items-center gap-1">
+        <ChevronDown size={13} className={open ? "rotate-180" : ""} />{t('qr_by_segment')}
+      </button>
+      {open && <div className="mt-2 bg-slate-50 rounded-xl p-3 space-y-1.5">
+        {segScores.map((s, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className={"text-xs flex-1 min-w-0 truncate " + (s.bold ? "font-semibold text-slate-700" : "text-slate-500 pl-2")}>{s.label}</span>
+            <div className="w-16 sm:w-24"><div className="h-1.5 bg-slate-200 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(100, s.pct)}%`, background: col(s.pct) }} /></div></div>
+            <span className="text-xs font-bold whitespace-nowrap" style={{ color: col(s.pct) }}>{s.pct}%</span>
+          </div>
+        ))}
+      </div>}
+    </div>
+  );
+}
+
 function ScoreBadge({ pct }) {
   const { t } = useLang();
   if (pct == null) return null;
@@ -2171,6 +2194,7 @@ function ResultsDashboard() {
   const [loadingResult, setLoadingResult] = useState(false);
   const [error,         setError]         = useState("");
   const [exporting,     setExporting]     = useState(false);
+  const [segQ,          setSegQ]          = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -2187,13 +2211,14 @@ function ResultsDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!selectedId) { setResult(null); return; }
+    if (!selectedId) { setResult(null); setSegQ(null); return; }
     let alive = true;
     (async () => {
       setLoadingResult(true);
       try { const r = await api.get(`/results/${selectedId}`); if (alive) setResult(r); }
       catch (e) { if (alive) setError(e.message || t('rd_results_error')); }
       if (alive) setLoadingResult(false);
+      try { const sq = await api.results.segmentQuestions(selectedId); if (alive) setSegQ(sq); } catch { if (alive) setSegQ(null); }
     })();
     return () => { alive = false; };
   }, [selectedId]);
@@ -2207,6 +2232,18 @@ function ResultsDashboard() {
   const nps      = result?.overallNPS;
   const anon     = !!survey?.anonymous;
   const questions = result?.questions || [];
+
+  const segScoresFor = (qid) => {
+    if (!segQ || !qid) return null;
+    const out = [];
+    if (segQ.corporacao && segQ.corporacao[qid] != null) out.push({ label: t('seg_corp'), pct: segQ.corporacao[qid], bold: true });
+    (segQ.regionais || []).forEach(rg => {
+      if (rg.scores && rg.scores[qid] != null) out.push({ label: rg.name || t('seg_no_regional'), pct: rg.scores[qid], bold: true });
+      (rg.distritos || []).forEach(d => { if (d.scores && d.scores[qid] != null) out.push({ label: d.name, pct: d.scores[qid] }); });
+    });
+    (segQ.departamentos || []).forEach(d => { if (d.scores && d.scores[qid] != null) out.push({ label: d.name, pct: d.scores[qid] }); });
+    return out.length ? out : null;
+  };
 
   const exportFinalReport = async () => {
     if (!selectedId) return;
@@ -2251,6 +2288,24 @@ function ResultsDashboard() {
       const ws2 = XLSX.utils.aoa_to_sheet(r2);
       ws2["!cols"] = [{ wch: 50 }, { wch: 16 }, { wch: 14 }, { wch: 30 }, { wch: 12 }];
       XLSX.utils.book_append_sheet(wb, ws2, t('rep_sheet_questions'));
+
+      // Aba Pergunta × Segmento (cruzamento)
+      let sq = null;
+      try { sq = await api.results.segmentQuestions(selectedId); } catch {}
+      if (sq && sq.questions && sq.questions.length) {
+        const qs = sq.questions;
+        const cellOf = (scores, qid) => (scores && scores[qid] != null) ? scores[qid] + "%" : "—";
+        const r3 = [[t('rep_segment'), ...qs.map(q => q.text)]];
+        r3.push([t('seg_corp'), ...qs.map(q => cellOf(sq.corporacao, q.id))]);
+        (sq.regionais || []).forEach(rg => {
+          r3.push([(t('org_regionais') + ": " + (rg.name || t('seg_no_regional'))), ...qs.map(q => cellOf(rg.scores, q.id))]);
+          (rg.distritos || []).forEach(d => r3.push(["   " + d.name, ...qs.map(q => cellOf(d.scores, q.id))]));
+        });
+        (sq.departamentos || []).forEach(d => r3.push([(t('org_departamentos') + ": " + d.name), ...qs.map(q => cellOf(d.scores, q.id))]));
+        const ws3 = XLSX.utils.aoa_to_sheet(r3);
+        ws3["!cols"] = [{ wch: 28 }, ...qs.map(() => ({ wch: 16 }))];
+        XLSX.utils.book_append_sheet(wb, ws3, t('rep_sheet_matrix'));
+      }
 
       const nm = surveyName.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "relatorio";
       XLSX.writeFile(wb, `relatorio-${nm}.xlsx`);
@@ -2329,7 +2384,12 @@ function ResultsDashboard() {
         </div>
       ) : (
         <div className="space-y-4">
-          {questions.map((q,i) => <QuestionResult key={q.questionId || i} q={q} />)}
+          {questions.map((q,i) => (
+            <div key={q.questionId || i}>
+              <QuestionResult q={q} />
+              <SegPerQuestion segScores={segScoresFor(q.questionId)} />
+            </div>
+          ))}
         </div>
       )}
       </>
