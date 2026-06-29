@@ -72,9 +72,10 @@ export const api = {
     insights:  (surveyId, lang) => request('POST', '/results/insights', { surveyId, lang }),
     segments:  (surveyId) => request('GET', `/results/segments?surveyId=${encodeURIComponent(surveyId)}`),
     segmentQuestions: (surveyId) => request('GET', `/results/segment-questions?surveyId=${encodeURIComponent(surveyId)}`),
-    pdf: async (surveyId) => {
+    pdf: async (surveyId, lang) => {
       let token = ''; try { token = localStorage.getItem('rh_token') || ''; } catch {}
-      const resp = await fetch(`${API_URL}/api/v1/results/${encodeURIComponent(surveyId)}/pdf`, { headers: { Authorization: 'Bearer ' + token } });
+      const q = lang ? `?lang=${encodeURIComponent(lang)}` : '';
+      const resp = await fetch(`${API_URL}/api/v1/results/${encodeURIComponent(surveyId)}/pdf${q}`, { headers: { Authorization: 'Bearer ' + token } });
       if (!resp.ok) throw new Error('Falha ao gerar PDF');
       return resp.blob();
     },
