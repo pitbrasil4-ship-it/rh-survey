@@ -148,6 +148,8 @@ function initSchema() {
   try { db.exec("ALTER TABLE responses ADD COLUMN distrito_id TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN departamento_id TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN weight REAL DEFAULT 1"); } catch (e) {}
+  // Pontuação por opção: % de pontos de cada alternativa (alinhado por índice com options). Usado em clima/subordinados.
+  try { db.exec("ALTER TABLE questions ADD COLUMN option_points TEXT"); } catch (e) {}
   try { db.exec(`CREATE TABLE IF NOT EXISTS survey_links (
     id TEXT PRIMARY KEY, tenant_id TEXT, survey_id TEXT, token TEXT UNIQUE,
     distrito_id TEXT, departamento_id TEXT, created_at TEXT DEFAULT (datetime('now'))
