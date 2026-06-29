@@ -2046,6 +2046,14 @@ function SegPerQuestion({ segScores }) {
   );
 }
 
+function CommentsBlock({ items }) {
+  return (
+    <div className="space-y-2 max-h-44 overflow-y-auto">
+      {items.map((c, i) => <div key={i} className="text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">{c}</div>)}
+    </div>
+  );
+}
+
 function ScoreBadge({ pct }) {
   const { t } = useLang();
   if (pct == null) return null;
@@ -2104,7 +2112,7 @@ function QuestionResult({ q }) {
             <div className="text-xs text-slate-400 mt-0.5">{t('qr_average')}</div>
           </div>
           <div className="flex-1 space-y-1.5">
-            {dist.length === 0 ? <span className="text-xs text-slate-400">{t('qr_no_answers')}</span> : dist.map((d,i) => (
+            {dist.length === 0 ? (q.comments && q.comments.length ? <CommentsBlock items={q.comments} /> : <span className="text-xs text-slate-400">{t('qr_no_answers')}</span>) : dist.map((d,i) => (
               <div key={i} className="flex items-center gap-3">
                 <span className="text-xs text-slate-500 w-8">{d.value}</span>
                 <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${d.pct}%`,background:"#5B21B6" }} /></div>
@@ -2154,7 +2162,7 @@ function QuestionResult({ q }) {
           </div>
         </div>
         <div className="space-y-1.5">
-          {freq.length === 0 ? <span className="text-xs text-slate-400">{t('qr_no_answers')}</span> : freq.map((d,i) => (
+          {freq.length === 0 ? (q.comments && q.comments.length ? <CommentsBlock items={q.comments} /> : <span className="text-xs text-slate-400">{t('qr_no_answers')}</span>) : freq.map((d,i) => (
             <div key={i} className="flex items-center gap-3">
               <span className="text-xs text-slate-500 flex-1 truncate">{d.value}</span>
               <div className="w-32 h-2.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${d.pct}%`,background:"#5B21B6" }} /></div>
@@ -2195,6 +2203,7 @@ function ResultsDashboard() {
   const [error,         setError]         = useState("");
   const [exporting,     setExporting]     = useState(false);
   const [segQ,          setSegQ]          = useState(null);
+  const [exportingPdf,  setExportingPdf]  = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -2243,6 +2252,20 @@ function ResultsDashboard() {
     });
     (segQ.departamentos || []).forEach(d => { if (d.scores && d.scores[qid] != null) out.push({ label: d.name, pct: d.scores[qid] }); });
     return out.length ? out : null;
+  };
+
+  const exportPDF = async () => {
+    if (!selectedId) return;
+    setExportingPdf(true);
+    try {
+      const blob = await api.results.pdf(selectedId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `relatorio-${(survey?.name || 'pesquisa').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase()}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { alert((e && e.message) || ''); }
+    setExportingPdf(false);
   };
 
   const exportFinalReport = async () => {
@@ -2343,8 +2366,8 @@ function ResultsDashboard() {
           <button onClick={handleExportCSV} disabled={!questions.length} title={t('rd_export_csv_title')} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
             <Download size={14} />{t('common_export_csv')}
           </button>
-          <button onClick={() => window.print()} title={t('rd_export_pdf_title')} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
-            <Download size={14} />{t('rd_export_pdf')}
+          <button onClick={exportPDF} disabled={!questions.length || exportingPdf} title={t('rd_export_pdf_title')} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+            {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}{t('rd_export_pdf')}
           </button>
         </div>
       </div>
@@ -2888,6 +2911,7 @@ function AIInsights() {
   const [loadingList, setLoadingList] = useState(true);
   const [loading,     setLoading]     = useState(false);
   const [insights,    setInsights]    = useState(null);
+  const [dataMode,    setDataMode]    = useState(null);
   const [error,       setError]       = useState("");
 
   useEffect(() => {
@@ -2911,6 +2935,7 @@ function AIInsights() {
     try {
       const data = await api.results.insights(selectedId, lang);
       setInsights(data.insights);
+      setDataMode(data.aiUnavailable ? 'fallback' : data.demo ? 'demo' : 'ai');
     } catch (e) {
       setError(e.message || t('ai_gen_error'));
     }
@@ -2980,7 +3005,11 @@ function AIInsights() {
 
       {insights && !loading && (
         <div className="space-y-5">
-          {/* Resumo */}
+          {dataMode && dataMode !== 'ai' && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-2.5 text-xs flex items-center gap-2">
+              <AlertTriangle size={14} className="flex-shrink-0" />{t('ai_data_based')}
+            </div>
+          )}
           <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
             <div className="flex items-start gap-3 mb-3">
               <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
