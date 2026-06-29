@@ -931,7 +931,7 @@ function SurveyBuilder({ onBack, initial }) {
         targetGroup: GROUP_MAP[targetGroup] || "todos",
         anonymous,
         deadline: deadline ? deadline + "T23:59:59-03:00" : null,
-        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es })),
+        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es, ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}) })),
         lgpdBasis: "consentimento",
       });
       const id = result && result.survey && result.survey.id;
@@ -948,6 +948,21 @@ function SurveyBuilder({ onBack, initial }) {
     setQuestions(p => [...p,{ id:Date.now(), text:newQ, text_en:newQEn.trim(), text_es:newQEs.trim(), type:selType }]);
     setNewQ(""); setNewQEn(""); setNewQEs("");
   };
+
+  // Pontuação por opção: liga/desliga e edita a % de cada alternativa.
+  const toggleScore = (qid) => setQuestions(p => p.map(q => {
+    if (q.id !== qid) return q;
+    if (q.option_points) { const { option_points, ...rest } = q; return rest; }
+    const n = (q.options || []).length;
+    const ramp = (q.options || []).map((_, i) => n > 1 ? Math.round((i / (n - 1)) * 100) : 100);
+    return { ...q, option_points: ramp };
+  }));
+  const setOptPoint = (qid, idx, val) => setQuestions(p => p.map(q => {
+    if (q.id !== qid) return q;
+    const arr = [...(q.option_points || (q.options || []).map(() => 0))];
+    let v = parseInt(val, 10); if (isNaN(v)) v = 0; v = Math.max(0, Math.min(100, v));
+    arr[idx] = v; return { ...q, option_points: arr };
+  }));
 
   const generateAI = async () => {
     if (!aiContext.trim()) return;
@@ -1248,6 +1263,27 @@ function SurveyBuilder({ onBack, initial }) {
                   <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[q.type]||"bg-slate-100 text-slate-600"}`}>
                     {t('type_'+q.type)}
                   </span>
+                  {Array.isArray(q.options) && q.options.length > 0 && (q.type === 'scale' || q.type === 'multiple') && (
+                    <div className="mt-2">
+                      <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                        <input type="checkbox" checked={!!q.option_points} onChange={() => toggleScore(q.id)} className="accent-purple-600" />
+                        {t('sb_score_toggle')}
+                      </label>
+                      {q.option_points && (
+                        <div className="mt-2 space-y-1 bg-white rounded-lg border border-slate-100 p-2">
+                          {q.options.map((opt, oi) => (
+                            <div key={oi} className="flex items-center gap-2">
+                              <span className="text-xs text-slate-600 flex-1 min-w-0 truncate">{opt}</span>
+                              <input type="number" min="0" max="100" value={q.option_points[oi] ?? 0} onChange={e => setOptPoint(q.id, oi, e.target.value)}
+                                className="w-16 border border-slate-200 rounded-md px-2 py-1 text-xs text-right focus:outline-none focus:border-purple-400" />
+                              <span className="text-xs text-slate-400">%</span>
+                            </div>
+                          ))}
+                          <p className="text-xs text-slate-400 pt-1">{t('sb_score_hint')}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <button onClick={() => setQuestions(p => p.filter(x => x.id!==q.id))}
                   className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all flex-shrink-0">
@@ -3710,15 +3746,20 @@ function SegStat({ responses, meta, pct }) {
 }
 function segScoreColor(metric, score) {
   if (score == null) return "#94A3B8";
-  if (metric === "nps") return score >= 50 ? "#16A34A" : score >= 0 ? "#D97706" : "#DC2626";
+  if (metric === "nps")   return score >= 50 ? "#16A34A" : score >= 0  ? "#D97706" : "#DC2626";
+  if (metric === "score") return score >= 70 ? "#16A34A" : score >= 40 ? "#D97706" : "#DC2626";
   return "#5B21B6";
+}
+function segScoreText(metric, score) {
+  if (score == null) return "—";
+  return metric === "score" ? score + "%" : "" + score;
 }
 function NotaChip({ metric, score }) {
   const { t } = useLang();
   if (score == null) return <span className="text-xs text-slate-300 whitespace-nowrap">—</span>;
   const col = segScoreColor(metric, score);
-  const lab = metric === "nps" ? "NPS" : t('seg_avg');
-  return <span className="text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ color: col, background: col + "1A" }}>{lab} {score}</span>;
+  const txt = metric === "nps" ? "NPS " + score : metric === "score" ? score + "%" : t('seg_avg') + " " + score;
+  return <span className="text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ color: col, background: col + "1A" }}>{txt}</span>;
 }
 
 function SegmentResultsPanel({ surveyId }) {
@@ -3753,7 +3794,7 @@ function SegmentResultsPanel({ surveyId }) {
         <div className="flex items-end gap-8 flex-wrap">
           <div>
             <div className="text-xs opacity-80">{scoreLabel}</div>
-            <div className="text-3xl font-bold leading-none mt-1">{g.score==null ? "—" : g.score}</div>
+            <div className="text-3xl font-bold leading-none mt-1">{segScoreText(M, g.score)}</div>
           </div>
           <div>
             <div className="text-xs opacity-80">{t('seg_participation')}</div>
