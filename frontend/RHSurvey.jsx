@@ -69,6 +69,19 @@ function parseCSVText(text) {
   if (field.length || row.length) { row.push(field); rows.push(row); }
   return { rows: rows.filter(r => r.some(c => String(c).trim() !== "")), delim };
 }
+// Lê opções no formato "Rótulo:%" (ou "Rótulo=%"), retornando rótulos + a % de cada (option_points).
+// Se nenhuma opção trouxer %, points fica null (pergunta sem pontuação).
+function extractOptionPoints(labels) {
+  if (!Array.isArray(labels) || !labels.length) return { options: null, points: null };
+  let any = false; const opts = [], pts = [];
+  labels.forEach(tok => {
+    const m = String(tok).match(/^(.*?)\s*[:=]\s*(\d{1,3})\s*%?$/);
+    if (m && m[1].trim()) { opts.push(m[1].trim()); pts.push(Math.max(0, Math.min(100, parseInt(m[2], 10)))); any = true; }
+    else { const lb = String(tok).trim(); if (lb) { opts.push(lb); pts.push(0); } }
+  });
+  return { options: opts.length ? opts : null, points: any ? pts : null };
+}
+
 function rowsToQuestions(rows, delim) {
   if (!rows || rows.length === 0) return { questions: [], skipped: 0, unknown: 0 };
   const norm = s => (s == null ? "" : String(s)).trim().toLowerCase();
@@ -105,9 +118,10 @@ function rowsToQuestions(rows, delim) {
     const text_es = (esIdx >= 0 && cols[esIdx] != null) ? String(cols[esIdx]).trim() : "";
     const mapped = mapTipoToType(cols[tIdx]);
     if (mapped.unknown) unknown++;
-    let options, options_en, options_es;
+    let options, options_en, options_es, option_points;
     if (mapped.type === "scale" || mapped.type === "multiple") {
-      options = splitOpts(cols[oIdx]);
+      const sc = extractOptionPoints(splitOpts(cols[oIdx]));
+      options = sc.options; option_points = sc.points;
       const oe = oEnIdx >= 0 ? splitOpts(cols[oEnIdx]) : null;
       const os = oEsIdx >= 0 ? splitOpts(cols[oEsIdx]) : null;
       if (options && oe && oe.length === options.length) options_en = oe;
@@ -115,7 +129,8 @@ function rowsToQuestions(rows, delim) {
     }
     out.push({ id: Date.now() + r, text, type: mapped.type,
       ...(text_en ? { text_en } : {}), ...(text_es ? { text_es } : {}),
-      ...(options ? { options } : {}), ...(options_en ? { options_en } : {}), ...(options_es ? { options_es } : {}) });
+      ...(options ? { options } : {}), ...(options_en ? { options_en } : {}), ...(options_es ? { options_es } : {}),
+      ...(option_points ? { option_points } : {}) });
   }
   return { questions: out, skipped, unknown };
 }
@@ -954,7 +969,7 @@ function SurveyBuilder({ onBack, initial }) {
     if (q.id !== qid) return q;
     if (q.option_points) { const { option_points, ...rest } = q; return rest; }
     const n = (q.options || []).length;
-    const ramp = (q.options || []).map((_, i) => n > 1 ? Math.round((i / (n - 1)) * 100) : 100);
+    const ramp = (q.options || []).map((_, i) => n > 1 ? Math.round(((n - 1 - i) / (n - 1)) * 100) : 100);
     return { ...q, option_points: ramp };
   }));
   const setOptPoint = (qid, idx, val) => setQuestions(p => p.map(q => {
@@ -1001,13 +1016,27 @@ function SurveyBuilder({ onBack, initial }) {
           const t_es = (q.text_es ?? q.es ?? q["español"] ?? q.espanol ?? "").toString().trim();
           const m = mapTipoToType(q.type ?? q.tipo ?? "");
           if (m.unknown) unknown++;
-          let options;
+          let options, option_points;
           if (m.type === "scale" || m.type === "multiple") {
             const raw = q.options ?? q.opcoes ?? q["opções"] ?? q.alternativas;
-            if (Array.isArray(raw)) options = raw.map(o => String(o).trim()).filter(Boolean);
-            else if (typeof raw === "string" && raw.trim()) options = raw.split(/[;|,]/).map(o => o.trim()).filter(Boolean);
+            if (Array.isArray(raw) && raw.length && typeof raw[0] === "object" && raw[0]) {
+              const opts = [], pts = []; let any = false;
+              raw.forEach(o => {
+                const lb = String(o.label ?? o.text ?? o.texto ?? o.opcao ?? o["opção"] ?? "").trim(); if (!lb) return;
+                opts.push(lb);
+                const pv = o.points ?? o.pontos ?? o.pct ?? o.percent ?? o["porcentagem"];
+                if (pv != null && pv !== "") { pts.push(Math.max(0, Math.min(100, parseInt(pv, 10) || 0))); any = true; } else pts.push(0);
+              });
+              if (opts.length) options = opts;
+              if (any) option_points = pts;
+            } else {
+              let labels = null;
+              if (Array.isArray(raw)) labels = raw.map(o => String(o).trim()).filter(Boolean);
+              else if (typeof raw === "string" && raw.trim()) labels = raw.split(/[;|,]/).map(o => o.trim()).filter(Boolean);
+              if (labels) { const sc = extractOptionPoints(labels); options = sc.options; option_points = sc.points; }
+            }
           }
-          qs.push({ id: Date.now() + i, text: t, type: m.type, ...(t_en ? { text_en: t_en } : {}), ...(t_es ? { text_es: t_es } : {}), ...(options && options.length ? { options } : {}) });
+          qs.push({ id: Date.now() + i, text: t, type: m.type, ...(t_en ? { text_en: t_en } : {}), ...(t_es ? { text_es: t_es } : {}), ...(options && options.length ? { options } : {}), ...(option_points ? { option_points } : {}) });
         });
         result = { questions: qs, skipped, unknown };
       } else if (name.endsWith(".csv") || name.endsWith(".txt")) {
