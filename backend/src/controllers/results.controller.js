@@ -20,6 +20,9 @@ function getSurveyResults(req, res) {
 
       let result = { questionId: q.id, type: q.type, text: q.text, responseCount: answers.length };
 
+      const PJc = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+      const qOpts = PJc(q.options);
+
       if (q.type === 'nps') {
         const scores = answers.map(a => a.value_num).filter(v => v !== null);
         result = { ...result, ...calculateNPS(scores) };
@@ -28,10 +31,18 @@ function getSurveyResults(req, res) {
         const values = answers.map(a => a.value_num).filter(v => v !== null);
         result.average  = calculateAverage(values);
         result.distribution = calculateFrequency(values.map(v => String(v)));
+        if (qOpts && qOpts.length) {
+          const total = values.length;
+          result.choices = qOpts.map((label, idx) => { const cnt = values.filter(v => v === idx + 1).length; return { label, count: cnt, pct: total ? Math.round((cnt / total) * 100) : 0 }; });
+        }
 
       } else if (q.type === 'multiple') {
         const all = answers.flatMap(a => { try { return JSON.parse(a.value_json || '[]'); } catch { return []; } });
         result.frequency = calculateFrequency(all.map(String));
+        if (qOpts && qOpts.length) {
+          const totalR = answers.length;
+          result.choices = qOpts.map(label => { const cnt = all.filter(v => String(v) === label).length; return { label, count: cnt, pct: totalR ? Math.round((cnt / totalR) * 100) : 0 }; });
+        }
 
       } else if (q.type === 'yesno') {
         const values   = answers.map(a => a.value_text);
@@ -39,6 +50,7 @@ function getSurveyResults(req, res) {
         result.yes     = yes;
         result.no      = values.length - yes;
         result.yesPct  = values.length ? Math.round((yes / values.length) * 100) : 0;
+        result.choices = [{ label: 'Sim', count: yes, pct: result.yesPct }, { label: 'Não', count: values.length - yes, pct: values.length ? 100 - result.yesPct : 0 }];
 
       } else if (q.type === 'text') {
         result.responses = answers.map(a => a.value_text).filter(Boolean).slice(0, 50);
