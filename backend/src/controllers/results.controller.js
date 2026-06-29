@@ -294,4 +294,62 @@ function getSegments(req, res) {
   } catch (e) { return err(res, 'Erro ao consolidar resultados', 500, e.message); }
 }
 
-module.exports = { getSurveyResults, getDashboard, getInsights, getSegments };
+/* GET /results/segment-questions?surveyId= — % atingido de cada pergunta pontuada em cada segmento */
+function getSegmentQuestions(req, res) {
+  try {
+    const db = getDB(); const t = req.user.tenant_id;
+    const surveyId = req.query.surveyId;
+    if (!surveyId) return badReq(res, 'surveyId é obrigatório');
+    const survey = db.prepare('SELECT id, name FROM surveys WHERE id=? AND tenant_id=?').get(surveyId, t);
+    if (!survey) return notFound(res, 'Pesquisa');
+
+    const PJ = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+    const scoredQ = db.prepare("SELECT id, text, type, options, option_points FROM questions WHERE survey_id=? AND option_points IS NOT NULL").all(surveyId)
+      .map(q => ({ id: q.id, text: q.text, type: q.type, options: PJ(q.options) || [], points: PJ(q.option_points) || [] }))
+      .filter(q => q.points.length);
+    if (!scoredQ.length) return ok(res, { metric: null, questions: [], corporacao: {}, regionais: [], departamentos: [] }, 'ok');
+
+    const qmap = {}; scoredQ.forEach(q => qmap[q.id] = q);
+    const ids = scoredQ.map(q => q.id); const ph = ids.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT r.distrito_id dd, r.departamento_id pp, a.question_id qid, a.value_num vn, a.value_json vj
+      FROM answers a JOIN responses r ON a.response_id = r.id
+      WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND a.question_id IN (${ph})`).all(surveyId, ...ids);
+
+    const distB = {}, depB = {}, corpB = {};
+    const add = (obj, qid, e) => { const k = obj[qid] || (obj[qid] = { sum: 0, n: 0 }); k.sum += e; k.n++; };
+    const earnedOf = (q, vn, vj) => {
+      if (q.type === 'scale' || q.type === 'rating') { return (vn != null && q.points[vn - 1] != null) ? Number(q.points[vn - 1]) : null; }
+      if (q.type === 'multiple') { let sel = []; try { sel = JSON.parse(vj || '[]'); } catch {} const vals = (Array.isArray(sel) ? sel : []).map(l => { const idx = q.options.indexOf(l); return (idx >= 0 && q.points[idx] != null) ? Number(q.points[idx]) : null; }).filter(v => v != null); return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null; }
+      return null;
+    };
+    rows.forEach(row => {
+      const q = qmap[row.qid]; if (!q) return;
+      const e = earnedOf(q, row.vn, row.vj); if (e == null) return;
+      add(corpB, row.qid, e);
+      if (row.dd) { (distB[row.dd] = distB[row.dd] || {}); add(distB[row.dd], row.qid, e); }
+      if (row.pp) { (depB[row.pp] = depB[row.pp] || {}); add(depB[row.pp], row.qid, e); }
+    });
+    const pctMap = (obj) => { const o = {}; Object.keys(obj || {}).forEach(qid => { o[qid] = Math.round(obj[qid].sum / obj[qid].n); }); return o; };
+    const poolDistritos = (distIds) => {
+      const agg = {};
+      distIds.forEach(did => { const b = distB[did]; if (!b) return; Object.keys(b).forEach(qid => { const k = agg[qid] || (agg[qid] = { sum: 0, n: 0 }); k.sum += b[qid].sum; k.n += b[qid].n; }); });
+      return pctMap(agg);
+    };
+
+    const regionais     = db.prepare('SELECT id, name FROM regionais WHERE tenant_id=? ORDER BY name').all(t);
+    const distritos     = db.prepare('SELECT id, name, regional_id FROM distritos WHERE tenant_id=? ORDER BY name').all(t);
+    const departamentos = db.prepare('SELECT id, name FROM departamentos WHERE tenant_id=? ORDER BY name').all(t);
+
+    const regOut = regionais.map(rg => {
+      const kids = distritos.filter(d => d.regional_id === rg.id);
+      return { name: rg.name, scores: poolDistritos(kids.map(d => d.id)), distritos: kids.map(d => ({ name: d.name, scores: pctMap(distB[d.id]) })) };
+    });
+    const semReg = distritos.filter(d => !d.regional_id);
+    if (semReg.length) regOut.push({ name: null, scores: poolDistritos(semReg.map(d => d.id)), distritos: semReg.map(d => ({ name: d.name, scores: pctMap(distB[d.id]) })) });
+    const depOut = departamentos.map(d => ({ name: d.name, scores: pctMap(depB[d.id]) }));
+
+    return ok(res, { metric: 'score', questions: scoredQ.map(q => ({ id: q.id, text: q.text })), corporacao: pctMap(corpB), regionais: regOut, departamentos: depOut }, 'ok');
+  } catch (e) { return err(res, 'Erro ao detalhar por pergunta', 500, e.message); }
+}
+
+module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions };
