@@ -2912,6 +2912,7 @@ function AIInsights() {
   const [loading,     setLoading]     = useState(false);
   const [insights,    setInsights]    = useState(null);
   const [dataMode,    setDataMode]    = useState(null);
+  const [exportingInsPdf, setExportingInsPdf] = useState(false);
   const [error,       setError]       = useState("");
 
   useEffect(() => {
@@ -2940,6 +2941,20 @@ function AIInsights() {
       setError(e.message || t('ai_gen_error'));
     }
     setLoading(false);
+  };
+
+  const exportInsightsPdf = async () => {
+    if (!selectedId || !insights) return;
+    setExportingInsPdf(true);
+    try {
+      const blob = await api.results.insightsPdf(selectedId, insights, lang);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `analise-ia-${(selected?.name || 'pesquisa').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase()}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { alert((e && e.message) || ''); }
+    setExportingInsPdf(false);
   };
 
   return (
@@ -3005,11 +3020,16 @@ function AIInsights() {
 
       {insights && !loading && (
         <div className="space-y-5">
-          {dataMode && dataMode !== 'ai' && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-2.5 text-xs flex items-center gap-2">
-              <AlertTriangle size={14} className="flex-shrink-0" />{t('ai_data_based')}
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            {dataMode && dataMode !== 'ai' ? (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-2.5 text-xs flex items-center gap-2 flex-1 min-w-[200px]">
+                <AlertTriangle size={14} className="flex-shrink-0" />{t('ai_data_based')}
+              </div>
+            ) : <div className="flex-1" />}
+            <button onClick={exportInsightsPdf} disabled={exportingInsPdf} className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
+              {exportingInsPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}{t('ai_export_pdf')}
+            </button>
+          </div>
           <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
             <div className="flex items-start gap-3 mb-3">
               <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
