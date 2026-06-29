@@ -2194,7 +2194,7 @@ function QuestionResult({ q }) {
 }
 
 function ResultsDashboard() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [surveys,       setSurveys]       = useState([]);
   const [selectedId,    setSelectedId]    = useState(null);
   const [result,        setResult]        = useState(null);
@@ -2258,7 +2258,7 @@ function ResultsDashboard() {
     if (!selectedId) return;
     setExportingPdf(true);
     try {
-      const blob = await api.results.pdf(selectedId);
+      const blob = await api.results.pdf(selectedId, lang);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = `relatorio-${(survey?.name || 'pesquisa').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase()}.pdf`;
