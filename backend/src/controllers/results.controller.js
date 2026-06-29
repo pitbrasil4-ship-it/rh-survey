@@ -103,6 +103,56 @@ function getDashboard(req, res) {
 
 
 /* POST /results/insights  — gera relatório executivo a partir de resultados REAIS */
+// Relatório a partir dos números reais — usado quando a IA não está configurada ou falha.
+function dataReport(lang, ctx) {
+  const { surveyName, totalResp, taxaConclusao, overallNps, npsClass, perguntas } = ctx;
+  const scale = (perguntas || []).filter(p => (p.tipo === 'scale' || p.tipo === 'rating') && typeof p.media === 'number' && p.media > 0).sort((a, b) => b.media - a.media);
+  const best = scale[0], worst = scale.length > 1 ? scale[scale.length - 1] : null;
+  const yn = (perguntas || []).filter(p => p.tipo === 'yesno' && typeof p.simPct === 'number');
+  const temas = (perguntas || []).flatMap(p => Array.isArray(p.respostasAbertas) ? p.respostasAbertas : []).slice(0, 5);
+
+  const L = {
+    pt: {
+      resumo: `A pesquisa "${surveyName}" recebeu ${totalResp} resposta(s) concluída(s), com taxa de conclusão de ${taxaConclusao}%.` + (overallNps !== null ? ` O NPS geral é ${overallNps}.` : ''),
+      npsBom: n => `NPS de ${n} indica boa percepção geral.`, maiorNota: (q, m) => `Maior nota: "${q}" (média ${m}).`, ynAlto: (q, p) => `"${q}": ${p}% de respostas positivas.`, semForte: 'Volume de respostas suficiente para análise.',
+      npsNeg: n => `NPS negativo (${n}): atenção à satisfação geral.`, menorNota: (q, m) => `Menor nota: "${q}" (média ${m}) — priorizar.`, txBaixa: tx => `Taxa de conclusão baixa (${tx}%): revisar tamanho/abordagem.`, semResp: 'Esta pesquisa ainda não recebeu respostas.', semAtencao: 'Sem pontos críticos evidentes nos números.',
+      recom: ['Aprofundar os temas de menor nota com os times.', 'Reconhecer e manter as áreas de destaque.', 'Repetir a medição para acompanhar a evolução.'],
+      prioWorst: q => `Agir no ponto de menor nota: "${q}".`, prioNps: 'Priorizar ações de satisfação (NPS negativo).', prioOk: 'Manter o acompanhamento dos indicadores.',
+      bench: overallNps !== null ? `NPS ${overallNps} — referência: acima de 50 é bom, acima de 0 é neutro, abaixo de 0 é crítico.` : 'Defina metas internas para comparar as próximas medições.',
+    },
+    en: {
+      resumo: `The survey "${surveyName}" received ${totalResp} completed response(s), with a completion rate of ${taxaConclusao}%.` + (overallNps !== null ? ` The overall NPS is ${overallNps}.` : ''),
+      npsBom: n => `An NPS of ${n} indicates good overall perception.`, maiorNota: (q, m) => `Highest score: "${q}" (avg ${m}).`, ynAlto: (q, p) => `"${q}": ${p}% positive responses.`, semForte: 'Enough responses collected for analysis.',
+      npsNeg: n => `Negative NPS (${n}): watch overall satisfaction.`, menorNota: (q, m) => `Lowest score: "${q}" (avg ${m}) — prioritize.`, txBaixa: tx => `Low completion rate (${tx}%): review survey length/approach.`, semResp: 'This survey has not received any responses yet.', semAtencao: 'No critical issues evident in the numbers.',
+      recom: ['Dig deeper into the lowest-scoring topics with the teams.', 'Recognize and maintain the standout areas.', 'Repeat the measurement to track progress.'],
+      prioWorst: q => `Act on the lowest-scoring item: "${q}".`, prioNps: 'Prioritize satisfaction actions (negative NPS).', prioOk: 'Keep monitoring the indicators.',
+      bench: overallNps !== null ? `NPS ${overallNps} — reference: above 50 good, above 0 neutral, below 0 critical.` : 'Set internal targets to compare future measurements.',
+    },
+    es: {
+      resumo: `La encuesta "${surveyName}" recibió ${totalResp} respuesta(s) completada(s), con una tasa de finalización del ${taxaConclusao}%.` + (overallNps !== null ? ` El NPS general es ${overallNps}.` : ''),
+      npsBom: n => `Un NPS de ${n} indica buena percepción general.`, maiorNota: (q, m) => `Nota más alta: "${q}" (promedio ${m}).`, ynAlto: (q, p) => `"${q}": ${p}% de respuestas positivas.`, semForte: 'Volumen de respuestas suficiente para el análisis.',
+      npsNeg: n => `NPS negativo (${n}): atención a la satisfacción general.`, menorNota: (q, m) => `Nota más baja: "${q}" (promedio ${m}) — priorizar.`, txBaixa: tx => `Tasa de finalización baja (${tx}%): revisar tamaño/enfoque.`, semResp: 'Esta encuesta aún no ha recibido respuestas.', semAtencao: 'Sin puntos críticos evidentes en los números.',
+      recom: ['Profundizar en los temas de menor nota con los equipos.', 'Reconocer y mantener las áreas destacadas.', 'Repetir la medición para seguir la evolución.'],
+      prioWorst: q => `Actuar en el punto de menor nota: "${q}".`, prioNps: 'Priorizar acciones de satisfacción (NPS negativo).', prioOk: 'Mantener el seguimiento de los indicadores.',
+      bench: overallNps !== null ? `NPS ${overallNps} — referencia: más de 50 bueno, más de 0 neutro, menos de 0 crítico.` : 'Define metas internas para comparar próximas mediciones.',
+    },
+  }[lang] || {};
+
+  const fortes = [], atencao = [];
+  if (overallNps !== null && overallNps >= 50) fortes.push(L.npsBom(overallNps));
+  if (best) fortes.push(L.maiorNota(best.pergunta, best.media));
+  yn.filter(q => q.simPct >= 70).slice(0, 1).forEach(q => fortes.push(L.ynAlto(q.pergunta, q.simPct)));
+  if (!fortes.length) fortes.push(L.semForte);
+  if (totalResp === 0) atencao.push(L.semResp);
+  if (overallNps !== null && overallNps < 0) atencao.push(L.npsNeg(overallNps));
+  if (worst) atencao.push(L.menorNota(worst.pergunta, worst.media));
+  if (taxaConclusao < 50 && totalResp > 0) atencao.push(L.txBaixa(taxaConclusao));
+  if (!atencao.length) atencao.push(L.semAtencao);
+  const prio = worst ? L.prioWorst(worst.pergunta) : (overallNps !== null && overallNps < 0 ? L.prioNps : L.prioOk);
+
+  return { resumo: L.resumo, npsClassificacao: npsClass, pontosFortesArr: fortes, pontosAtencaoArr: atencao, recomendacoesArr: L.recom, temasAbertosArr: temas, prioridadeImediata: prio, benchmarkTexto: L.bench };
+}
+
 async function getInsights(req, res) {
   try {
     const db     = getDB();
@@ -141,6 +191,7 @@ async function getInsights(req, res) {
 
     const taxaConclusao = started > 0 ? Math.round((totalResp / started) * 100) : 0;
     const npsClass = overallNps === null ? '—' : overallNps >= 75 ? 'Excelente' : overallNps >= 50 ? 'Bom' : overallNps >= 0 ? 'Neutro' : 'Ruim';
+    const ctx = { surveyName: survey.name, totalResp, taxaConclusao, overallNps, npsClass, perguntas };
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey || apiKey === 'your-anthropic-key-here') {
@@ -171,33 +222,35 @@ async function getInsights(req, res) {
           bench: 'Comparación con benchmarks disponible con IA real.',
         },
       }[lang];
-      return ok(res, { insights: {
-        resumo: D.resumo,
-        npsClassificacao: npsClass,
-        pontosFortesArr: D.fortes,
-        pontosAtencaoArr: D.atencao,
-        recomendacoesArr: D.recom,
-        temasAbertosArr: [],
-        prioridadeImediata: D.prio,
-        benchmarkTexto: D.bench,
-      }, demo: true }, 'Insights em modo demo (configure ANTHROPIC_API_KEY)');
+      return ok(res, { insights: dataReport(lang, ctx), demo: true }, 'Insights gerados a partir dos dados (IA não configurada)');
     }
 
+    try {
     const LANGNAME = { pt: 'português do Brasil', en: 'English', es: 'español' }[lang];
     const summary = { nome: survey.name, categoria: survey.category, respostas: totalResp, taxaConclusao, npsGeral: overallNps, perguntas };
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6', max_tokens: 1200,
+        model: 'claude-sonnet-4-6', max_tokens: 2000,
         messages: [{ role: 'user', content: `Você é especialista em RH e People Analytics. Analise os dados REAIS desta pesquisa organizacional e gere um relatório executivo.\n\nDados:\n${JSON.stringify(summary, null, 2)}\n\nRetorne APENAS JSON puro (sem markdown) neste formato exato (mantenha as CHAVES exatamente como estão):\n{"resumo":"2-3 frases","npsClassificacao":"","pontosFortesArr":["..."],"pontosAtencaoArr":["..."],"recomendacoesArr":["..."],"temasAbertosArr":["..."],"prioridadeImediata":"...","benchmarkTexto":"..."}\n\nIMPORTANTE: Escreva TODOS os valores de texto em ${LANGNAME}. Não traduza as chaves do JSON. Deixe "npsClassificacao" como string vazia.` }]
       })
     });
+    if (!resp.ok) { const et = await resp.text().catch(() => ''); throw new Error('Anthropic ' + resp.status + ' ' + et.slice(0, 160)); }
     const data = await resp.json();
-    const raw  = (data.content?.[0]?.text || '{}').replace(/```json|```/g, '').trim();
-    const insights = JSON.parse(raw);
-    insights.npsClassificacao = npsClass; // token PT determinístico p/ a cor do selo; o front traduz o rótulo exibido.
+    if (data && data.error) throw new Error(data.error.message || 'Anthropic error');
+    let raw = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim();
+    const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
+    if (a >= 0 && b > a) raw = raw.slice(a, b + 1);
+    const insights = JSON.parse(raw || '{}');
+    if (!insights || typeof insights !== 'object' || !insights.resumo) throw new Error('Formato inesperado da IA');
+    insights.npsClassificacao = npsClass;
+    ['pontosFortesArr', 'pontosAtencaoArr', 'recomendacoesArr', 'temasAbertosArr'].forEach(k => { if (!Array.isArray(insights[k])) insights[k] = insights[k] != null ? [String(insights[k])] : []; });
     return ok(res, { insights }, 'Insights gerados com IA');
+    } catch (aiErr) {
+      console.warn('Insights IA falhou, usando relatorio de dados:', aiErr && aiErr.message);
+      return ok(res, { insights: dataReport(lang, ctx), aiUnavailable: true }, 'Insights gerados a partir dos dados');
+    }
   } catch (e) { return err(res, 'Erro ao gerar insights', 500, e.message); }
 }
 
