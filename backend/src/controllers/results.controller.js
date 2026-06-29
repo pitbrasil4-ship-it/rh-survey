@@ -405,6 +405,15 @@ function getPdf(req, res) {
     });
     const overallScore = gN ? Math.round(gSum / gN) : null;
 
+    // Idioma do relatório (PT/EN/ES) — conforme a língua selecionada na plataforma
+    const lang = ['en', 'es'].includes(String(req.query.lang || '').toLowerCase()) ? String(req.query.lang).toLowerCase() : 'pt';
+    const T = {
+      pt: { subtitle: 'Relatório de Resultados  ·  Conforme à LGPD', locale: 'pt-BR', m_resp: 'Respostas concluídas', m_compl: 'Taxa de conclusão', m_score: 'Média geral atingida', m_nps: 'NPS geral', responses: n => `${n} resposta(s)`, npsLine: q => `Promotores ${q.promoters}%   ·   Neutros ${q.passives}%   ·   Detratores ${q.detractors}%`, avg: v => `Média ${v}`, yesno: y => `Sim ${y}%    ·    Não ${100 - y}%`, achieved: p => `% atingido: ${p}%`, comments: n => `Comentários (${n}):`, footer: (a, b) => `Confidencial · RH Survey    —    Página ${a} de ${b}` },
+      en: { subtitle: 'Results Report  ·  LGPD compliant', locale: 'en-US', m_resp: 'Completed responses', m_compl: 'Completion rate', m_score: 'Overall score achieved', m_nps: 'Overall NPS', responses: n => `${n} response(s)`, npsLine: q => `Promoters ${q.promoters}%   ·   Passives ${q.passives}%   ·   Detractors ${q.detractors}%`, avg: v => `Average ${v}`, yesno: y => `Yes ${y}%    ·    No ${100 - y}%`, achieved: p => `% achieved: ${p}%`, comments: n => `Comments (${n}):`, footer: (a, b) => `Confidential · RH Survey    —    Page ${a} of ${b}` },
+      es: { subtitle: 'Informe de Resultados  ·  Conforme a la LGPD', locale: 'es-ES', m_resp: 'Respuestas completadas', m_compl: 'Tasa de finalización', m_score: 'Promedio general alcanzado', m_nps: 'NPS general', responses: n => `${n} respuesta(s)`, npsLine: q => `Promotores ${q.promoters}%   ·   Neutros ${q.passives}%   ·   Detractores ${q.detractors}%`, avg: v => `Promedio ${v}`, yesno: y => `Sí ${y}%    ·    No ${100 - y}%`, achieved: p => `% alcanzado: ${p}%`, comments: n => `Comentarios (${n}):`, footer: (a, b) => `Confidencial · RH Survey    —    Página ${a} de ${b}` },
+    }[lang];
+    let dateStr; try { dateStr = new Date().toLocaleDateString(T.locale); } catch { dateStr = new Date().toLocaleDateString('pt-BR'); }
+
     // ───────── desenho ─────────
     const NAVY = '#1E1B4B', PURPLE = '#5B21B6', SLATE = '#475569', LIGHT = '#64748B', LINE = '#EAECF3';
     const sc = p => p >= 70 ? '#16A34A' : p >= 40 ? '#D97706' : '#DC2626';
@@ -419,16 +428,16 @@ function getPdf(req, res) {
     // Cabeçalho
     doc.rect(0, 0, PW, 96).fill(NAVY);
     doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(20).text('RH Survey', M, 26);
-    doc.fillColor('#C7CBE6').font('Helvetica').fontSize(10).text('Relatório de Resultados  ·  Conforme à LGPD', M, 54);
-    doc.fillColor('#C7CBE6').fontSize(9).text(new Date().toLocaleDateString('pt-BR'), PW - M - 120, 30, { width: 120, align: 'right' });
+    doc.fillColor('#C7CBE6').font('Helvetica').fontSize(10).text(T.subtitle, M, 54);
+    doc.fillColor('#C7CBE6').fontSize(9).text(dateStr, PW - M - 120, 30, { width: 120, align: 'right' });
     doc.y = 120;
     doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(16).text(survey.name, M, 120, { width: CW });
     doc.moveDown(0.4);
 
     // Métricas gerais
-    const metrics = [['Respostas concluídas', String(totalResp)], ['Taxa de conclusão', completion + '%']];
-    if (overallScore != null) metrics.push(['Média geral atingida', overallScore + '%']);
-    else if (overallNps != null) metrics.push(['NPS geral', String(overallNps)]);
+    const metrics = [[T.m_resp, String(totalResp)], [T.m_compl, completion + '%']];
+    if (overallScore != null) metrics.push([T.m_score, overallScore + '%']);
+    else if (overallNps != null) metrics.push([T.m_nps, String(overallNps)]);
     const my = doc.y + 4, bw = CW / metrics.length;
     metrics.forEach((m, i) => {
       const x = M + i * bw;
@@ -453,23 +462,23 @@ function getPdf(req, res) {
     qdata.forEach((q, idx) => {
       need(54);
       doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(11).text(`${idx + 1}. ${q.text}`, M, doc.y, { width: CW });
-      doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text(`${q.count} resposta(s)`, M, doc.y + 1);
+      doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text(T.responses(q.count), M, doc.y + 1);
       doc.moveDown(0.35);
       if (q.type === 'nps') {
         doc.fillColor(PURPLE).font('Helvetica-Bold').fontSize(15).text(`NPS ${q.nps}`, M, doc.y);
-        doc.fillColor(SLATE).font('Helvetica').fontSize(9).text(`Promotores ${q.promoters}%   ·   Neutros ${q.passives}%   ·   Detratores ${q.detractors}%`, M, doc.y + 1);
+        doc.fillColor(SLATE).font('Helvetica').fontSize(9).text(T.npsLine(q), M, doc.y + 1);
       } else if (q.type === 'scale' || q.type === 'rating') {
-        doc.fillColor(PURPLE).font('Helvetica-Bold').fontSize(15).text(`Média ${q.average != null ? q.average : '—'}`, M, doc.y);
+        doc.fillColor(PURPLE).font('Helvetica-Bold').fontSize(15).text(T.avg(q.average != null ? q.average : '—'), M, doc.y);
         doc.moveDown(0.2); drawChoices(q.choices);
       } else if (q.type === 'multiple') {
         drawChoices(q.choices);
       } else if (q.type === 'yesno') {
-        doc.fillColor(SLATE).font('Helvetica').fontSize(10).text(`Sim ${q.yesPct}%    ·    Não ${100 - q.yesPct}%`, M, doc.y);
+        doc.fillColor(SLATE).font('Helvetica').fontSize(10).text(T.yesno(q.yesPct), M, doc.y);
       }
-      if (q.scorePct != null) { need(14); doc.fillColor(sc(q.scorePct)).font('Helvetica-Bold').fontSize(9.5).text(`% atingido: ${q.scorePct}%`, M, doc.y + 2); }
+      if (q.scorePct != null) { need(14); doc.fillColor(sc(q.scorePct)).font('Helvetica-Bold').fontSize(9.5).text(T.achieved(q.scorePct), M, doc.y + 2); }
       if (q.comments && q.comments.length) {
         doc.moveDown(0.25); need(16);
-        doc.fillColor(LIGHT).font('Helvetica-Bold').fontSize(9).text(`Comentários (${q.comments.length}):`, M, doc.y);
+        doc.fillColor(LIGHT).font('Helvetica-Bold').fontSize(9).text(T.comments(q.comments.length), M, doc.y);
         doc.moveDown(0.1);
         q.comments.forEach(c => { need(14); doc.fillColor(SLATE).font('Helvetica').fontSize(9).text('•  ' + c, M + 6, doc.y, { width: CW - 12 }); });
       }
@@ -482,7 +491,7 @@ function getPdf(req, res) {
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) {
       doc.switchToPage(range.start + i);
-      doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text(`Confidencial · RH Survey    —    Página ${i + 1} de ${range.count}`, M, doc.page.height - 38, { width: CW, align: 'center' });
+      doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text(T.footer(i + 1, range.count), M, doc.page.height - 38, { width: CW, align: 'center' });
     }
     doc.end();
   } catch (e) { if (!res.headersSent) return err(res, 'Erro ao gerar PDF', 500, e.message); try { res.end(); } catch {} }
