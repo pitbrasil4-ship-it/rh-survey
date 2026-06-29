@@ -2170,6 +2170,7 @@ function ResultsDashboard() {
   const [loadingList,   setLoadingList]   = useState(true);
   const [loadingResult, setLoadingResult] = useState(false);
   const [error,         setError]         = useState("");
+  const [exporting,     setExporting]     = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -2207,6 +2208,56 @@ function ResultsDashboard() {
   const anon     = !!survey?.anonymous;
   const questions = result?.questions || [];
 
+  const exportFinalReport = async () => {
+    if (!selectedId) return;
+    setExporting(true);
+    try {
+      let seg = null;
+      try { seg = await api.results.segments(selectedId); } catch {}
+      const wb = XLSX.utils.book_new();
+      const surveyName = survey?.name || "Pesquisa";
+      const metric = seg?.metric;
+      const fmt = (s) => s == null ? "—" : (metric === "score" ? s + "%" : metric === "nps" ? "NPS " + s : "" + s);
+
+      const r1 = [[surveyName], []];
+      if (result?.overallScore != null) r1.push([t('rd_overall_score'), result.overallScore + "%"]);
+      else if (result?.overallNPS) r1.push(["NPS", result.overallNPS.nps]);
+      if (seg?.totals?.geral) r1.push([t('seg_participation'), (seg.totals.geral.pct ?? 0) + "%", (seg.totals.geral.responses || 0) + "/" + (seg.totals.geral.meta || 0)]);
+      r1.push([], [t('rep_by_segment')], [t('rep_level'), t('rep_segment'), t('rep_final_score'), t('rd_responses'), t('org_meta'), t('seg_participation')]);
+      if (seg) {
+        const g = seg.totals.geral;
+        r1.push([t('seg_corp'), "—", fmt(g.score), g.responses, g.meta, (g.pct ?? 0) + "%"]);
+        (seg.regionais || []).forEach(rg => {
+          r1.push([t('org_regionais'), rg.name || t('seg_no_regional'), fmt(rg.score), rg.responses, rg.meta, (rg.pct ?? 0) + "%"]);
+          (rg.distritos || []).forEach(d => r1.push([t('org_distritos'), d.name, fmt(d.score), d.responses, d.meta, (d.pct ?? 0) + "%"]));
+        });
+        (seg.departamentos || []).forEach(d => r1.push([t('org_departamentos'), d.name, fmt(d.score), d.responses, d.meta, (d.pct ?? 0) + "%"]));
+      }
+      const ws1 = XLSX.utils.aoa_to_sheet(r1);
+      ws1["!cols"] = [{ wch: 16 }, { wch: 26 }, { wch: 12 }, { wch: 11 }, { wch: 8 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws1, t('rep_sheet_summary'));
+
+      const r2 = [[t('rep_question'), t('csv_type'), t('rep_result'), t('rep_option'), t('rep_choice_pct')]];
+      (questions || []).forEach(q => {
+        let resultado = "—";
+        if (q.type === "nps") resultado = "NPS " + (q.nps ?? "—");
+        else if (q.type === "text") resultado = (q.responseCount || 0) + " " + t('seg_responses');
+        else if (q.scorePct != null) resultado = q.scorePct + "%";
+        else if (q.type === "scale" || q.type === "rating") resultado = t('seg_avg') + " " + (q.average ?? "—");
+        const choices = q.choices || [];
+        if (choices.length) choices.forEach((c, i) => r2.push([i === 0 ? q.text : "", i === 0 ? t('type_' + q.type) : "", i === 0 ? resultado : "", c.label, (c.pct ?? 0) + "%"]));
+        else r2.push([q.text, t('type_' + q.type), resultado, "", ""]);
+      });
+      const ws2 = XLSX.utils.aoa_to_sheet(r2);
+      ws2["!cols"] = [{ wch: 50 }, { wch: 16 }, { wch: 14 }, { wch: 30 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, ws2, t('rep_sheet_questions'));
+
+      const nm = surveyName.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "relatorio";
+      XLSX.writeFile(wb, `relatorio-${nm}.xlsx`);
+    } catch (e) { alert((e && e.message) || ""); }
+    setExporting(false);
+  };
+
   const handleExportCSV = () => {
     if (!questions.length) return;
     const rows = [[t('csv_question'),t('csv_type'),t('csv_responses'),t('csv_summary')]];
@@ -2231,6 +2282,9 @@ function ResultsDashboard() {
           <p className="text-sm text-slate-500 mt-1">{t('rd_subtitle')}</p>
         </div>
         <div className="flex gap-3">
+          <button onClick={exportFinalReport} disabled={!questions.length || exporting} title={t('rd_export_report_title')} className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm disabled:opacity-40 disabled:cursor-not-allowed" style={{ background:GRAD }}>
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}{t('rd_export_report')}
+          </button>
           <button onClick={handleExportCSV} disabled={!questions.length} title={t('rd_export_csv_title')} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
             <Download size={14} />{t('common_export_csv')}
           </button>
