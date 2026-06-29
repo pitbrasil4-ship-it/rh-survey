@@ -1,4 +1,5 @@
 'use strict';
+const PDFDocument = require('pdfkit');
 const { getDB }                                       = require('../config/database');
 const { calculateNPS, calculateAverage, calculateFrequency, calculateNPSWeighted, calculateAverageWeighted } = require('../utils/nps');
 const { ok, err, notFound, badReq }                   = require('../utils/response');
@@ -70,6 +71,14 @@ function getSurveyResults(req, res) {
         });
         if (n) result.scorePct = Math.round(sum / n);
         gScoreSum += sum; gScoreN += n;
+      }
+
+      // Comentários livres (value_text) — aparecem mesmo se a pergunta não for do tipo "texto"
+      // (ex.: pergunta sem opções respondida como texto). Ignora tokens de sim/não.
+      if (q.type !== 'text') {
+        const skip = new Set(['true', 'false', 'sim', 'não', 'nao', 'yes', 'no', '1', '0']);
+        const comments = answers.map(a => a.value_text).filter(v => v != null && String(v).trim() !== '' && !skip.has(String(v).trim().toLowerCase()));
+        if (comments.length) result.comments = comments.slice(0, 300);
       }
 
       return result;
@@ -347,7 +356,137 @@ function getSegments(req, res) {
   } catch (e) { return err(res, 'Erro ao consolidar resultados', 500, e.message); }
 }
 
-/* GET /results/segment-questions?surveyId= — % atingido de cada pergunta pontuada em cada segmento */
+/* GET /results/:surveyId/pdf — relatório em PDF (apresentável, com comentários, médias e resultado geral) */
+function getPdf(req, res) {
+  try {
+    const db = getDB(); const t = req.user.tenant_id;
+    const survey = db.prepare('SELECT * FROM surveys WHERE id=? AND tenant_id=?').get(req.params.surveyId, t);
+    if (!survey) return notFound(res, 'Pesquisa');
+    const questions = db.prepare('SELECT * FROM questions WHERE survey_id=? ORDER BY order_num').all(survey.id);
+    const totalResp = db.prepare("SELECT COUNT(*) c FROM responses WHERE survey_id=? AND completed_at IS NOT NULL").get(survey.id).c;
+    const started   = db.prepare("SELECT COUNT(*) c FROM responses WHERE survey_id=?").get(survey.id).c;
+    const completion = started > 0 ? Math.round(totalResp / started * 100) : 0;
+    const PJ = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+    const skip = new Set(['true', 'false', 'sim', 'não', 'nao', 'yes', 'no', '1', '0']);
+
+    let overallNps = null, gSum = 0, gN = 0;
+    const qdata = questions.map(q => {
+      const answers = db.prepare('SELECT value_text, value_num, value_json FROM answers WHERE question_id=?').all(q.id);
+      const opts = PJ(q.options) || [];
+      const pts  = PJ(q.option_points);
+      const item = { text: q.text, type: q.type, count: answers.length };
+      if (q.type === 'nps') {
+        const sc = answers.map(a => a.value_num).filter(v => v !== null); const n = calculateNPS(sc);
+        if (overallNps === null) overallNps = n.nps;
+        Object.assign(item, { nps: n.nps, promoters: n.promoters, passives: n.passives, detractors: n.detractors, classification: n.classification });
+      } else if (q.type === 'scale' || q.type === 'rating') {
+        const v = answers.map(a => a.value_num).filter(x => x !== null);
+        item.average = calculateAverage(v);
+        item.choices = opts.map((label, idx) => { const c = v.filter(x => x === idx + 1).length; return { label, pct: v.length ? Math.round(c / v.length * 100) : 0 }; });
+      } else if (q.type === 'multiple') {
+        const all = answers.flatMap(a => { try { return JSON.parse(a.value_json || '[]'); } catch { return []; } });
+        item.choices = opts.map(label => { const c = all.filter(x => String(x) === label).length; return { label, pct: answers.length ? Math.round(c / answers.length * 100) : 0 }; });
+      } else if (q.type === 'yesno') {
+        const v = answers.map(a => a.value_text); const yes = v.filter(x => x === 'true' || x === 'sim' || x === '1').length;
+        item.yesPct = v.length ? Math.round(yes / v.length * 100) : 0;
+      }
+      if (pts && pts.length) {
+        let sum = 0, n2 = 0;
+        answers.forEach(a => {
+          let e = null;
+          if (q.type === 'scale' || q.type === 'rating') { if (a.value_num != null && pts[a.value_num - 1] != null) e = Number(pts[a.value_num - 1]); }
+          else if (q.type === 'multiple') { let sel = []; try { sel = JSON.parse(a.value_json || '[]'); } catch {} const vals = (Array.isArray(sel) ? sel : []).map(l => { const i2 = opts.indexOf(l); return (i2 >= 0 && pts[i2] != null) ? Number(pts[i2]) : null; }).filter(x => x != null); if (vals.length) e = vals.reduce((x, y) => x + y, 0) / vals.length; }
+          if (e != null) { sum += e; n2++; }
+        });
+        if (n2) { item.scorePct = Math.round(sum / n2); gSum += sum; gN += n2; }
+      }
+      item.comments = answers.map(a => a.value_text).filter(x => x != null && String(x).trim() !== '' && !skip.has(String(x).trim().toLowerCase())).slice(0, 500);
+      return item;
+    });
+    const overallScore = gN ? Math.round(gSum / gN) : null;
+
+    // ───────── desenho ─────────
+    const NAVY = '#1E1B4B', PURPLE = '#5B21B6', SLATE = '#475569', LIGHT = '#64748B', LINE = '#EAECF3';
+    const sc = p => p >= 70 ? '#16A34A' : p >= 40 ? '#D97706' : '#DC2626';
+    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true, info: { Title: 'Relatório - ' + survey.name, Author: 'RH Survey' } });
+    const safe = (survey.name || 'relatorio').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'relatorio';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="relatorio-${safe}.pdf"`);
+    doc.pipe(res);
+    const PW = doc.page.width, M = 50, CW = PW - M * 2;
+    const need = h => { if (doc.y + h > doc.page.height - 55) doc.addPage(); };
+
+    // Cabeçalho
+    doc.rect(0, 0, PW, 96).fill(NAVY);
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(20).text('RH Survey', M, 26);
+    doc.fillColor('#C7CBE6').font('Helvetica').fontSize(10).text('Relatório de Resultados  ·  Conforme à LGPD', M, 54);
+    doc.fillColor('#C7CBE6').fontSize(9).text(new Date().toLocaleDateString('pt-BR'), PW - M - 120, 30, { width: 120, align: 'right' });
+    doc.y = 120;
+    doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(16).text(survey.name, M, 120, { width: CW });
+    doc.moveDown(0.4);
+
+    // Métricas gerais
+    const metrics = [['Respostas concluídas', String(totalResp)], ['Taxa de conclusão', completion + '%']];
+    if (overallScore != null) metrics.push(['Média geral atingida', overallScore + '%']);
+    else if (overallNps != null) metrics.push(['NPS geral', String(overallNps)]);
+    const my = doc.y + 4, bw = CW / metrics.length;
+    metrics.forEach((m, i) => {
+      const x = M + i * bw;
+      doc.roundedRect(x + (i ? 5 : 0), my, bw - 10, 58, 8).fillAndStroke('#F8FAFC', '#E6E9F2');
+      doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(19).text(m[1], x + 14, my + 11, { width: bw - 28 });
+      doc.fillColor(LIGHT).font('Helvetica').fontSize(8.5).text(m[0], x + 14, my + 39, { width: bw - 28 });
+    });
+    doc.y = my + 58 + 22;
+
+    const drawChoices = (choices) => {
+      (choices || []).forEach(c => {
+        need(15);
+        const y = doc.y, barW = 120, barX = M + CW - barW - 42;
+        doc.fillColor(SLATE).font('Helvetica').fontSize(9).text(c.label || '', M + 4, y, { width: barX - M - 12, ellipsis: true });
+        doc.roundedRect(barX, y + 1, barW, 7, 3).fill('#EEF0F4');
+        doc.roundedRect(barX, y + 1, Math.max(2, barW * Math.min(100, c.pct) / 100), 7, 3).fill(PURPLE);
+        doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(9).text(c.pct + '%', barX + barW + 6, y, { width: 34 });
+        doc.y = y + 13;
+      });
+    };
+
+    qdata.forEach((q, idx) => {
+      need(54);
+      doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(11).text(`${idx + 1}. ${q.text}`, M, doc.y, { width: CW });
+      doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text(`${q.count} resposta(s)`, M, doc.y + 1);
+      doc.moveDown(0.35);
+      if (q.type === 'nps') {
+        doc.fillColor(PURPLE).font('Helvetica-Bold').fontSize(15).text(`NPS ${q.nps}`, M, doc.y);
+        doc.fillColor(SLATE).font('Helvetica').fontSize(9).text(`Promotores ${q.promoters}%   ·   Neutros ${q.passives}%   ·   Detratores ${q.detractors}%`, M, doc.y + 1);
+      } else if (q.type === 'scale' || q.type === 'rating') {
+        doc.fillColor(PURPLE).font('Helvetica-Bold').fontSize(15).text(`Média ${q.average != null ? q.average : '—'}`, M, doc.y);
+        doc.moveDown(0.2); drawChoices(q.choices);
+      } else if (q.type === 'multiple') {
+        drawChoices(q.choices);
+      } else if (q.type === 'yesno') {
+        doc.fillColor(SLATE).font('Helvetica').fontSize(10).text(`Sim ${q.yesPct}%    ·    Não ${100 - q.yesPct}%`, M, doc.y);
+      }
+      if (q.scorePct != null) { need(14); doc.fillColor(sc(q.scorePct)).font('Helvetica-Bold').fontSize(9.5).text(`% atingido: ${q.scorePct}%`, M, doc.y + 2); }
+      if (q.comments && q.comments.length) {
+        doc.moveDown(0.25); need(16);
+        doc.fillColor(LIGHT).font('Helvetica-Bold').fontSize(9).text(`Comentários (${q.comments.length}):`, M, doc.y);
+        doc.moveDown(0.1);
+        q.comments.forEach(c => { need(14); doc.fillColor(SLATE).font('Helvetica').fontSize(9).text('•  ' + c, M + 6, doc.y, { width: CW - 12 }); });
+      }
+      doc.moveDown(0.5); need(6);
+      doc.moveTo(M, doc.y).lineTo(M + CW, doc.y).strokeColor(LINE).lineWidth(1).stroke();
+      doc.moveDown(0.5);
+    });
+
+    // Rodapé com numeração
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(range.start + i);
+      doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text(`Confidencial · RH Survey    —    Página ${i + 1} de ${range.count}`, M, doc.page.height - 38, { width: CW, align: 'center' });
+    }
+    doc.end();
+  } catch (e) { if (!res.headersSent) return err(res, 'Erro ao gerar PDF', 500, e.message); try { res.end(); } catch {} }
+}
 function getSegmentQuestions(req, res) {
   try {
     const db = getDB(); const t = req.user.tenant_id;
@@ -405,4 +544,4 @@ function getSegmentQuestions(req, res) {
   } catch (e) { return err(res, 'Erro ao detalhar por pergunta', 500, e.message); }
 }
 
-module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions };
+module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions, getPdf };
