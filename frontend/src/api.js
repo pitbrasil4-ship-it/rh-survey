@@ -79,6 +79,12 @@ export const api = {
       if (!resp.ok) throw new Error('Falha ao gerar PDF');
       return resp.blob();
     },
+    insightsPdf: async (surveyId, insights, lang) => {
+      let token = ''; try { token = localStorage.getItem('rh_token') || ''; } catch {}
+      const resp = await fetch(`${API_URL}/api/v1/results/insights-pdf`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ surveyId, insights, lang }) });
+      if (!resp.ok) throw new Error('Falha ao gerar PDF');
+      return resp.blob();
+    },
   },
   push: {
     vapidPublic: ()             => request('GET',  '/push/vapid-public'),
