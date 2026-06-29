@@ -496,6 +496,65 @@ function getPdf(req, res) {
     doc.end();
   } catch (e) { if (!res.headersSent) return err(res, 'Erro ao gerar PDF', 500, e.message); try { res.end(); } catch {} }
 }
+/* POST /results/insights-pdf — exporta a análise da IA (resumo, pontos fortes/atenção, recomendações) em PDF, no idioma escolhido */
+function getInsightsPdf(req, res) {
+  try {
+    const db = getDB(); const tenant = req.user.tenant_id;
+    const id = req.body.surveyId; const ins = req.body.insights;
+    if (!ins || typeof ins !== 'object') return badReq(res, 'Análise ausente. Gere a análise antes de exportar.');
+    const survey = db.prepare('SELECT * FROM surveys WHERE id=? AND tenant_id=?').get(id, tenant);
+    if (!survey) return notFound(res, 'Pesquisa');
+    const lang = ['en', 'es'].includes(String(req.body.lang || '').toLowerCase()) ? String(req.body.lang).toLowerCase() : 'pt';
+    const T = {
+      pt: { subtitle: 'Análise com IA  ·  Conforme à LGPD', locale: 'pt-BR', summary: 'Resumo Executivo', strong: 'Pontos Fortes', attention: 'Pontos de Atenção', recom: 'Recomendações', themes: 'Temas das Respostas Abertas', priority: 'Prioridade Imediata', benchmark: 'Comparação (Benchmark)', npsClass: { Excelente: 'Excelente', Bom: 'Bom', Neutro: 'Neutro', Ruim: 'Ruim' }, footer: (a, b) => `Confidencial · RH Survey    —    Página ${a} de ${b}` },
+      en: { subtitle: 'AI Analysis  ·  LGPD compliant', locale: 'en-US', summary: 'Executive Summary', strong: 'Strengths', attention: 'Points of Attention', recom: 'Recommendations', themes: 'Open-Response Themes', priority: 'Immediate Priority', benchmark: 'Benchmark', npsClass: { Excelente: 'Excellent', Bom: 'Good', Neutro: 'Neutral', Ruim: 'Poor' }, footer: (a, b) => `Confidential · RH Survey    —    Page ${a} of ${b}` },
+      es: { subtitle: 'Análisis con IA  ·  Conforme a la LGPD', locale: 'es-ES', summary: 'Resumen Ejecutivo', strong: 'Puntos Fuertes', attention: 'Puntos de Atención', recom: 'Recomendaciones', themes: 'Temas de Respuestas Abiertas', priority: 'Prioridad Inmediata', benchmark: 'Comparación (Benchmark)', npsClass: { Excelente: 'Excelente', Bom: 'Bueno', Neutro: 'Neutral', Ruim: 'Malo' }, footer: (a, b) => `Confidencial · RH Survey    —    Página ${a} de ${b}` },
+    }[lang];
+
+    const NAVY = '#1E1B4B', PURPLE = '#5B21B6', SLATE = '#475569', LIGHT = '#64748B', GREEN = '#16A34A', AMBER = '#D97706', RED = '#DC2626';
+    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true, info: { Title: 'Análise IA - ' + survey.name, Author: 'RH Survey' } });
+    const safe = (survey.name || 'analise').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'analise';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="analise-ia-${safe}.pdf"`);
+    doc.pipe(res);
+    const PW = doc.page.width, M = 50, CW = PW - M * 2;
+    const need = h => { if (doc.y + h > doc.page.height - 55) doc.addPage(); };
+    let dateStr; try { dateStr = new Date().toLocaleDateString(T.locale); } catch { dateStr = new Date().toLocaleDateString('pt-BR'); }
+
+    doc.rect(0, 0, PW, 96).fill(NAVY);
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(20).text('RH Survey', M, 26);
+    doc.fillColor('#C7CBE6').font('Helvetica').fontSize(10).text(T.subtitle, M, 54);
+    doc.fillColor('#C7CBE6').fontSize(9).text(dateStr, PW - M - 120, 30, { width: 120, align: 'right' });
+    doc.y = 120;
+    doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(16).text(survey.name, M, 120, { width: CW });
+    doc.moveDown(0.4);
+
+    if (ins.npsClassificacao && ins.npsClassificacao !== '—') {
+      const label = (T.npsClass[ins.npsClassificacao] || ins.npsClassificacao);
+      const txt = 'NPS ' + label;
+      doc.font('Helvetica-Bold').fontSize(9); const w = doc.widthOfString(txt) + 18; const by = doc.y;
+      doc.roundedRect(M, by, w, 18, 9).fill('#EDE9FE');
+      doc.fillColor(PURPLE).font('Helvetica-Bold').fontSize(9).text(txt, M + 9, by + 5.5);
+      doc.y = by + 28;
+    }
+
+    const section = (title, color) => { need(34); doc.moveDown(0.35); const y = doc.y; doc.circle(M + 4, y + 6, 3.2).fill(color || PURPLE); doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(12).text(title, M + 14, y); doc.moveDown(0.25); };
+    const para = (txt) => { if (!txt) return; need(20); doc.fillColor(SLATE).font('Helvetica').fontSize(10).text(String(txt), M, doc.y, { width: CW, lineGap: 2.5 }); };
+    const bullets = (arr, color) => { (arr || []).forEach(it => { need(16); const y = doc.y; doc.circle(M + 5, y + 5, 1.7).fill(color || PURPLE); doc.fillColor(SLATE).font('Helvetica').fontSize(10).text(String(it), M + 15, y, { width: CW - 15, lineGap: 1.5 }); }); };
+
+    section(T.summary, PURPLE); para(ins.resumo);
+    if ((ins.pontosFortesArr || []).length) { section(T.strong, GREEN); bullets(ins.pontosFortesArr, GREEN); }
+    if ((ins.pontosAtencaoArr || []).length) { section(T.attention, AMBER); bullets(ins.pontosAtencaoArr, AMBER); }
+    if ((ins.recomendacoesArr || []).length) { section(T.recom, PURPLE); bullets(ins.recomendacoesArr, PURPLE); }
+    if ((ins.temasAbertosArr || []).length) { section(T.themes, SLATE); bullets(ins.temasAbertosArr, SLATE); }
+    if (ins.prioridadeImediata) { section(T.priority, RED); para(ins.prioridadeImediata); }
+    if (ins.benchmarkTexto) { section(T.benchmark, NAVY); para(ins.benchmarkTexto); }
+
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text(T.footer(i + 1, range.count), M, doc.page.height - 38, { width: CW, align: 'center' }); }
+    doc.end();
+  } catch (e) { if (!res.headersSent) return err(res, 'Erro ao gerar PDF', 500, e.message); try { res.end(); } catch {} }
+}
 function getSegmentQuestions(req, res) {
   try {
     const db = getDB(); const t = req.user.tenant_id;
@@ -553,4 +612,4 @@ function getSegmentQuestions(req, res) {
   } catch (e) { return err(res, 'Erro ao detalhar por pergunta', 500, e.message); }
 }
 
-module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions, getPdf };
+module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions, getPdf, getInsightsPdf };
