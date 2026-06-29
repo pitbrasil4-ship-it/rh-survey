@@ -43,6 +43,21 @@ function getSurveyResults(req, res) {
         result.responses = answers.map(a => a.value_text).filter(Boolean).slice(0, 50);
       }
 
+      // Pontuação por opção (%) — quando a pergunta tem pesos definidos por alternativa.
+      const PJq = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+      const pts = PJq(q.option_points);
+      if (pts && pts.length) {
+        const opts = PJq(q.options) || [];
+        let sum = 0, n = 0;
+        answers.forEach(a => {
+          let earned = null;
+          if (q.type === 'scale' || q.type === 'rating') { const pos = a.value_num; if (pos != null && pts[pos - 1] != null) earned = Number(pts[pos - 1]); }
+          else if (q.type === 'multiple') { let sel = []; try { sel = JSON.parse(a.value_json || '[]'); } catch {} const vals = (Array.isArray(sel) ? sel : []).map(l => { const idx = opts.indexOf(l); return (idx >= 0 && pts[idx] != null) ? Number(pts[idx]) : null; }).filter(v => v != null); if (vals.length) earned = vals.reduce((x, y) => x + y, 0) / vals.length; }
+          if (earned != null) { sum += earned; n++; }
+        });
+        if (n) result.scorePct = Math.round(sum / n);
+      }
+
       return result;
     });
 
@@ -186,27 +201,51 @@ function getSegments(req, res) {
     const depCount = {};
     db.prepare("SELECT departamento_id, COUNT(*) c FROM responses WHERE survey_id=? AND completed_at IS NOT NULL AND departamento_id IS NOT NULL GROUP BY departamento_id").all(surveyId).forEach(r => depCount[r.departamento_id] = r.c);
 
-    // ── notas por segmento (NPS se houver pergunta NPS; senão média de escala/rating) ──
+    // ── nota por segmento ──
+    // Prioridade da métrica: (1) pontuação por opção (%), (2) NPS, (3) média de escala/rating.
+    const PJ = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+    const scoredQ = db.prepare("SELECT id, type, options, option_points FROM questions WHERE survey_id=? AND option_points IS NOT NULL").all(surveyId)
+      .map(q => ({ id: q.id, type: q.type, options: PJ(q.options) || [], points: PJ(q.option_points) || [] }))
+      .filter(q => q.points.length);
     const npsIds   = db.prepare("SELECT id FROM questions WHERE survey_id=? AND type='nps'").all(surveyId).map(q => q.id);
     const scaleIds = db.prepare("SELECT id FROM questions WHERE survey_id=? AND type IN ('scale','rating')").all(surveyId).map(q => q.id);
-    const metric   = npsIds.length ? 'nps' : (scaleIds.length ? 'avg' : null);
-    const scoreIds = metric === 'nps' ? npsIds : (metric === 'avg' ? scaleIds : []);
+    const metric   = scoredQ.length ? 'score' : (npsIds.length ? 'nps' : (scaleIds.length ? 'avg' : null));
     const distItems = {}, depItems = {}, allItems = [];
-    if (scoreIds.length) {
-      const ph = scoreIds.map(() => '?').join(',');
+    const pushItem = (dd, pp, value, w) => {
+      const item = { score: value, value, weight: w };
+      allItems.push(item);
+      if (dd) (distItems[dd] = distItems[dd] || []).push(item);
+      if (pp) (depItems[pp] = depItems[pp] || []).push(item);
+    };
+    if (metric === 'score') {
+      const qmap = {}; scoredQ.forEach(q => qmap[q.id] = q);
+      const ids = scoredQ.map(q => q.id); const ph = ids.map(() => '?').join(',');
+      const rows = db.prepare(`SELECT r.distrito_id dd, r.departamento_id pp, COALESCE(r.weight,1) w, a.question_id qid, a.value_num vn, a.value_json vj
+        FROM answers a JOIN responses r ON a.response_id = r.id
+        WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND a.question_id IN (${ph})`).all(surveyId, ...ids);
+      rows.forEach(row => {
+        const q = qmap[row.qid]; if (!q) return;
+        let earned = null;
+        if (q.type === 'scale' || q.type === 'rating') {
+          const pos = row.vn; if (pos != null && q.points[pos - 1] != null) earned = Number(q.points[pos - 1]);
+        } else if (q.type === 'multiple') {
+          let sel = []; try { sel = JSON.parse(row.vj || '[]'); } catch {}
+          const vals = (Array.isArray(sel) ? sel : []).map(lbl => { const idx = q.options.indexOf(lbl); return (idx >= 0 && q.points[idx] != null) ? Number(q.points[idx]) : null; }).filter(v => v != null);
+          if (vals.length) earned = vals.reduce((a, b) => a + b, 0) / vals.length;
+        }
+        if (earned != null) pushItem(row.dd, row.pp, earned, row.w);
+      });
+    } else if (metric === 'nps' || metric === 'avg') {
+      const ids = metric === 'nps' ? npsIds : scaleIds; const ph = ids.map(() => '?').join(',');
       const rows = db.prepare(`SELECT r.distrito_id dd, r.departamento_id pp, COALESCE(r.weight,1) w, a.value_num v
         FROM answers a JOIN responses r ON a.response_id = r.id
-        WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND a.value_num IS NOT NULL AND a.question_id IN (${ph})`).all(surveyId, ...scoreIds);
-      rows.forEach(row => {
-        const item = { score: row.v, value: row.v, weight: row.w };
-        allItems.push(item);
-        if (row.dd) (distItems[row.dd] = distItems[row.dd] || []).push(item);
-        if (row.pp) (depItems[row.pp] = depItems[row.pp] || []).push(item);
-      });
+        WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND a.value_num IS NOT NULL AND a.question_id IN (${ph})`).all(surveyId, ...ids);
+      rows.forEach(row => pushItem(row.dd, row.pp, row.v, row.w));
     }
     const scoreOf = (items) => {
       if (!metric || !items || !items.length) return { score: null, n: 0, detail: null };
       if (metric === 'nps') { const r = calculateNPSWeighted(items); return { score: r.nps, n: items.length, detail: { promoters: r.promoters, passives: r.passives, detractors: r.detractors, classification: r.classification } }; }
+      if (metric === 'score') return { score: Math.round(calculateAverageWeighted(items)), n: items.length, detail: null };
       return { score: calculateAverageWeighted(items), n: items.length, detail: null };
     };
 
