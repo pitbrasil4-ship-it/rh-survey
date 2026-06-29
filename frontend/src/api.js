@@ -71,6 +71,7 @@ export const api = {
     dashboard: ()         => request('GET', '/results/dashboard'),
     insights:  (surveyId, lang) => request('POST', '/results/insights', { surveyId, lang }),
     segments:  (surveyId) => request('GET', `/results/segments?surveyId=${encodeURIComponent(surveyId)}`),
+    segmentQuestions: (surveyId) => request('GET', `/results/segment-questions?surveyId=${encodeURIComponent(surveyId)}`),
   },
   push: {
     vapidPublic: ()             => request('GET',  '/push/vapid-public'),
