@@ -13,6 +13,7 @@ function getSurveyResults(req, res) {
     const questions    = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
     const totalResp    = db.prepare('SELECT COUNT(*) as cnt FROM responses WHERE survey_id = ? AND completed_at IS NOT NULL').get(survey.id).cnt;
     const startedResp  = db.prepare('SELECT COUNT(*) as cnt FROM responses WHERE survey_id = ?').get(survey.id).cnt;
+    let gScoreSum = 0, gScoreN = 0; // acumulador da média geral atingida (pontuação por opção)
 
     const questionResults = questions.map(q => {
       const answers = db.prepare('SELECT value_text, value_num, value_json FROM answers WHERE question_id = ?').all(q.id);
@@ -56,6 +57,7 @@ function getSurveyResults(req, res) {
           if (earned != null) { sum += earned; n++; }
         });
         if (n) result.scorePct = Math.round(sum / n);
+        gScoreSum += sum; gScoreN += n;
       }
 
       return result;
@@ -68,6 +70,7 @@ function getSurveyResults(req, res) {
       survey:       { ...survey, totalResponses: totalResp, startedResponses: startedResp },
       completionRate: startedResp > 0 ? Math.round((totalResp / startedResp) * 100) : 0,
       overallNPS:   npsQ ? { nps: npsQ.nps, classification: npsQ.classification } : null,
+      overallScore: gScoreN ? Math.round(gScoreSum / gScoreN) : null,
       questions:    questionResults,
     });
   } catch (e) { return err(res, 'Erro ao carregar resultados', 500, e.message); }
