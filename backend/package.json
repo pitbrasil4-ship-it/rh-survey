@@ -19,6 +19,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "pdfkit": "^0.19.1",
     "uuid": "^10.0.0",
     "web-push": "^3.6.7",
     "winston": "^3.13.0"
