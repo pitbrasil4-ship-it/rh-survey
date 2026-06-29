@@ -53,11 +53,12 @@ async function create(req, res) {
 
     const qIds = [];
     if (questions.length > 0) {
-      const stmt = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es) VALUES (?,?,?,?,?,?,?,?,?,?)');
+      const stmt = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
       const J = a => (Array.isArray(a) && a.length) ? JSON.stringify(a) : null;
       questions.forEach((q, i) => {
         const qid = uuid(); qIds.push(qid);
-        stmt.run(qid, surveyId, i+1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es));
+        stmt.run(qid, surveyId, i+1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es),
+          (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null);
       });
     }
 
