@@ -2023,6 +2023,13 @@ function CycleDetail({ cycleId, onBack }) {
 }
 
 // ─── RESULTS ───────────────────────────────────────────────────────────────────
+function ScoreBadge({ pct }) {
+  const { t } = useLang();
+  if (pct == null) return null;
+  const col = pct >= 70 ? "#16A34A" : pct >= 40 ? "#D97706" : "#DC2626";
+  return <span className="text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ color: col, background: col + "1A" }}>{t('qr_score')}: {pct}%</span>;
+}
+
 function QuestionResult({ q }) {
   const { t } = useLang();
   // NPS
@@ -2063,7 +2070,10 @@ function QuestionResult({ q }) {
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-start justify-between mb-4">
           <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
-          <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <ScoreBadge pct={q.scorePct} />
+            <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
+          </div>
         </div>
         <div className="flex items-center gap-5">
           <div className="text-center">
@@ -2115,7 +2125,10 @@ function QuestionResult({ q }) {
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-start justify-between mb-4">
           <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
-          <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <ScoreBadge pct={q.scorePct} />
+            <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
+          </div>
         </div>
         <div className="space-y-1.5">
           {freq.length === 0 ? <span className="text-xs text-slate-400">{t('qr_no_answers')}</span> : freq.map((d,i) => (
@@ -2250,7 +2263,9 @@ function ResultsDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <KpiCard title={t('rd_responses')} value={String(totalR)} subtitle={t('kpi_completed_evals')} icon={MessageSquare} colorClass="bg-purple-500" />
         <KpiCard title={t('rd_completion_rate')} value={`${compRate}%`} subtitle={t('rd_started_vs_completed')} icon={CheckCircle} colorClass="bg-emerald-500" />
-        <KpiCard title={t('rd_nps_score')} value={nps ? String(nps.nps) : "—"} subtitle={nps ? nps.classification : t('rd_no_nps_q')} icon={TrendingUp} colorClass="bg-blue-500" />
+        {result?.overallScore != null
+          ? <KpiCard title={t('rd_overall_score')} value={`${result.overallScore}%`} subtitle={t('rd_overall_score_sub')} icon={TrendingUp} colorClass="bg-blue-500" />
+          : <KpiCard title={t('rd_nps_score')} value={nps ? String(nps.nps) : "—"} subtitle={nps ? nps.classification : t('rd_no_nps_q')} icon={TrendingUp} colorClass="bg-blue-500" />}
         <KpiCard title={t('rd_anonymity')} value={anon?t('status_ativo'):t('rd_inactive')} subtitle={t('rd_lgpd_protection')} icon={Shield} colorClass={anon?"bg-green-500":"bg-slate-400"} />
       </div>
 
