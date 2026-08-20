@@ -63,7 +63,7 @@ async function login(req, res) {
 
     return ok(res, {
       accessToken, refreshToken,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, must_change_password: !!user.must_change_password },
     }, 'Login realizado com sucesso');
   } catch (e) {
     logger.error('login error', { error: e.message });
@@ -113,7 +113,7 @@ function logout(req, res) {
 /* GET /auth/me */
 function me(req, res) {
   const db     = getDB();
-  const user   = db.prepare('SELECT id, name, email, role, two_fa_enabled, created_at FROM users WHERE id = ?').get(req.user.id);
+  const user   = db.prepare('SELECT id, name, email, role, two_fa_enabled, must_change_password, created_at FROM users WHERE id = ?').get(req.user.id);
   const tenant = db.prepare('SELECT id, name, slug, plan FROM tenants WHERE id = ?').get(req.user.tenant_id);
   return ok(res, { user, tenant });
 }
@@ -134,7 +134,7 @@ async function changePassword(req, res) {
     if (!valid) return badReq(res, 'Senha atual incorreta');
 
     const newHash = await bcrypt.hash(newPassword, ROUNDS);
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, req.user.id);
+    db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(newHash, req.user.id);
     // Revoga sessões antigas (refresh tokens) por segurança.
     db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(req.user.id);
 
