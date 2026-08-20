@@ -15,5 +15,6 @@ router.get('/:id/segment-links',  authorize('admin','manager'), ctrl.listSegment
 router.post('/:id/segment-links', authorize('admin','manager'), auditLog('survey.segment_links','survey'), ctrl.segmentLinks);
 router.delete('/:id',   authorize('admin'),           auditLog('survey.delete','survey'), ctrl.remove);
 router.post('/generate-ai', authorize('admin','manager'), ctrl.generateAI);
+router.post('/bulk',        authorize('admin','manager'), auditLog('survey.bulk_create','survey'), ctrl.bulkCreate);
 router.post('/:id/translate', authorize('admin','manager'), auditLog('survey.translate','survey'), ctrl.translateExisting);
 module.exports = router;
