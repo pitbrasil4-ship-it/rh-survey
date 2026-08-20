@@ -48,8 +48,8 @@ async function create(req, res) {
     const id    = uuid();
 
     db.prepare(
-      `INSERT INTO users (id, tenant_id, name, email, password_hash, role)
-       VALUES (?,?,?,?,?,?)`
+      `INSERT INTO users (id, tenant_id, name, email, password_hash, role, must_change_password)
+       VALUES (?,?,?,?,?,?,1)`
     ).run(id, req.user.tenant_id, name, email, hash, role);
 
     logger.info('Usuário criado', { by: req.user.id, newUser: id, role });
@@ -58,6 +58,15 @@ async function create(req, res) {
     // so the admin can share it for first access.
     const payload = { user: { id, name, email, role, active: 1 } };
     if (!password) payload.temporaryPassword = plain;
+
+    // Envio opcional do e-mail de acesso (automático se RESEND_API_KEY estiver configurada).
+    if (req.body.sendEmail) {
+      const { sendMail, accessEmail } = require('../utils/mailer');
+      const mail = accessEmail({ name, email, password: plain });
+      const r = await sendMail({ to: email, subject: mail.subject, html: mail.html, text: mail.text });
+      payload.emailSent = !!r.sent;
+      if (!r.sent) payload.emailReason = r.reason;
+    }
     return created(res, payload, 'Usuário criado com sucesso');
   } catch (e) {
     logger.error('users.create error', { error: e.message });
