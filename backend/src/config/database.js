@@ -147,6 +147,9 @@ function initSchema() {
   // Segmentação: marca cada resposta com distrito/departamento, e links públicos por segmento.
   try { db.exec("ALTER TABLE responses ADD COLUMN distrito_id TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN departamento_id TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0"); } catch (e) {}
+  // Quem nunca acessou ainda está com a senha provisória -> força a troca no 1º acesso.
+  try { db.exec("UPDATE users SET must_change_password = 1 WHERE last_login IS NULL AND must_change_password = 0"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN weight REAL DEFAULT 1"); } catch (e) {}
   // Pontuação por opção: % de pontos de cada alternativa (alinhado por índice com options). Usado em clima/subordinados.
   try { db.exec("ALTER TABLE questions ADD COLUMN option_points TEXT"); } catch (e) {}
