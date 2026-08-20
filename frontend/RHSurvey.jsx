@@ -151,7 +151,28 @@ const QUESTION_TYPES = [
 
 
 
+const _FREQ = { options: ["Nunca","Quase nunca","Às vezes","Quase sempre","Sempre"], option_points: [0,25,50,75,100] };
 const SURVEY_TEMPLATES = [
+  { id:6, name:"Avaliação de Gestores (pelos Subordinados)", category:"Gestores", tags:["Subordinados","Pontuada","Distrito"], questions:[
+    { text:"O avaliado mantém a equipe informada sobre novidades da empresa.", type:"scale", ..._FREQ },
+    { text:"O avaliado informa a equipe sobre o que está bom e o que precisa melhorar no desempenho de cada um.", type:"scale", ..._FREQ },
+    { text:"Quando alguém erra (inclusive ele mesmo), o avaliado reage com calma e busca resolver, sem procurar culpado.", type:"scale", ..._FREQ },
+    { text:"O avaliado é um bom ouvinte: aceita ouvir opiniões diferentes, críticas e os problemas da equipe.", type:"scale", ..._FREQ },
+    { text:"O avaliado trata todos com respeito e igualdade, independentemente do cargo, sem favoritismo.", type:"scale", ..._FREQ },
+    { text:"O avaliado é justo nas decisões que afetam a equipe.", type:"scale", ..._FREQ },
+    { text:"O avaliado é calmo e transmite segurança e confiança para a equipe.", type:"scale", ..._FREQ },
+    { text:"O avaliado ajuda a manter a equipe unida em momentos difíceis.", type:"scale", ..._FREQ },
+    { text:"O avaliado é um líder forte, que motiva a equipe.", type:"scale", ..._FREQ },
+    { text:"O avaliado dá crédito à equipe pelos bons resultados, em vez de puxar pra si.", type:"scale", ..._FREQ },
+    { text:"O avaliado incentiva novas ideias e a criatividade da equipe.", type:"scale", ..._FREQ },
+    { text:"O avaliado tem bom conhecimento técnico da área.", type:"scale", ..._FREQ },
+    { text:"O avaliado representa bem a empresa perante clientes e outras pessoas de fora.", type:"scale", ..._FREQ },
+    { text:"O avaliado dá um bom exemplo de conduta no trabalho.", type:"scale", ..._FREQ },
+    { text:"De um modo geral, como você avalia o avaliado?", type:"scale", options:["Muito Ruim","Ruim","Regular","Bom","Excelente"], option_points:[0,25,50,75,100] },
+    { text:"Você já presenciou o avaliado fazendo piada ou humilhando alguém da equipe?", type:"scale", options:["Sim","Não"], option_points:[0,100] },
+    { text:"Você já soube do avaliado comentando, de forma indevida, uma informação pessoal de alguém (ex.: problema de saúde)?", type:"scale", options:["Sim","Não"], option_points:[0,100] },
+    { text:"Você se sente à vontade pra contar um problema pro avaliado, sem medo de ser prejudicado depois?", type:"scale", options:["Sim","Não"], option_points:[100,0] },
+  ] },
   { id:1, name:"Avaliação 360° de Liderança", category:"360°", tags:["Liderança","Desempenho","LGPD"], questions:[
     { text:"De 0 a 10, qual a probabilidade de você recomendar esta liderança a um colega?", type:"nps" },
     { text:"Como você avalia a clareza de comunicação desta liderança?", type:"scale", options:["Muito ruim","Ruim","Regular","Boa","Excelente"] },
@@ -911,7 +932,7 @@ function SurveyBuilder({ onBack, initial }) {
   const [surveyName,setSurveyName]= useState(initial?.name || "");
   const [questions, setQuestions] = useState(
     Array.isArray(initial?.questions)
-      ? initial.questions.map((q, i) => ({ id: Date.now() + i, text: q.text, type: q.type, ...(q.options ? { options: q.options } : {}) }))
+      ? initial.questions.map((q, i) => ({ id: Date.now() + i, text: q.text, type: q.type, ...(q.options ? { options: q.options } : {}), ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}) }))
       : []
   );
   const [aiContext, setAiContext]  = useState("");
@@ -3225,6 +3246,10 @@ function TeamManagement() {
   const [saving,   setSaving]   = useState(false);
   const [tempPw,   setTempPw]   = useState(null);   // senha temporária a exibir após criar
   const [tempName, setTempName] = useState("");
+  const [tempEmail, setTempEmail] = useState("");
+  const [sendEmail, setSendEmail] = useState(true);
+  const [emailStatus, setEmailStatus] = useState(null); // 'sent' | 'manual' | null
+  const [mailCopied, setMailCopied] = useState(false);
   const [copied,   setCopied]   = useState(false);
 
   const roleConfig = {
@@ -3261,16 +3286,24 @@ function TeamManagement() {
 
   async function handleCreate() {
     if (!newName || !newEmail) { setError(t('tm_fill_name_email')); return; }
-    setSaving(true); setError(""); setTempPw(null);
+    setSaving(true); setError(""); setTempPw(null); setEmailStatus(null);
     try {
-      const data = await api.users.create({ name:newName, email:newEmail, role:newRole });
-      if (data.temporaryPassword) { setTempPw(data.temporaryPassword); setTempName(newName); }
+      const data = await api.users.create({ name:newName, email:newEmail, role:newRole, sendEmail });
+      if (data.temporaryPassword) { setTempPw(data.temporaryPassword); setTempName(newName); setTempEmail(newEmail); }
+      if (sendEmail) setEmailStatus(data.emailSent ? 'sent' : 'manual');
       setNewName(""); setNewEmail(""); setNewRole("viewer"); setShowForm(false);
       await loadUsers();
     } catch (e) {
       setError(e.message || t('tm_create_error'));
     }
     setSaving(false);
+  }
+
+  const mailSubject = () => t('tm_mail_subject');
+  const mailBody = () => t('tm_mail_body', { name: tempName, url: (typeof window !== 'undefined' ? window.location.origin : 'https://rh-survey.vercel.app'), email: tempEmail, pw: tempPw });
+  const mailtoHref = () => `mailto:${encodeURIComponent(tempEmail)}?subject=${encodeURIComponent(mailSubject())}&body=${encodeURIComponent(mailBody())}`;
+  function copyMailText() {
+    try { navigator.clipboard.writeText(`${mailSubject()}\n\n${mailBody()}`); setMailCopied(true); setTimeout(()=>setMailCopied(false),2000); } catch {}
   }
 
   async function handleRoleChange(id, role) {
@@ -3328,6 +3361,18 @@ function TeamManagement() {
                   {copied ? t('sl_copied') : t('dist_copy')}
                 </button>
               </div>
+              {emailStatus === 'sent' ? (
+                <p className="text-xs text-green-700 mt-3 flex items-center gap-1.5"><Mail size={13} />{t('tm_email_sent', { email: tempEmail })}</p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <a href={mailtoHref()} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-green-300 text-green-800 text-xs font-semibold rounded-lg hover:bg-green-100">
+                    <Mail size={13} />{t('tm_send_by_email')}
+                  </a>
+                  <button onClick={copyMailText} className="px-3 py-2 bg-white border border-green-300 text-green-800 text-xs font-semibold rounded-lg hover:bg-green-100">
+                    {mailCopied ? t('sl_copied') : t('tm_copy_email_text')}
+                  </button>
+                </div>
+              )}
             </div>
             <button onClick={() => setTempPw(null)} className="text-green-400 hover:text-green-600"><X size={16} /></button>
           </div>
@@ -3357,6 +3402,10 @@ function TeamManagement() {
               </select>
             </div>
           </div>
+          <label className="flex items-center gap-2 mt-3 text-xs text-slate-600 cursor-pointer select-none">
+            <input type="checkbox" checked={sendEmail} onChange={e => setSendEmail(e.target.checked)} className="accent-purple-600" />
+            {t('tm_send_email_cb')}
+          </label>
           <div className="flex gap-2 mt-3">
             <button onClick={handleCreate} disabled={saving}
               className="px-4 py-2 text-white text-sm rounded-xl font-medium hover:opacity-90 disabled:opacity-60" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
@@ -4314,6 +4363,60 @@ function InstallPrompt() {
   );
 }
 
+function ForcePasswordModal({ onDone }) {
+  const { t } = useLang();
+  const [cur, setCur] = useState("");
+  const [nw,  setNw]  = useState("");
+  const [cf,  setCf]  = useState("");
+  const [saving, setSaving] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
+  const submit = async () => {
+    setErrMsg("");
+    if (!nw || nw.length < 8) { setErrMsg(t('fp_min')); return; }
+    if (nw !== cf)            { setErrMsg(t('fp_mismatch')); return; }
+    setSaving(true);
+    try {
+      await api.auth.changePassword(cur, nw);
+      try { const u = JSON.parse(localStorage.getItem('rh_user') || '{}'); u.must_change_password = false; localStorage.setItem('rh_user', JSON.stringify(u)); } catch {}
+      onDone();
+    } catch (e) { setErrMsg(e.message || t('fp_error')); }
+    setSaving(false);
+  };
+  const logout = () => { try { localStorage.removeItem('rh_token'); localStorage.removeItem('rh_user'); } catch {} window.location.reload(); };
+  return (
+    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+            <Lock size={18} className="text-white" />
+          </div>
+          <h2 className="font-bold text-slate-800">{t('fp_title')}</h2>
+        </div>
+        <p className="text-sm text-slate-500 mb-4">{t('fp_desc')}</p>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('fp_current')}</label>
+            <input type="password" autoComplete="current-password" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" value={cur} onChange={e => setCur(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('fp_new')}</label>
+            <input type="password" autoComplete="new-password" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" value={nw} onChange={e => setNw(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('fp_confirm')}</label>
+            <input type="password" autoComplete="new-password" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" value={cf} onChange={e => setCf(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} />
+          </div>
+        </div>
+        {errMsg && <p className="text-xs text-red-600 mt-3">{errMsg}</p>}
+        <button onClick={submit} disabled={saving || !cur || !nw || !cf} className="w-full mt-4 py-2.5 text-white text-sm font-semibold rounded-xl hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+          {saving ? <><Loader2 size={14} className="inline mr-1.5 animate-spin" />{t('fp_saving')}</> : t('fp_save')}
+        </button>
+        <button onClick={logout} className="w-full mt-2 py-2 text-xs text-slate-400 hover:text-slate-600">{t('fp_logout')}</button>
+      </div>
+    </div>
+  );
+}
+
 export default function RHSurvey() {
   const [page,     setPage]    = useState("dashboard");
   const [creating, setCreating]= useState(false);
@@ -4325,6 +4428,9 @@ export default function RHSurvey() {
   const unreadCount = notifications.filter(n => !n.read).length;
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < 768);
   const [navOpen, setNavOpen] = useState(false);
+  const [mustChangePw, setMustChangePw] = useState(() => {
+    try { return !!JSON.parse(localStorage.getItem('rh_user') || '{}').must_change_password; } catch { return false; }
+  });
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", onResize);
@@ -4385,6 +4491,7 @@ export default function RHSurvey() {
   return (
     <LangContext.Provider value={{ lang, setLang: changeLang, t: (k, v) => translate(lang, k, v) }}>
     <div style={{ display:"flex", height:"100vh", overflow:"hidden", background:"#F8FAFC", fontFamily:"system-ui,-apple-system,sans-serif" }}>
+      {mustChangePw && <ForcePasswordModal onDone={() => setMustChangePw(false)} />}
       {isMobile ? (
         <>
           {navOpen && <div onClick={() => setNavOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.45)", zIndex:40 }} />}
