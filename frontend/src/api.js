@@ -59,6 +59,7 @@ export const api = {
     setDeadline: (id, deadline) => request('PUT', `/surveys/${id}/deadline`, { deadline }),
     segmentLinks:     (id) => request('POST', `/surveys/${id}/segment-links`),
     listSegmentLinks: (id) => request('GET',  `/surveys/${id}/segment-links`),
+    bulk:             (payload) => request('POST', '/surveys/bulk', payload),
   },
   respondents: {
     list:   ()     => request('GET', '/respondents'),
