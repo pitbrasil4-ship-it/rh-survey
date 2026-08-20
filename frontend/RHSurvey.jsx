@@ -3509,10 +3509,87 @@ function TeamManagement() {
 
 
 // ─── TEMPLATES LIBRARY ────────────────────────────────────────────────────────
+function BulkGenModal({ tpl, onClose }) {
+  const { t } = useLang();
+  const [baseName,  setBaseName]  = useState(tpl.name);
+  const [namesText, setNamesText] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [results,   setResults]   = useState(null);
+  const [errMsg,    setErrMsg]    = useState("");
+  const [copiedIdx, setCopiedIdx] = useState(null);
+  const linkFor = (tok) => `${window.location.origin}/r/${tok}`;
+  const parseNames = () => [...new Set(namesText.split(/\r?\n/).map(s => s.trim()).filter(Boolean))];
+
+  const generate = async () => {
+    const names = parseNames();
+    if (!names.length) { setErrMsg(t('blk_need_names')); return; }
+    setErrMsg(""); setGenerating(true);
+    try {
+      const data = await api.surveys.bulk({ baseName, names, questions: tpl.questions, category: tpl.category });
+      setResults(data.created || []);
+    } catch (e) { setErrMsg(e.message || t('blk_error')); }
+    setGenerating(false);
+  };
+  const copyLink = (tok, i) => { try { navigator.clipboard.writeText(linkFor(tok)); setCopiedIdx(i); setTimeout(() => setCopiedIdx(null), 1500); } catch {} };
+  const downloadExcel = () => {
+    const rows = [[t('blk_col_name'), t('blk_col_link')], ...results.map(r => [r.name, linkFor(r.token)])];
+    const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = [{ wch: 34 }, { wch: 60 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Links');
+    XLSX.writeFile(wb, 'avaliacoes-links.xlsx');
+  };
+
+  return (
+    <div className="fixed inset-0 z-[90] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-1">
+          <h2 className="font-bold text-slate-800">{t('blk_title')}</h2>
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600"><X size={16} /></button>
+        </div>
+        {!results ? (
+          <>
+            <p className="text-sm text-slate-500 mb-4">{t('blk_desc')}</p>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('blk_base')}</label>
+            <input className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm mb-3 focus:outline-none focus:border-purple-400" value={baseName} onChange={e => setBaseName(e.target.value)} />
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('blk_names')} {parseNames().length > 0 && <span className="text-purple-600 font-semibold">({parseNames().length})</span>}</label>
+            <textarea rows={8} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400 font-mono" placeholder={t('blk_names_ph')} value={namesText} onChange={e => setNamesText(e.target.value)} />
+            {errMsg && <p className="text-xs text-red-600 mt-2">{errMsg}</p>}
+            <button onClick={generate} disabled={generating || !parseNames().length}
+              className="w-full mt-4 py-2.5 text-white text-sm font-semibold rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+              {generating ? <><Loader2 size={14} className="inline mr-1.5 animate-spin" />{t('blk_generating')}</> : t('blk_generate', { n: parseNames().length })}
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2 mb-3 flex items-center gap-2"><CheckCircle size={14} />{t('blk_done', { n: results.length })}</p>
+            <div className="space-y-1.5 max-h-72 overflow-y-auto mb-4">
+              {results.map((r, i) => (
+                <div key={r.surveyId} className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                  <span className="text-sm text-slate-700 flex-1 truncate">{r.name}</span>
+                  <button onClick={() => copyLink(r.token, i)} className="text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-100 flex-shrink-0">
+                    {copiedIdx === i ? t('sl_copied') : t('dist_copy')}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={downloadExcel} className="flex-1 py-2.5 text-white text-sm font-semibold rounded-xl hover:opacity-90 flex items-center justify-center gap-2" style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
+                <Download size={14} />{t('blk_excel')}
+              </button>
+              <button onClick={onClose} className="px-4 py-2.5 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">{t('blk_close')}</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TemplatesLibrary({ onUseTemplate }) {
   const { t: tr } = useLang();
   const [search,   setSearch]   = useState("");
   const [category, setCategory] = useState("Todos");
+  const [bulkTpl,  setBulkTpl]  = useState(null);
 
   const cats = ["Todos", ...Array.from(new Set(SURVEY_TEMPLATES.map(t => t.category)))];
 
@@ -3581,10 +3658,15 @@ function TemplatesLibrary({ onUseTemplate }) {
                 style={{ background:"linear-gradient(135deg,#5B21B6,#7C3AED)" }}>
                 <Plus size={11} />{tr('tl_use')}
               </button>
+              <button onClick={() => setBulkTpl(t)}
+                className="flex-1 py-2 text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-xl font-medium hover:bg-purple-100 transition-colors flex items-center justify-center gap-1">
+                <Users size={11} />{tr('tpl_bulk')}
+              </button>
             </div>
           </div>
         ))}
       </div>
+      {bulkTpl && <BulkGenModal tpl={bulkTpl} onClose={() => setBulkTpl(null)} />}
     </div>
   );
 }
