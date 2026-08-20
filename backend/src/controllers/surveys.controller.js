@@ -74,6 +74,39 @@ async function create(req, res) {
   } catch (e) { return err(res, 'Erro ao criar pesquisa', 500, e.message); }
 }
 
+/* POST /surveys/bulk — cria UMA pesquisa por nome (ex.: avaliação por gestor), já publicada, com link próprio.
+   Não roda a tradução automática (seria 1 chamada de IA por pesquisa); use o botão Traduzir por pesquisa se precisar. */
+function bulkCreate(req, res) {
+  try {
+    const { baseName, names, questions = [], category, anonymous, deadline } = req.body;
+    const list = Array.isArray(names) ? [...new Set(names.map(n => String(n || '').trim()).filter(Boolean))] : [];
+    if (!list.length)          return badReq(res, 'Informe ao menos um nome');
+    if (list.length > 200)     return badReq(res, 'Máximo de 200 nomes por vez');
+    if (!Array.isArray(questions) || !questions.length) return badReq(res, 'Informe as perguntas do modelo');
+
+    const db  = getDB();
+    const insS = db.prepare(`INSERT INTO surveys (id, tenant_id, created_by_id, name, category, target_group, anonymous, deadline, lgpd_basis, public_token, status, published_at)
+                             VALUES (?,?,?,?,?,?,?,?,?,?, 'ativo', datetime('now'))`);
+    const insQ = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, options, option_points) VALUES (?,?,?,?,?,?,?)');
+    const J = a => (Array.isArray(a) && a.length) ? JSON.stringify(a) : null;
+    const out = [];
+    db.exec('BEGIN');
+    try {
+      for (const nm of list) {
+        const sid = uuid(); const tok = uuid();
+        insS.run(sid, req.user.tenant_id, req.user.id, `${(baseName || 'Avaliação').trim()} — ${nm}`, category || null, nm,
+          anonymous !== false ? 1 : 0, deadline || null, 'consentimento', tok);
+        questions.forEach((q, i) => insQ.run(uuid(), sid, i + 1, q.type, q.text, J(q.options),
+          (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null));
+        out.push({ name: nm, surveyId: sid, token: tok });
+      }
+      db.exec('COMMIT');
+    } catch (e) { try { db.exec('ROLLBACK'); } catch {} throw e; }
+    logger.info('Pesquisas criadas em lote', { by: req.user.id, count: out.length });
+    return created(res, { created: out }, `${out.length} avaliações criadas`);
+  } catch (e) { return err(res, 'Erro ao criar em lote', 500, e.message); }
+}
+
 /* POST /surveys/:id/translate — (re)gera as traduções EN/ES com IA para uma pesquisa existente */
 async function translateExisting(req, res) {
   try {
@@ -243,4 +276,4 @@ function segmentLinks(req, res) {
   } catch (e) { return err(res, 'Erro ao gerar links', 500, e.message); }
 }
 
-module.exports = { list, create, getOne, update, publish, remove, generateAI, translateExisting, setDeadline, listSegmentLinks, segmentLinks };
+module.exports = { list, create, getOne, update, publish, remove, generateAI, translateExisting, setDeadline, listSegmentLinks, segmentLinks, bulkCreate };
