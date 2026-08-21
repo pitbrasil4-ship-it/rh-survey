@@ -3374,14 +3374,21 @@ function TeamManagement() {
               {emailStatus === 'sent' ? (
                 <p className="text-xs text-green-700 mt-3 flex items-center gap-1.5"><Mail size={13} />{t('tm_email_sent', { email: tempEmail })}</p>
               ) : (
+                <>
                 <div className="flex flex-wrap items-center gap-2 mt-3">
                   <a href={mailtoHref()} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-green-300 text-green-800 text-xs font-semibold rounded-lg hover:bg-green-100">
                     <Mail size={13} />{t('tm_send_by_email')}
                   </a>
+                  <button onClick={() => downloadEmlDraft({ to: tempEmail, subject: mailSubject(), body: mailBody(), filename: `acesso-${(tempName||'usuario').split(' ')[0].toLowerCase()}` })}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-white border border-green-300 text-green-800 text-xs font-semibold rounded-lg hover:bg-green-100">
+                    <Download size={13} />{t('tm_open_outlook')}
+                  </button>
                   <button onClick={copyMailText} className="px-3 py-2 bg-white border border-green-300 text-green-800 text-xs font-semibold rounded-lg hover:bg-green-100">
                     {mailCopied ? t('sl_copied') : t('tm_copy_email_text')}
                   </button>
                 </div>
+                <p className="text-[11px] text-green-700/80 mt-1.5">{t('tm_outlook_hint')}</p>
+                </>
               )}
             </div>
             <button onClick={() => setTempPw(null)} className="text-green-400 hover:text-green-600"><X size={16} /></button>
@@ -3545,6 +3552,32 @@ function TeamManagement() {
 
 
 // ─── TEMPLATES LIBRARY ────────────────────────────────────────────────────────
+/* Gera um rascunho .eml e baixa. Ao abrir o arquivo, o Outlook (2016/365) mostra a janela de
+   composição já preenchida — funciona mesmo quando o "mailto:" não está associado a nenhum app. */
+function downloadEmlDraft({ to, subject, body, filename }) {
+  const b64 = (str) => {
+    const bytes = new TextEncoder().encode(str);
+    let bin = ''; bytes.forEach(b => { bin += String.fromCharCode(b); });
+    return btoa(bin);
+  };
+  const head = [
+    'X-Unsent: 1',                       // faz o Outlook abrir como rascunho editável
+    to ? `To: ${to}` : '',
+    `Subject: =?UTF-8?B?${b64(subject || '')}?=`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+  ].filter(Boolean).join('\r\n');
+  const content = head + '\r\n' + (b64(body || '').match(/.{1,76}/g) || []).join('\r\n') + '\r\n';
+  const blob = new Blob([content], { type: 'message/rfc822' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = (filename || 'convite') + '.eml';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
 /* Botões de compartilhamento (e-mail / WhatsApp) com instruções prontas. Usa mailto: e wa.me —
    não depende de servidor de e-mail nem de configuração de DNS. */
 function ShareButtons({ surveyName, link, anonymous = true, compact = false }) {
@@ -3554,18 +3587,23 @@ function ShareButtons({ surveyName, link, anonymous = true, compact = false }) {
   const wa      = t('dist_wa_body', { name: surveyName || '', link });
   const openEmail = () => { window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`; };
   const openWa    = () => { window.open(`https://wa.me/?text=${encodeURIComponent(wa)}`, '_blank', 'noopener'); };
+  const openOutlook = () => downloadEmlDraft({ subject, body, filename: 'convite-pesquisa' });
   if (compact) {
     return (
       <>
         <button onClick={openEmail} title={t('share_email')} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 flex-shrink-0"><Mail size={13} /></button>
+        <button onClick={openOutlook} title={t('tm_open_outlook')} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 flex-shrink-0"><Download size={13} /></button>
         <button onClick={openWa} title={t('share_whatsapp')} className="p-1.5 rounded-lg border border-green-200 text-green-600 hover:bg-green-50 flex-shrink-0"><MessageCircle size={13} /></button>
       </>
     );
   }
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <button onClick={openEmail} className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50">
         <Mail size={13} />{t('share_email')}
+      </button>
+      <button onClick={openOutlook} className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50">
+        <Download size={13} />{t('tm_open_outlook')}
       </button>
       <button onClick={openWa} className="flex items-center gap-1.5 px-3 py-2 border border-green-200 bg-green-50 rounded-xl text-xs font-medium text-green-700 hover:bg-green-100">
         <MessageCircle size={13} />{t('share_whatsapp')}
