@@ -4531,7 +4531,7 @@ function ForcePasswordModal({ onDone }) {
     } catch (e) { setErrMsg(e.message || t('fp_error')); }
     setSaving(false);
   };
-  const logout = () => { try { localStorage.removeItem('rh_token'); localStorage.removeItem('rh_user'); } catch {} window.location.reload(); };
+  const logout = () => { try { localStorage.removeItem('rh_token'); localStorage.removeItem('rh_user'); localStorage.removeItem('rh_refresh'); } catch {} window.location.replace('/'); };
   return (
     <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
