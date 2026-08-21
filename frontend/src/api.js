@@ -5,30 +5,85 @@ function getToken() {
   try { return localStorage.getItem('rh_token') || ''; } catch { return ''; }
 }
 
-async function request(method, path, body) {
-  const headers = { 'Content-Type': 'application/json' };
-  const t = getToken();
-  if (t) headers['Authorization'] = `Bearer ${t}`;
+function clearSession() {
+  try { localStorage.removeItem('rh_token'); localStorage.removeItem('rh_user'); localStorage.removeItem('rh_refresh'); } catch {}
+}
 
+/* Encerra a sessão e volta para a tela de login (evita ficar preso no painel sem token). */
+function endSession() {
+  clearSession();
+  try {
+    const p = window.location.pathname;
+    // Não redireciona em rotas públicas (responder pesquisa / avaliação).
+    if (!/^\/(r|eval)\//.test(p)) window.location.replace('/');
+  } catch {}
+}
+
+/* Tenta renovar o access token usando o refresh token (válido por 7 dias). */
+let refreshing = null;
+async function tryRefresh() {
+  let rt = '';
+  try { rt = localStorage.getItem('rh_refresh') || ''; } catch {}
+  if (!rt) return false;
+  if (!refreshing) {
+    refreshing = (async () => {
+      try {
+        const r = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: rt }),
+        });
+        if (!r.ok) return false;
+        const j = await r.json();
+        const nt = j?.data?.accessToken;
+        if (!nt) return false;
+        try { localStorage.setItem('rh_token', nt); } catch {}
+        return true;
+      } catch { return false; }
+      finally { setTimeout(() => { refreshing = null; }, 0); }
+    })();
+  }
+  return refreshing;
+}
+
+async function rawRequest(method, path, body, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return fetch(`${API_URL}/api/v1${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+async function request(method, path, body) {
   let res;
   try {
-    res = await fetch(`${API_URL}/api/v1${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    res = await rawRequest(method, path, body, getToken());
   } catch {
     const e = new Error('Erro de conexão com o servidor. Verifique sua internet.');
     e.status = 0;
     throw e;
   }
 
+  // Access token expirado: renova uma vez e repete a chamada.
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    const okRefresh = await tryRefresh();
+    if (okRefresh) {
+      try { res = await rawRequest(method, path, body, getToken()); } catch {
+        const e = new Error('Erro de conexão com o servidor. Verifique sua internet.');
+        e.status = 0;
+        throw e;
+      }
+    }
+  }
+
   let json = null;
   try { json = await res.json(); } catch {}
 
-  if (res.status === 401) {
-    // Sessão expirada — limpa o token para forçar novo login.
-    try { localStorage.removeItem('rh_token'); localStorage.removeItem('rh_user'); } catch {}
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    // Sessão realmente encerrada — limpa e volta ao login.
+    endSession();
   }
   if (!res.ok) {
     const e = new Error(json?.message || `Erro ${res.status}`);
@@ -75,15 +130,20 @@ export const api = {
     segments:  (surveyId) => request('GET', `/results/segments?surveyId=${encodeURIComponent(surveyId)}`),
     segmentQuestions: (surveyId) => request('GET', `/results/segment-questions?surveyId=${encodeURIComponent(surveyId)}`),
     pdf: async (surveyId, lang) => {
-      let token = ''; try { token = localStorage.getItem('rh_token') || ''; } catch {}
       const q = lang ? `?lang=${encodeURIComponent(lang)}` : '';
-      const resp = await fetch(`${API_URL}/api/v1/results/${encodeURIComponent(surveyId)}/pdf${q}`, { headers: { Authorization: 'Bearer ' + token } });
+      const path = `/results/${encodeURIComponent(surveyId)}/pdf${q}`;
+      let resp = await rawRequest('GET', path, null, getToken());
+      if (resp.status === 401 && await tryRefresh()) resp = await rawRequest('GET', path, null, getToken());
+      if (resp.status === 401) { endSession(); throw new Error('Sessão expirada'); }
       if (!resp.ok) throw new Error('Falha ao gerar PDF');
       return resp.blob();
     },
     insightsPdf: async (surveyId, insights, lang) => {
-      let token = ''; try { token = localStorage.getItem('rh_token') || ''; } catch {}
-      const resp = await fetch(`${API_URL}/api/v1/results/insights-pdf`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ surveyId, insights, lang }) });
+      const path = '/results/insights-pdf';
+      const body = { surveyId, insights, lang };
+      let resp = await rawRequest('POST', path, body, getToken());
+      if (resp.status === 401 && await tryRefresh()) resp = await rawRequest('POST', path, body, getToken());
+      if (resp.status === 401) { endSession(); throw new Error('Sessão expirada'); }
       if (!resp.ok) throw new Error('Falha ao gerar PDF');
       return resp.blob();
     },
