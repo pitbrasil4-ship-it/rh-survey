@@ -123,4 +123,30 @@ function remove(req, res) {
   }
 }
 
-module.exports = { list, create, update, remove };
+/* POST /users/test-email — envia um e-mail de teste para o próprio admin logado (diagnóstico do Resend) */
+async function testEmail(req, res) {
+  try {
+    const db = getDB();
+    const me = db.prepare('SELECT name, email FROM users WHERE id = ?').get(req.user.id);
+    if (!me) return notFound(res, 'Usuário');
+    const { sendMail } = require('../utils/mailer');
+    const configured = !!process.env.RESEND_API_KEY;
+    const from = process.env.MAIL_FROM || 'RH Survey <onboarding@resend.dev>';
+    const r = await sendMail({
+      to: me.email,
+      subject: 'Teste de envio — RH Survey',
+      text: `Olá, ${me.name}!\n\nEste é um e-mail de teste do RH Survey. Se você recebeu esta mensagem, o envio automático está funcionando.\n\nRemetente configurado: ${from}`,
+      html: `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1E1B4B">
+        <div style="background:#1E1B4B;color:#fff;padding:16px 22px;border-radius:12px 12px 0 0"><strong>RH Survey</strong></div>
+        <div style="border:1px solid #E6E9F2;border-top:0;padding:22px;border-radius:0 0 12px 12px">
+          <p>Olá, <strong>${me.name}</strong>!</p>
+          <p>Este é um <strong>e-mail de teste</strong>. Se você recebeu esta mensagem, o envio automático está funcionando.</p>
+          <p style="font-size:12px;color:#64748B">Remetente configurado: ${from}</p>
+        </div></div>`,
+    });
+    return ok(res, { sent: !!r.sent, configured, from, reason: r.reason || null, to: me.email },
+      r.sent ? 'E-mail de teste enviado' : 'Não foi possível enviar');
+  } catch (e) { return err(res, 'Erro ao testar envio', 500, e.message); }
+}
+
+module.exports = { list, create, update, remove, testEmail };
