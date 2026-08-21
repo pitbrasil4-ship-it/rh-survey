@@ -3250,6 +3250,8 @@ function TeamManagement() {
   const [sendEmail, setSendEmail] = useState(true);
   const [emailStatus, setEmailStatus] = useState(null); // 'sent' | 'manual' | null
   const [mailCopied, setMailCopied] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
   const [copied,   setCopied]   = useState(false);
 
   const roleConfig = {
@@ -3299,8 +3301,16 @@ function TeamManagement() {
     setSaving(false);
   }
 
-  const mailSubject = () => t('tm_mail_subject');
-  const mailBody = () => t('tm_mail_body', { name: tempName, url: (typeof window !== 'undefined' ? window.location.origin : 'https://rh-survey.vercel.app'), email: tempEmail, pw: tempPw });
+  async function runTestEmail() {
+    setTesting(true); setTestResult(null);
+    try {
+      const d = await api.users.testEmail();
+      setTestResult(d);
+    } catch (e) { setTestResult({ sent: false, reason: e.message }); }
+    setTesting(false);
+  }
+
+  const mailSubject = () => t('tm_mail_subject');  const mailBody = () => t('tm_mail_body', { name: tempName, url: (typeof window !== 'undefined' ? window.location.origin : 'https://rh-survey.vercel.app'), email: tempEmail, pw: tempPw });
   const mailtoHref = () => `mailto:${encodeURIComponent(tempEmail)}?subject=${encodeURIComponent(mailSubject())}&body=${encodeURIComponent(mailBody())}`;
   function copyMailText() {
     try { navigator.clipboard.writeText(`${mailSubject()}\n\n${mailBody()}`); setMailCopied(true); setTimeout(()=>setMailCopied(false),2000); } catch {}
@@ -3502,6 +3512,32 @@ function TeamManagement() {
             </table>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mt-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Mail size={15} className="text-purple-600" />{t('tm_email_diag')}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">{t('tm_email_diag_desc')}</p>
+          </div>
+          <button onClick={runTestEmail} disabled={testing}
+            className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-50 disabled:opacity-50">
+            {testing ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}{t('tm_email_test')}
+          </button>
+        </div>
+        {testResult && (
+          <div className={`mt-3 rounded-xl px-4 py-3 text-xs border ${testResult.sent ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+            {testResult.sent ? (
+              <span className="flex items-center gap-1.5"><CheckCircle size={13} />{t('tm_email_ok', { email: testResult.to })}</span>
+            ) : (
+              <>
+                <span className="flex items-center gap-1.5 font-semibold"><AlertTriangle size={13} />{testResult.configured === false ? t('tm_email_nokey') : t('tm_email_fail')}</span>
+                {testResult.reason && <div className="mt-1 font-mono text-[11px] opacity-80 break-all">{testResult.reason}</div>}
+              </>
+            )}
+            {testResult.from && <div className="mt-1.5 text-[11px] opacity-70">{t('tm_email_from', { from: testResult.from })}</div>}
+          </div>
+        )}
       </div>
     </div>
   );
