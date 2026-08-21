@@ -3545,6 +3545,35 @@ function TeamManagement() {
 
 
 // ─── TEMPLATES LIBRARY ────────────────────────────────────────────────────────
+/* Botões de compartilhamento (e-mail / WhatsApp) com instruções prontas. Usa mailto: e wa.me —
+   não depende de servidor de e-mail nem de configuração de DNS. */
+function ShareButtons({ surveyName, link, anonymous = true, compact = false }) {
+  const { t } = useLang();
+  const subject = t('dist_subject', { name: surveyName || '' });
+  const body    = t('dist_email_body', { name: surveyName || '', link, anon: anonymous ? t('dist_email_anon_yes') : t('dist_email_anon_no') });
+  const wa      = t('dist_wa_body', { name: surveyName || '', link });
+  const openEmail = () => { window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`; };
+  const openWa    = () => { window.open(`https://wa.me/?text=${encodeURIComponent(wa)}`, '_blank', 'noopener'); };
+  if (compact) {
+    return (
+      <>
+        <button onClick={openEmail} title={t('share_email')} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 flex-shrink-0"><Mail size={13} /></button>
+        <button onClick={openWa} title={t('share_whatsapp')} className="p-1.5 rounded-lg border border-green-200 text-green-600 hover:bg-green-50 flex-shrink-0"><MessageCircle size={13} /></button>
+      </>
+    );
+  }
+  return (
+    <div className="flex gap-2">
+      <button onClick={openEmail} className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50">
+        <Mail size={13} />{t('share_email')}
+      </button>
+      <button onClick={openWa} className="flex items-center gap-1.5 px-3 py-2 border border-green-200 bg-green-50 rounded-xl text-xs font-medium text-green-700 hover:bg-green-100">
+        <MessageCircle size={13} />{t('share_whatsapp')}
+      </button>
+    </div>
+  );
+}
+
 function BulkGenModal({ tpl, onClose }) {
   const { t } = useLang();
   const [baseName,  setBaseName]  = useState(tpl.name);
@@ -3602,6 +3631,7 @@ function BulkGenModal({ tpl, onClose }) {
               {results.map((r, i) => (
                 <div key={r.surveyId} className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
                   <span className="text-sm text-slate-700 flex-1 truncate">{r.name}</span>
+                  <ShareButtons surveyName={`${baseName} — ${r.name}`} link={linkFor(r.token)} compact />
                   <button onClick={() => copyLink(r.token, i)} className="text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-100 flex-shrink-0">
                     {copiedIdx === i ? t('sl_copied') : t('dist_copy')}
                   </button>
@@ -4044,7 +4074,7 @@ function segCopy(text) {
 }
 function segFallbackCopy(text) { const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch{} document.body.removeChild(ta); return Promise.resolve(); }
 
-function SegLinkRow({ name, token }) {
+function SegLinkRow({ name, token, surveyName }) {
   const { t } = useLang();
   const [copied, setCopied] = useState(false);
   const url = `${window.location.origin}/r/${token}`;
@@ -4052,6 +4082,7 @@ function SegLinkRow({ name, token }) {
   return (
     <div className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2">
       <span className="text-sm text-slate-700 flex-1 min-w-0 truncate">{name}</span>
+      <ShareButtons surveyName={surveyName || name} link={url} compact />
       <button onClick={copy} className="text-xs font-medium text-purple-700 border border-purple-200 rounded-lg px-2.5 py-1 hover:bg-purple-50 flex items-center gap-1 flex-shrink-0">
         {copied ? <><CheckCircle size={12} />{t('seg_copied')}</> : <><Link2 size={12} />{t('seg_copy')}</>}
       </button>
