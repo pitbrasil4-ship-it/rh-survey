@@ -88,6 +88,7 @@ function Root() {
         {!auth
           ? <Login onLogin={(data) => {
               localStorage.setItem('rh_token', data.accessToken || data.token || '');
+              if (data.refreshToken) localStorage.setItem('rh_refresh', data.refreshToken);
               localStorage.setItem('rh_user', JSON.stringify(data.user || data));
               setAuth(data);
             }} />
