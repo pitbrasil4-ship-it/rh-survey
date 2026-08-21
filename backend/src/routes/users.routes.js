@@ -10,6 +10,7 @@ router.use(authorize('admin'));
 
 router.get('/',        ctrl.list);
 router.post('/',       auditLog('user.create','user'), ctrl.create);
+router.post('/test-email', ctrl.testEmail);
 router.put('/:id',     auditLog('user.update','user'), ctrl.update);
 router.delete('/:id',  auditLog('user.deactivate','user'), ctrl.remove);
 module.exports = router;
