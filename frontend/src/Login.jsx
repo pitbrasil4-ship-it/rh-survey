@@ -86,6 +86,7 @@ export default function Login({ onLogin }) {
       const data = await res.json();
       if (data.success) {
         localStorage.setItem('rh_token', data.data.accessToken);
+        if (data.data.refreshToken) localStorage.setItem('rh_refresh', data.data.refreshToken);
         localStorage.setItem('rh_user',  JSON.stringify(data.data.user));
         onLogin(data.data);
       } else {
