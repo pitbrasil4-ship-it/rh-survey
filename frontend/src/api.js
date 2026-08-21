@@ -50,6 +50,7 @@ export const api = {
     create: (data)     => request('POST', '/users', data),
     update: (id, data) => request('PUT', `/users/${id}`, data),
     remove: (id)       => request('DELETE', `/users/${id}`),
+    testEmail: ()      => request('POST', '/users/test-email'),
   },
   surveys: {
     list:       ()         => request('GET', '/surveys'),
