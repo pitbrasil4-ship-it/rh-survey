@@ -1,4 +1,6 @@
 'use strict';
+// Modelo usado nas chamadas de IA. Sobrescreva com ANTHROPIC_MODEL se precisar.
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
 // Tradução automática do conteúdo de pesquisas (título, descrição, perguntas e opções)
 // do português para inglês (en) e espanhol (es), via API da Anthropic.
 const logger = require('./logger');
@@ -37,14 +39,20 @@ Conteúdo (pt):
 ${JSON.stringify(payload, null, 2)}`;
 
   let data;
+  // Timeout explícito: sem ele a requisição podia ficar pendurada até o gateway
+  // derrubar a conexão, e o painel exibia "erro de conexão".
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 55000);
   try {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2500, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model: MODEL, max_tokens: 2500, messages: [{ role: 'user', content: prompt }] }),
+      signal: ctrl.signal,
     });
     data = await resp.json();
-  } catch (e) { logger.warn('translateSurvey: falha na chamada à IA — ' + e.message); return null; }
+  } catch (e) { logger.warn('translateSurvey: falha na chamada à IA — ' + (e.name === 'AbortError' ? 'tempo esgotado' : e.message)); return null; }
+  finally { clearTimeout(timer); }
 
   let parsed;
   try {

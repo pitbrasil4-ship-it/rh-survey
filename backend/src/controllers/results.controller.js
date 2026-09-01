@@ -3,6 +3,9 @@ const PDFDocument = require('pdfkit');
 const { getDB }                                       = require('../config/database');
 const { calculateNPS, calculateAverage, calculateFrequency, calculateNPSWeighted, calculateAverageWeighted } = require('../utils/nps');
 const { ok, err, notFound, badReq }                   = require('../utils/response');
+const Q                                               = require('../utils/questions');
+const logger                                          = require('../utils/logger');
+const { canSeeSurvey, responseScopeSQL, scopeDistritos } = require('../utils/scope');
 
 /* GET /results/:surveyId */
 function getSurveyResults(req, res) {
@@ -10,19 +13,44 @@ function getSurveyResults(req, res) {
     const db     = getDB();
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ? AND tenant_id = ?').get(req.params.surveyId, req.user.tenant_id);
     if (!survey) return notFound(res, 'Pesquisa');
+    // Supressão por tipo de avaliação (ex.: Gestor não abre a Avaliação de Gestores).
+    if (!canSeeSurvey(req.user, survey)) return err(res, 'Você não tem permissão para ver os resultados desta pesquisa', 403);
 
-    const questions    = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
-    const totalResp    = db.prepare('SELECT COUNT(*) as cnt FROM responses WHERE survey_id = ? AND completed_at IS NOT NULL').get(survey.id).cnt;
-    const startedResp  = db.prepare('SELECT COUNT(*) as cnt FROM responses WHERE survey_id = ?').get(survey.id).cnt;
+    // Escopo do usuário: um Gestor amarrado a um distrito só enxerga as respostas dele.
+    const scope = responseScopeSQL(db, req.user, 'r');
+    const respWhere = `r.survey_id = ? AND r.completed_at IS NOT NULL${scope.sql}`;
+
+    const questions   = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
+    const totalResp   = db.prepare(`SELECT COUNT(*) as cnt FROM responses r WHERE ${respWhere}`).get(survey.id, ...scope.params).cnt;
+    const startedResp = db.prepare(`SELECT COUNT(*) as cnt FROM responses r WHERE r.survey_id = ?${scope.sql}`).get(survey.id, ...scope.params).cnt;
     let gScoreSum = 0, gScoreN = 0; // acumulador da média geral atingida (pontuação por opção)
 
+    const answersOf = db.prepare(`SELECT a.value_text, a.value_num, a.value_json
+      FROM answers a JOIN responses r ON r.id = a.response_id
+      WHERE a.question_id = ? AND ${respWhere}`);
+
+    const dimsByQuestion = {};
+    db.prepare(`SELECT qd.question_id, d.id, d.name, ds.name AS set_name
+                FROM question_dimensions qd
+                JOIN dimensions d ON d.id = qd.dimension_id
+                LEFT JOIN dimension_sets ds ON ds.id = d.set_id
+                JOIN questions q ON q.id = qd.question_id
+                WHERE q.survey_id = ?`).all(survey.id)
+      .forEach(r => (dimsByQuestion[r.question_id] = dimsByQuestion[r.question_id] || []).push({ id: r.id, name: r.name, set: r.set_name }));
+
     const questionResults = questions.map(q => {
-      const answers = db.prepare('SELECT value_text, value_num, value_json FROM answers WHERE question_id = ?').all(q.id);
+      const answers = answersOf.all(q.id, survey.id, ...scope.params);
+      const cfg     = Q.parseJSON(q.config) || {};
+      const qOpts   = Q.parseJSON(q.options);
+      const pts     = Q.parseJSON(q.option_points);
+      const neutral = Number.isInteger(cfg.neutralIndex) ? cfg.neutralIndex : null;
 
-      let result = { questionId: q.id, type: q.type, text: q.text, responseCount: answers.length };
-
-      const PJc = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
-      const qOpts = PJc(q.options);
+      let result = {
+        questionId: q.id, type: q.type, text: q.text, responseCount: answers.length,
+        options: qOpts || null, required: q.required !== 0,
+        neutralIndex: neutral, neutralLabel: (neutral != null && qOpts) ? qOpts[neutral] : null,
+        dimensions: dimsByQuestion[q.id] || [],
+      };
 
       if (q.type === 'nps') {
         const scores = answers.map(a => a.value_num).filter(v => v !== null);
@@ -30,52 +58,115 @@ function getSurveyResults(req, res) {
 
       } else if (q.type === 'scale' || q.type === 'rating') {
         const values = answers.map(a => a.value_num).filter(v => v !== null);
-        result.average  = calculateAverage(values);
-        result.distribution = calculateFrequency(values.map(v => String(v)));
-        if (qOpts && qOpts.length) {
-          const total = values.length;
-          result.choices = qOpts.map((label, idx) => { const cnt = values.filter(v => v === idx + 1).length; return { label, count: cnt, pct: total ? Math.round((cnt / total) * 100) : 0 }; });
-        }
+        // A opção neutra ("Não se aplica") sai da média e do denominador.
+        const scored = neutral != null ? values.filter(v => v !== neutral + 1) : values;
+        result.average = calculateAverage(scored);
+        result.neutralCount = values.length - scored.length;
+        // Distribuição rotulada: mostra "Às vezes · 12 (50%)" em vez de só "3 · 50%".
+        result.distribution = labelledDistribution(values, qOpts, q.type === 'rating' ? 5 : (qOpts ? qOpts.length : 5));
+        result.choices = result.distribution;
 
-      } else if (q.type === 'multiple') {
-        const all = answers.flatMap(a => { try { return JSON.parse(a.value_json || '[]'); } catch { return []; } });
-        result.frequency = calculateFrequency(all.map(String));
-        if (qOpts && qOpts.length) {
-          const totalR = answers.length;
-          result.choices = qOpts.map(label => { const cnt = all.filter(v => String(v) === label).length; return { label, count: cnt, pct: totalR ? Math.round((cnt / totalR) * 100) : 0 }; });
-        }
+      } else if (q.type === 'multiple' || q.type === 'dropdown') {
+        const all = answers.flatMap(a => {
+          if (a.value_json) { try { const v = JSON.parse(a.value_json); return Array.isArray(v) ? v : [v]; } catch { return []; } }
+          return a.value_text ? [a.value_text] : [];
+        });
+        const totalR = answers.length || 1;
+        // Mantém a ordem das alternativas cadastradas e acrescenta as respostas "Outros".
+        const known = (qOpts || []).map(label => {
+          const count = all.filter(v => String(v) === label).length;
+          return { value: label, label, count, pct: Math.round((count / totalR) * 100) };
+        });
+        const extras = calculateFrequency(all.map(String).filter(v => !(qOpts || []).includes(v)))
+          .map(f => ({ value: f.value, label: f.value, count: f.count, pct: Math.round((f.count / totalR) * 100), other: true }));
+        result.choices = known.concat(extras);
+        result.frequency = result.choices;
 
       } else if (q.type === 'yesno') {
-        const values   = answers.map(a => a.value_text);
-        const yes      = values.filter(v => v === 'true' || v === 'sim' || v === '1').length;
-        result.yes     = yes;
-        result.no      = values.length - yes;
-        result.yesPct  = values.length ? Math.round((yes / values.length) * 100) : 0;
-        result.choices = [{ label: 'Sim', count: yes, pct: result.yesPct }, { label: 'Não', count: values.length - yes, pct: values.length ? 100 - result.yesPct : 0 }];
+        const values  = answers.map(a => a.value_text);
+        const yes     = values.filter(v => v === 'true' || v === 'sim' || v === '1').length;
+        const no      = values.length - yes;
+        result.yes    = yes;
+        result.no     = no;
+        result.yesPct = values.length ? Math.round((yes / values.length) * 100) : 0;
+        result.choices = [
+          { value: 'Sim', label: 'Sim', count: yes, pct: result.yesPct },
+          { value: 'Não', label: 'Não', count: no,  pct: values.length ? 100 - result.yesPct : 0 },
+        ];
+
+      } else if (q.type === 'matrix') {
+        // Uma média (e uma distribuição) por linha da matriz.
+        const rows = Array.isArray(cfg.rows) ? cfg.rows : [];
+        const byRow = {};
+        answers.forEach(a => {
+          let v = null; try { v = a.value_json ? JSON.parse(a.value_json) : null; } catch {}
+          if (!v || typeof v !== 'object') return;
+          rows.forEach(rowLabel => {
+            const pos = Number(v[rowLabel]);
+            if (pos > 0) (byRow[rowLabel] = byRow[rowLabel] || []).push(pos);
+          });
+        });
+        result.rows = rows.map(rowLabel => {
+          const vals = byRow[rowLabel] || [];
+          const scored = neutral != null ? vals.filter(x => x !== neutral + 1) : vals;
+          return {
+            label: rowLabel, count: vals.length, average: calculateAverage(scored),
+            distribution: labelledDistribution(vals, qOpts, qOpts ? qOpts.length : 5),
+          };
+        });
+        const flat = Object.values(byRow).flat();
+        result.average = calculateAverage(neutral != null ? flat.filter(x => x !== neutral + 1) : flat);
+
+      } else if (q.type === 'form') {
+        // Bloco de campos: devolve as respostas por campo, para leitura/exportação.
+        const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
+        const byField = {};
+        answers.forEach(a => {
+          let v = null; try { v = a.value_json ? JSON.parse(a.value_json) : null; } catch {}
+          if (!v || typeof v !== 'object') return;
+          fields.forEach(f => { const val = String(v[f.label] ?? '').trim(); if (val) (byField[f.label] = byField[f.label] || []).push(val); });
+        });
+        result.fields = fields.map(f => ({ label: f.label, kind: f.kind, count: (byField[f.label] || []).length, responses: (byField[f.label] || []).slice(0, 200) }));
 
       } else if (q.type === 'text') {
         result.responses = answers.map(a => a.value_text).filter(Boolean).slice(0, 50);
       }
 
       // Pontuação por opção (%) — quando a pergunta tem pesos definidos por alternativa.
-      const PJq = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
-      const pts = PJq(q.option_points);
       if (pts && pts.length) {
-        const opts = PJq(q.options) || [];
+        const opts = qOpts || [];
         let sum = 0, n = 0;
-        answers.forEach(a => {
-          let earned = null;
-          if (q.type === 'scale' || q.type === 'rating') { const pos = a.value_num; if (pos != null && pts[pos - 1] != null) earned = Number(pts[pos - 1]); }
-          else if (q.type === 'multiple') { let sel = []; try { sel = JSON.parse(a.value_json || '[]'); } catch {} const vals = (Array.isArray(sel) ? sel : []).map(l => { const idx = opts.indexOf(l); return (idx >= 0 && pts[idx] != null) ? Number(pts[idx]) : null; }).filter(v => v != null); if (vals.length) earned = vals.reduce((x, y) => x + y, 0) / vals.length; }
-          if (earned != null) { sum += earned; n++; }
-        });
+        const earn = (a) => {
+          if (q.type === 'scale' || q.type === 'rating') {
+            const pos = a.value_num;
+            // A opção neutra não pontua nem entra no denominador.
+            if (pos == null || (neutral != null && pos === neutral + 1)) return null;
+            return pts[pos - 1] != null ? Number(pts[pos - 1]) : null;
+          }
+          if (q.type === 'multiple' || q.type === 'dropdown') {
+            let sel = []; try { sel = JSON.parse(a.value_json || '[]'); } catch {}
+            if (!Array.isArray(sel)) sel = [sel];
+            const vals = sel.map(l => { const idx = opts.indexOf(l); return (idx >= 0 && idx !== neutral && pts[idx] != null) ? Number(pts[idx]) : null; }).filter(v => v != null);
+            return vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : null;
+          }
+          if (q.type === 'matrix') {
+            let v = null; try { v = a.value_json ? JSON.parse(a.value_json) : null; } catch {}
+            if (!v || typeof v !== 'object') return null;
+            const vals = Object.values(v).map(Number)
+              .filter(pos => pos > 0 && !(neutral != null && pos === neutral + 1))
+              .map(pos => (pts[pos - 1] != null ? Number(pts[pos - 1]) : null)).filter(x => x != null);
+            return vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : null;
+          }
+          return null;
+        };
+        answers.forEach(a => { const e = earn(a); if (e != null) { sum += e; n++; } });
         if (n) result.scorePct = Math.round(sum / n);
         gScoreSum += sum; gScoreN += n;
       }
 
       // Comentários livres (value_text) — aparecem mesmo se a pergunta não for do tipo "texto"
-      // (ex.: pergunta sem opções respondida como texto). Ignora tokens de sim/não.
-      if (q.type !== 'text') {
+      // (ex.: campo "Outros" preenchido, ou pergunta sem opções respondida como texto).
+      if (q.type !== 'text' && q.type !== 'form') {
         const skip = new Set(['true', 'false', 'sim', 'não', 'nao', 'yes', 'no', '1', '0']);
         const comments = answers.map(a => a.value_text).filter(v => v != null && String(v).trim() !== '' && !skip.has(String(v).trim().toLowerCase()));
         if (comments.length) result.comments = comments.slice(0, 300);
@@ -93,18 +184,60 @@ function getSurveyResults(req, res) {
       overallNPS:   npsQ ? { nps: npsQ.nps, classification: npsQ.classification } : null,
       overallScore: gScoreN ? Math.round(gScoreSum / gScoreN) : null,
       questions:    questionResults,
+      dimensions:   dimensionSummary(questionResults),
+      scoped:       !!scope.sql,
     });
   } catch (e) { return err(res, 'Erro ao carregar resultados', 500, e.message); }
+}
+
+/* Distribuição já rotulada: cada posição vira { value, label, count, pct }.
+   `value` continua sendo o número (1..n) para não quebrar quem lê por posição. */
+function labelledDistribution(values, options, size) {
+  const total = values.length;
+  if (!total) return [];
+  const n = Math.max(size || 0, ...values.map(v => Math.round(v) || 0));
+  const out = [];
+  for (let i = 1; i <= n; i++) {
+    const count = values.filter(v => Math.round(v) === i).length;
+    const label = (options && options[i - 1]) ? options[i - 1] : String(i);
+    out.push({ value: String(i), label, count, pct: total ? Math.round((count / total) * 100) : 0 });
+  }
+  return out;
+}
+
+/* Consolida a nota por dimensão (média das perguntas vinculadas a cada dimensão). */
+function dimensionSummary(questionResults) {
+  const acc = {};
+  questionResults.forEach(q => {
+    (q.dimensions || []).forEach(d => {
+      const e = acc[d.id] = acc[d.id] || { id: d.id, name: d.name, set: d.set, questions: 0, scoreSum: 0, scoreN: 0, avgSum: 0, avgN: 0, responses: 0 };
+      e.questions++;
+      e.responses += q.responseCount || 0;
+      if (typeof q.scorePct === 'number') { e.scoreSum += q.scorePct; e.scoreN++; }
+      if (typeof q.average === 'number' && q.average > 0) { e.avgSum += q.average; e.avgN++; }
+    });
+  });
+  return Object.values(acc).map(e => ({
+    id: e.id, name: e.name, set: e.set, questions: e.questions, responses: e.responses,
+    scorePct: e.scoreN ? Math.round(e.scoreSum / e.scoreN) : null,
+    average:  e.avgN ? parseFloat((e.avgSum / e.avgN).toFixed(2)) : null,
+  })).sort((a, b) => (a.set || '').localeCompare(b.set || '') || a.name.localeCompare(b.name));
 }
 
 /* GET /results/dashboard  — aggregate across all surveys */
 function getDashboard(req, res) {
   try {
-    const db          = getDB();
-    const totalSurveys = db.prepare("SELECT COUNT(*) as cnt FROM surveys WHERE tenant_id=? AND status != 'excluido'").get(req.user.tenant_id).cnt;
-    const active       = db.prepare("SELECT COUNT(*) as cnt FROM surveys WHERE tenant_id=? AND status='ativo'").get(req.user.tenant_id).cnt;
-    const totalResp    = db.prepare('SELECT COUNT(*) as cnt FROM responses r JOIN surveys s ON r.survey_id=s.id WHERE s.tenant_id=? AND r.completed_at IS NOT NULL').get(req.user.tenant_id).cnt;
-    const recent       = db.prepare("SELECT s.*, (SELECT COUNT(*) FROM responses WHERE survey_id=s.id AND completed_at IS NOT NULL) as responses FROM surveys s WHERE s.tenant_id=? AND s.status!='excluido' ORDER BY s.created_at DESC LIMIT 5").all(req.user.tenant_id);
+    const db    = getDB();
+    const scope = responseScopeSQL(db, req.user, 'r');
+    // O painel respeita o mesmo recorte dos resultados: categoria suprimida some da conta,
+    // e um Gestor de distrito só soma as respostas do próprio distrito.
+    const all   = db.prepare("SELECT * FROM surveys WHERE tenant_id=? AND status != 'excluido' ORDER BY created_at DESC").all(req.user.tenant_id)
+                    .filter(sv => canSeeSurvey(req.user, sv));
+    const totalSurveys = all.length;
+    const active       = all.filter(sv => sv.status === 'ativo').length;
+    const countResp    = db.prepare(`SELECT COUNT(*) as cnt FROM responses r WHERE r.survey_id=? AND r.completed_at IS NOT NULL${scope.sql}`);
+    const totalResp    = all.reduce((acc, sv) => acc + countResp.get(sv.id, ...scope.params).cnt, 0);
+    const recent       = all.slice(0, 5).map(sv => ({ ...sv, responses: countResp.get(sv.id, ...scope.params).cnt }));
 
     return ok(res, { totalSurveys, active, totalResponses: totalResp, recentSurveys: recent });
   } catch (e) { return err(res, 'Erro ao carregar dashboard', 500, e.message); }
@@ -118,7 +251,10 @@ function dataReport(lang, ctx) {
   const scale = (perguntas || []).filter(p => (p.tipo === 'scale' || p.tipo === 'rating') && typeof p.media === 'number' && p.media > 0).sort((a, b) => b.media - a.media);
   const best = scale[0], worst = scale.length > 1 ? scale[scale.length - 1] : null;
   const yn = (perguntas || []).filter(p => p.tipo === 'yesno' && typeof p.simPct === 'number');
-  const temas = (perguntas || []).flatMap(p => Array.isArray(p.respostasAbertas) ? p.respostasAbertas : []).slice(0, 5);
+  // Temas dos comentários abertos com contagem; sem eles, cai nas respostas cruas.
+  const temas = (ctx.temasComentarios && ctx.temasComentarios.length)
+    ? ctx.temasComentarios.slice(0, 8).map(t => `${t.tema} — ${t.count} menç${t.count === 1 ? 'ão' : 'ões'}`)
+    : (perguntas || []).flatMap(p => Array.isArray(p.respostasAbertas) ? p.respostasAbertas : []).slice(0, 5);
 
   const L = {
     pt: {
@@ -162,6 +298,64 @@ function dataReport(lang, ctx) {
   return { resumo: L.resumo, npsClassificacao: npsClass, pontosFortesArr: fortes, pontosAtencaoArr: atencao, recomendacoesArr: L.recom, temasAbertosArr: temas, prioridadeImediata: prio, benchmarkTexto: L.bench };
 }
 
+/* Agrupa comentários abertos por tema, com contagem. Roda sempre (sem depender da IA),
+   por palavras-chave do vocabulário de clima/gestão usado nas pesquisas da RGIS. */
+const SKIP_COMMENT = new Set(['true', 'false', 'sim', 'não', 'nao', 'yes', 'no']);
+
+const TEMAS = [
+  { tema: 'Liderança e gestão',        termos: ['gestor', 'gestão', 'lider', 'liderança', 'chefe', 'supervisor', 'coordenador', 'gerente'] },
+  { tema: 'Comunicação',               termos: ['comunica', 'informa', 'aviso', 'transparen', 'feedback', 'retorno'] },
+  { tema: 'Reconhecimento',            termos: ['reconhec', 'valoriza', 'elogio', 'mérito', 'merito', 'promoç', 'promoc'] },
+  { tema: 'Remuneração e benefícios',  termos: ['salário', 'salario', 'remunera', 'benefício', 'beneficio', 'vale', 'plano de saúde', 'plano de saude', 'pagamento'] },
+  { tema: 'Carga de trabalho',         termos: ['sobrecarga', 'carga', 'prazo', 'pressão', 'pressao', 'hora extra', 'cansa', 'exaust', 'estresse', 'stress'] },
+  { tema: 'Jornada e escala',          termos: ['escala', 'jornada', 'turno', 'horário', 'horario', 'folga', 'férias', 'ferias'] },
+  { tema: 'Treinamento e carreira',    termos: ['treinamento', 'capacita', 'curso', 'carreira', 'crescimento', 'desenvolv', 'aprend'] },
+  { tema: 'Equipe e relacionamento',   termos: ['equipe', 'colega', 'time', 'convív', 'conviv', 'relacionamento', 'respeito', 'clima'] },
+  { tema: 'Condições e estrutura',     termos: ['estrutura', 'equipamento', 'ferramenta', 'material', 'transporte', 'uniforme', 'refeit', 'instala'] },
+  { tema: 'Segurança e saúde',         termos: ['segurança', 'seguranca', 'acidente', 'epi', 'saúde', 'saude', 'risco', 'assédio', 'assedio'] },
+  { tema: 'Processos e sistemas',      termos: ['processo', 'sistema', 'burocra', 'procedimento', 'contagem', 'inventário', 'inventario'] },
+];
+
+function agruparComentarios(comentarios) {
+  const norm = s => String(s || '').toLowerCase();
+  const buckets = TEMAS.map(t => ({ tema: t.tema, count: 0, exemplos: [] }));
+  const outros = { tema: 'Outros', count: 0, exemplos: [] };
+  (comentarios || []).forEach(c => {
+    const txt = norm(c);
+    if (txt.trim().length < 3) return;
+    let matched = false;
+    TEMAS.forEach((t, i) => {
+      if (t.termos.some(k => txt.includes(k))) {
+        buckets[i].count++;
+        if (buckets[i].exemplos.length < 3) buckets[i].exemplos.push(String(c).slice(0, 240));
+        matched = true;
+      }
+    });
+    if (!matched) { outros.count++; if (outros.exemplos.length < 3) outros.exemplos.push(String(c).slice(0, 240)); }
+  });
+  return buckets.concat(outros).filter(b => b.count > 0).sort((a, b) => b.count - a.count);
+}
+
+/* Chamada à Anthropic com timeout — sem isso a requisição podia ficar pendurada até o
+   gateway derrubar a conexão, e o painel mostrava "Erro de conexão com o servidor". */
+async function callAnthropic(apiKey, body, timeoutMs) {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs || 55000);
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    if (!resp.ok) { const et = await resp.text().catch(() => ''); throw new Error('Anthropic ' + resp.status + ' ' + et.slice(0, 160)); }
+    return await resp.json();
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Tempo esgotado ao falar com a IA');
+    throw e;
+  } finally { clearTimeout(timer); }
+}
+
 async function getInsights(req, res) {
   try {
     const db     = getDB();
@@ -170,37 +364,60 @@ async function getInsights(req, res) {
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ? AND tenant_id = ?').get(id, req.user.tenant_id);
     if (!survey) return notFound(res, 'Pesquisa');
 
+    if (!canSeeSurvey(req.user, survey)) return err(res, 'Você não tem permissão para ver os resultados desta pesquisa', 403);
+    const scope = responseScopeSQL(db, req.user, 'r');
+    const respWhere = `r.survey_id = ? AND r.completed_at IS NOT NULL${scope.sql}`;
+
     const questions = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
-    const totalResp = db.prepare("SELECT COUNT(*) c FROM responses WHERE survey_id=? AND completed_at IS NOT NULL").get(survey.id).c;
-    const started   = db.prepare("SELECT COUNT(*) c FROM responses WHERE survey_id=?").get(survey.id).c;
+    const totalResp = db.prepare(`SELECT COUNT(*) c FROM responses r WHERE ${respWhere}`).get(survey.id, ...scope.params).c;
+    const started   = db.prepare(`SELECT COUNT(*) c FROM responses r WHERE r.survey_id=?${scope.sql}`).get(survey.id, ...scope.params).c;
+
+    const dimsByQuestion = {};
+    db.prepare(`SELECT qd.question_id, d.name, ds.name AS set_name FROM question_dimensions qd
+                JOIN dimensions d ON d.id = qd.dimension_id
+                LEFT JOIN dimension_sets ds ON ds.id = d.set_id
+                JOIN questions q ON q.id = qd.question_id WHERE q.survey_id = ?`).all(survey.id)
+      .forEach(r => (dimsByQuestion[r.question_id] = dimsByQuestion[r.question_id] || []).push(r.set_name ? `${r.set_name} › ${r.name}` : r.name));
+
+    const answersOf = db.prepare(`SELECT a.value_text, a.value_num FROM answers a
+      JOIN responses r ON r.id = a.response_id WHERE a.question_id = ? AND ${respWhere}`);
 
     let overallNps = null;
+    const todosComentarios = [];
     const perguntas = questions.map(q => {
-      const answers = db.prepare('SELECT value_text, value_num FROM answers WHERE question_id=?').all(q.id);
+      const answers = answersOf.all(q.id, survey.id, ...scope.params);
+      const dimensoes = dimsByQuestion[q.id] || [];
+      // Só entra como comentário aberto o que é texto de verdade: tokens de sim/não e
+      // números soltos não são tema.
+      const livres = answers.map(a => a.value_text)
+        .filter(v => v && String(v).trim().length > 2 && !SKIP_COMMENT.has(String(v).trim().toLowerCase()) && !/^\d+$/.test(String(v).trim()));
+      todosComentarios.push(...livres);
+      const base = { dimensoes, categoria: survey.category || null };
       if (q.type === 'nps') {
         const sc = answers.map(a => a.value_num).filter(v => v !== null);
         const n  = calculateNPS(sc);
         if (overallNps === null) overallNps = n.nps;
-        return { pergunta: q.text, tipo: 'nps', nps: n.nps, promotores: n.promoters, detratores: n.detractors };
+        return { ...base, pergunta: q.text, tipo: 'nps', nps: n.nps, promotores: n.promoters, detratores: n.detractors };
       }
       if (q.type === 'scale' || q.type === 'rating') {
         const v = answers.map(a => a.value_num).filter(x => x !== null);
-        return { pergunta: q.text, tipo: q.type, media: calculateAverage(v) };
+        return { ...base, pergunta: q.text, tipo: q.type, media: calculateAverage(v) };
       }
       if (q.type === 'yesno') {
         const v = answers.map(a => a.value_text);
         const yes = v.filter(x => x === 'true' || x === 'sim' || x === '1').length;
-        return { pergunta: q.text, tipo: 'yesno', simPct: v.length ? Math.round(yes / v.length * 100) : 0 };
+        return { ...base, pergunta: q.text, tipo: 'yesno', simPct: v.length ? Math.round(yes / v.length * 100) : 0 };
       }
       if (q.type === 'text') {
-        return { pergunta: q.text, tipo: 'text', respostasAbertas: answers.map(a => a.value_text).filter(Boolean).slice(0, 15) };
+        return { ...base, pergunta: q.text, tipo: 'text', respostasAbertas: livres.slice(0, 15) };
       }
-      return { pergunta: q.text, tipo: q.type };
+      return { ...base, pergunta: q.text, tipo: q.type };
     });
 
     const taxaConclusao = started > 0 ? Math.round((totalResp / started) * 100) : 0;
     const npsClass = overallNps === null ? '—' : overallNps >= 75 ? 'Excelente' : overallNps >= 50 ? 'Bom' : overallNps >= 0 ? 'Neutro' : 'Ruim';
-    const ctx = { surveyName: survey.name, totalResp, taxaConclusao, overallNps, npsClass, perguntas };
+    const temasComentarios = agruparComentarios(todosComentarios);
+    const ctx = { surveyName: survey.name, totalResp, taxaConclusao, overallNps, npsClass, perguntas, temasComentarios };
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey || apiKey === 'your-anthropic-key-here') {
@@ -231,22 +448,16 @@ async function getInsights(req, res) {
           bench: 'Comparación con benchmarks disponible con IA real.',
         },
       }[lang];
-      return ok(res, { insights: dataReport(lang, ctx), demo: true }, 'Insights gerados a partir dos dados (IA não configurada)');
+      return ok(res, { insights: dataReport(lang, ctx), temasComentarios, demo: true }, 'Insights gerados a partir dos dados (IA não configurada)');
     }
 
     try {
     const LANGNAME = { pt: 'português do Brasil', en: 'English', es: 'español' }[lang];
-    const summary = { nome: survey.name, categoria: survey.category, respostas: totalResp, taxaConclusao, npsGeral: overallNps, perguntas };
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6', max_tokens: 2000,
-        messages: [{ role: 'user', content: `Você é especialista em RH e People Analytics. Analise os dados REAIS desta pesquisa organizacional e gere um relatório executivo.\n\nDados:\n${JSON.stringify(summary, null, 2)}\n\nRetorne APENAS JSON puro (sem markdown) neste formato exato (mantenha as CHAVES exatamente como estão):\n{"resumo":"2-3 frases","npsClassificacao":"","pontosFortesArr":["..."],"pontosAtencaoArr":["..."],"recomendacoesArr":["..."],"temasAbertosArr":["..."],"prioridadeImediata":"...","benchmarkTexto":"..."}\n\nIMPORTANTE: Escreva TODOS os valores de texto em ${LANGNAME}. Não traduza as chaves do JSON. Deixe "npsClassificacao" como string vazia.` }]
-      })
-    });
-    if (!resp.ok) { const et = await resp.text().catch(() => ''); throw new Error('Anthropic ' + resp.status + ' ' + et.slice(0, 160)); }
-    const data = await resp.json();
+    const summary = { nome: survey.name, categoria: survey.category, respostas: totalResp, taxaConclusao, npsGeral: overallNps, perguntas, temasComentarios };
+    const data = await callAnthropic(apiKey, {
+      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5', max_tokens: 2500,
+      messages: [{ role: 'user', content: `Você é especialista em RH e People Analytics. Analise os dados REAIS desta pesquisa organizacional e gere um relatório executivo.\n\nDados:\n${JSON.stringify(summary, null, 2)}\n\nCada pergunta traz o campo "dimensoes" (a que dimensão/tema ela pertence) e há um bloco "temasComentarios" com os comentários abertos já agrupados por tema e contagem. Use ambos: analise por dimensão e por tema, não pergunta a pergunta.\n\nRetorne APENAS JSON puro (sem markdown) neste formato exato (mantenha as CHAVES exatamente como estão):\n{"resumo":"2-3 frases","npsClassificacao":"","pontosFortesArr":["..."],"pontosAtencaoArr":["..."],"recomendacoesArr":["..."],"temasAbertosArr":["tema — n menções: leitura"],"analiseDimensoesArr":["dimensão: leitura dos números"],"leituraResultados":"3-5 frases de rascunho de leitura dos resultados, pronto para colar no relatório","prioridadeImediata":"...","benchmarkTexto":"..."}\n\nIMPORTANTE: Escreva TODOS os valores de texto em ${LANGNAME}. Não traduza as chaves do JSON. Deixe "npsClassificacao" como string vazia.` }]
+    }, 55000);
     if (data && data.error) throw new Error(data.error.message || 'Anthropic error');
     let raw = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim();
     const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
@@ -254,11 +465,13 @@ async function getInsights(req, res) {
     const insights = JSON.parse(raw || '{}');
     if (!insights || typeof insights !== 'object' || !insights.resumo) throw new Error('Formato inesperado da IA');
     insights.npsClassificacao = npsClass;
-    ['pontosFortesArr', 'pontosAtencaoArr', 'recomendacoesArr', 'temasAbertosArr'].forEach(k => { if (!Array.isArray(insights[k])) insights[k] = insights[k] != null ? [String(insights[k])] : []; });
-    return ok(res, { insights }, 'Insights gerados com IA');
+    ['pontosFortesArr', 'pontosAtencaoArr', 'recomendacoesArr', 'temasAbertosArr', 'analiseDimensoesArr'].forEach(k => { if (!Array.isArray(insights[k])) insights[k] = insights[k] != null ? [String(insights[k])] : []; });
+    return ok(res, { insights, temasComentarios }, 'Insights gerados com IA');
     } catch (aiErr) {
-      console.warn('Insights IA falhou, usando relatorio de dados:', aiErr && aiErr.message);
-      return ok(res, { insights: dataReport(lang, ctx), aiUnavailable: true }, 'Insights gerados a partir dos dados');
+      // A IA indisponível nunca derruba o módulo: cai no relatório a partir dos números.
+      logger.warn('Insights IA falhou, usando relatorio de dados: ' + (aiErr && aiErr.message));
+      return ok(res, { insights: dataReport(lang, ctx), temasComentarios, aiUnavailable: true, aiError: aiErr && aiErr.message },
+        'Insights gerados a partir dos dados (a IA não respondeu a tempo)');
     }
   } catch (e) { return err(res, 'Erro ao gerar insights', 500, e.message); }
 }
@@ -269,14 +482,16 @@ function getSegments(req, res) {
     const db = getDB(); const t = req.user.tenant_id;
     const surveyId = req.query.surveyId;
     if (!surveyId) return badReq(res, 'surveyId é obrigatório');
-    const survey = db.prepare('SELECT id, name FROM surveys WHERE id=? AND tenant_id=?').get(surveyId, t);
+    const survey = db.prepare('SELECT id, name, category FROM surveys WHERE id=? AND tenant_id=?').get(surveyId, t);
     if (!survey) return notFound(res, 'Pesquisa');
+    if (!canSeeSurvey(req.user, survey)) return err(res, 'Você não tem permissão para ver os resultados desta pesquisa', 403);
+    const scope = responseScopeSQL(db, req.user, 'r');
 
     // ── participação (respostas concluídas) ──
     const distCount = {};
-    db.prepare("SELECT distrito_id, COUNT(*) c FROM responses WHERE survey_id=? AND completed_at IS NOT NULL AND distrito_id IS NOT NULL GROUP BY distrito_id").all(surveyId).forEach(r => distCount[r.distrito_id] = r.c);
+    db.prepare(`SELECT r.distrito_id, COUNT(*) c FROM responses r WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND r.distrito_id IS NOT NULL${scope.sql} GROUP BY r.distrito_id`).all(surveyId, ...scope.params).forEach(r => distCount[r.distrito_id] = r.c);
     const depCount = {};
-    db.prepare("SELECT departamento_id, COUNT(*) c FROM responses WHERE survey_id=? AND completed_at IS NOT NULL AND departamento_id IS NOT NULL GROUP BY departamento_id").all(surveyId).forEach(r => depCount[r.departamento_id] = r.c);
+    db.prepare(`SELECT r.departamento_id, COUNT(*) c FROM responses r WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND r.departamento_id IS NOT NULL${scope.sql} GROUP BY r.departamento_id`).all(surveyId, ...scope.params).forEach(r => depCount[r.departamento_id] = r.c);
 
     // ── nota por segmento ──
     // Prioridade da métrica: (1) pontuação por opção (%), (2) NPS, (3) média de escala/rating.
@@ -299,7 +514,7 @@ function getSegments(req, res) {
       const ids = scoredQ.map(q => q.id); const ph = ids.map(() => '?').join(',');
       const rows = db.prepare(`SELECT r.distrito_id dd, r.departamento_id pp, COALESCE(r.weight,1) w, a.question_id qid, a.value_num vn, a.value_json vj
         FROM answers a JOIN responses r ON a.response_id = r.id
-        WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND a.question_id IN (${ph})`).all(surveyId, ...ids);
+        WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND a.question_id IN (${ph})${scope.sql}`).all(surveyId, ...ids, ...scope.params);
       rows.forEach(row => {
         const q = qmap[row.qid]; if (!q) return;
         let earned = null;
@@ -316,7 +531,7 @@ function getSegments(req, res) {
       const ids = metric === 'nps' ? npsIds : scaleIds; const ph = ids.map(() => '?').join(',');
       const rows = db.prepare(`SELECT r.distrito_id dd, r.departamento_id pp, COALESCE(r.weight,1) w, a.value_num v
         FROM answers a JOIN responses r ON a.response_id = r.id
-        WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND a.value_num IS NOT NULL AND a.question_id IN (${ph})`).all(surveyId, ...ids);
+        WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND a.value_num IS NOT NULL AND a.question_id IN (${ph})${scope.sql}`).all(surveyId, ...ids, ...scope.params);
       rows.forEach(row => pushItem(row.dd, row.pp, row.v, row.w));
     }
     const scoreOf = (items) => {
@@ -326,9 +541,12 @@ function getSegments(req, res) {
       return { score: calculateAverageWeighted(items), n: items.length, detail: null };
     };
 
+    const allowed       = scopeDistritos(db, req.user);
     const regionais     = db.prepare('SELECT id, name FROM regionais WHERE tenant_id=? ORDER BY name').all(t);
-    const distritos     = db.prepare('SELECT id, name, regional_id, meta FROM distritos WHERE tenant_id=? ORDER BY name').all(t);
-    const departamentos = db.prepare('SELECT id, name, meta FROM departamentos WHERE tenant_id=? ORDER BY name').all(t);
+    let   distritos     = db.prepare('SELECT id, name, regional_id, meta FROM distritos WHERE tenant_id=? ORDER BY name').all(t);
+    if (allowed) distritos = distritos.filter(d => allowed.includes(d.id));
+    // Departamentos são um corte transversal: fora do escopo por distrito, ficam ocultos.
+    const departamentos = allowed ? [] : db.prepare('SELECT id, name, meta FROM departamentos WHERE tenant_id=? ORDER BY name').all(t);
     const pct = (r, m) => m > 0 ? Math.round((r / m) * 100) : null;
 
     const distOut = distritos.map(d => { const sc = scoreOf(distItems[d.id]); return { id: d.id, name: d.name, regional_id: d.regional_id, responses: distCount[d.id] || 0, meta: d.meta || 0, pct: pct(distCount[d.id] || 0, d.meta || 0), score: sc.score, n: sc.n }; });
@@ -560,8 +778,10 @@ function getSegmentQuestions(req, res) {
     const db = getDB(); const t = req.user.tenant_id;
     const surveyId = req.query.surveyId;
     if (!surveyId) return badReq(res, 'surveyId é obrigatório');
-    const survey = db.prepare('SELECT id, name FROM surveys WHERE id=? AND tenant_id=?').get(surveyId, t);
+    const survey = db.prepare('SELECT id, name, category FROM surveys WHERE id=? AND tenant_id=?').get(surveyId, t);
     if (!survey) return notFound(res, 'Pesquisa');
+    if (!canSeeSurvey(req.user, survey)) return err(res, 'Você não tem permissão para ver os resultados desta pesquisa', 403);
+    const scope = responseScopeSQL(db, req.user, 'r');
 
     const PJ = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
     const scoredQ = db.prepare("SELECT id, text, type, options, option_points FROM questions WHERE survey_id=? AND option_points IS NOT NULL").all(surveyId)
@@ -573,7 +793,7 @@ function getSegmentQuestions(req, res) {
     const ids = scoredQ.map(q => q.id); const ph = ids.map(() => '?').join(',');
     const rows = db.prepare(`SELECT r.distrito_id dd, r.departamento_id pp, a.question_id qid, a.value_num vn, a.value_json vj
       FROM answers a JOIN responses r ON a.response_id = r.id
-      WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND a.question_id IN (${ph})`).all(surveyId, ...ids);
+      WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND a.question_id IN (${ph})${scope.sql}`).all(surveyId, ...ids, ...scope.params);
 
     const distB = {}, depB = {}, corpB = {};
     const add = (obj, qid, e) => { const k = obj[qid] || (obj[qid] = { sum: 0, n: 0 }); k.sum += e; k.n++; };
@@ -596,9 +816,11 @@ function getSegmentQuestions(req, res) {
       return pctMap(agg);
     };
 
+    const allowed       = scopeDistritos(db, req.user);
     const regionais     = db.prepare('SELECT id, name FROM regionais WHERE tenant_id=? ORDER BY name').all(t);
-    const distritos     = db.prepare('SELECT id, name, regional_id FROM distritos WHERE tenant_id=? ORDER BY name').all(t);
-    const departamentos = db.prepare('SELECT id, name FROM departamentos WHERE tenant_id=? ORDER BY name').all(t);
+    let   distritos     = db.prepare('SELECT id, name, regional_id FROM distritos WHERE tenant_id=? ORDER BY name').all(t);
+    if (allowed) distritos = distritos.filter(d => allowed.includes(d.id));
+    const departamentos = allowed ? [] : db.prepare('SELECT id, name FROM departamentos WHERE tenant_id=? ORDER BY name').all(t);
 
     const regOut = regionais.map(rg => {
       const kids = distritos.filter(d => d.regional_id === rg.id);

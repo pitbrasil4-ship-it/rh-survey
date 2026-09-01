@@ -9,6 +9,7 @@ router.get('/',                                     ctrl.list);
 router.post('/',        authorize('admin','manager'), auditLog('survey.create','survey'), ctrl.create);
 router.get('/:id',                                  ctrl.getOne);
 router.put('/:id',      authorize('admin','manager'), auditLog('survey.update','survey'), ctrl.update);
+router.post('/:id/duplicate', authorize('admin','manager'), auditLog('survey.duplicate','survey'), ctrl.duplicate);
 router.post('/:id/publish', authorize('admin','manager'), auditLog('survey.publish','survey'), ctrl.publish);
 router.put('/:id/deadline', authorize('admin','manager'), auditLog('survey.deadline','survey'), ctrl.setDeadline);
 router.get('/:id/segment-links',  authorize('admin','manager'), ctrl.listSegmentLinks);

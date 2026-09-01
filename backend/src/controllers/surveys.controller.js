@@ -4,6 +4,8 @@ const { getDB }      = require('../config/database');
 const { ok, created, err, notFound, badReq } = require('../utils/response');
 const logger         = require('../utils/logger');
 const { translateSurvey, aiEnabled } = require('../utils/translate');
+const Q              = require('../utils/questions');
+const { visibleSurveyIds, canSeeSurvey } = require('../utils/scope');
 
 // Grava no banco as traduções (EN/ES) de uma pesquisa já criada e suas perguntas.
 function applyTranslation(db, surveyId, qIds, tr) {
@@ -24,13 +26,15 @@ function applyTranslation(db, surveyId, qIds, tr) {
 function list(req, res) {
   try {
     const db      = getDB();
-    const surveys = db.prepare(`
+    const rows = db.prepare(`
       SELECT s.*, u.name as created_by_name,
              (SELECT COUNT(*) FROM questions WHERE survey_id = s.id) as question_count,
              (SELECT COUNT(*) FROM responses WHERE survey_id = s.id AND completed_at IS NOT NULL) as response_count
       FROM surveys s LEFT JOIN users u ON s.created_by_id = u.id
       WHERE s.tenant_id = ? AND s.status != 'excluido' ORDER BY s.created_at DESC
     `).all(req.user.tenant_id);
+    // Categorias suprimidas para este usuário (ex.: Gestor não vê a Avaliação de Gestores).
+    const surveys = rows.filter(s => canSeeSurvey(req.user, s));
     return ok(res, { surveys, total: surveys.length });
   } catch (e) { return err(res, 'Erro ao listar pesquisas', 500, e.message); }
 }
@@ -38,29 +42,22 @@ function list(req, res) {
 /* POST /surveys */
 async function create(req, res) {
   try {
-    const { name, description, category, targetGroup, anonymous, deadline, questions = [], lgpdBasis } = req.body;
+    const { name, description, category, targetGroup, anonymous, deadline, questions = [], lgpdBasis,
+            onePerDevice, maxResponses } = req.body;
     if (!name) return badReq(res, 'Nome da pesquisa é obrigatório');
 
     const db       = getDB();
     const surveyId = uuid();
-    db.prepare(`INSERT INTO surveys (id, tenant_id, created_by_id, name, description, category, target_group, anonymous, deadline, lgpd_basis, public_token)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+    db.prepare(`INSERT INTO surveys (id, tenant_id, created_by_id, name, description, category, target_group, anonymous, deadline, lgpd_basis, public_token, one_per_device, max_responses)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       surveyId, req.user.tenant_id, req.user.id,
       name, description || null, category || null,
       targetGroup || null, anonymous !== false ? 1 : 0,
-      deadline || null, lgpdBasis || 'consentimento', uuid()
+      deadline || null, lgpdBasis || 'consentimento', uuid(),
+      onePerDevice ? 1 : 0, maxResponses > 0 ? Math.round(maxResponses) : null
     );
 
-    const qIds = [];
-    if (questions.length > 0) {
-      const stmt = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
-      const J = a => (Array.isArray(a) && a.length) ? JSON.stringify(a) : null;
-      questions.forEach((q, i) => {
-        const qid = uuid(); qIds.push(qid);
-        stmt.run(qid, surveyId, i+1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es),
-          (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null);
-      });
-    }
+    const qIds = Q.insertQuestions(db, surveyId, questions, uuid);
 
     // Tradução automática (IA) do conteúdo para EN/ES ao salvar.
     // Não bloqueia nem invalida a criação se a IA estiver em modo demo ou falhar.
@@ -87,8 +84,6 @@ function bulkCreate(req, res) {
     const db  = getDB();
     const insS = db.prepare(`INSERT INTO surveys (id, tenant_id, created_by_id, name, category, target_group, anonymous, deadline, lgpd_basis, public_token, status, published_at)
                              VALUES (?,?,?,?,?,?,?,?,?,?, 'ativo', datetime('now'))`);
-    const insQ = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, options, option_points) VALUES (?,?,?,?,?,?,?)');
-    const J = a => (Array.isArray(a) && a.length) ? JSON.stringify(a) : null;
     const out = [];
     db.exec('BEGIN');
     try {
@@ -96,8 +91,7 @@ function bulkCreate(req, res) {
         const sid = uuid(); const tok = uuid();
         insS.run(sid, req.user.tenant_id, req.user.id, `${(baseName || 'Avaliação').trim()} — ${nm}`, category || null, nm,
           anonymous !== false ? 1 : 0, deadline || null, 'consentimento', tok);
-        questions.forEach((q, i) => insQ.run(uuid(), sid, i + 1, q.type, q.text, J(q.options),
-          (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null));
+        Q.insertQuestions(db, sid, questions, uuid);
         out.push({ name: nm, surveyId: sid, token: tok });
       }
       db.exec('COMMIT');
@@ -133,8 +127,15 @@ function getOne(req, res) {
     const db     = getDB();
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ? AND tenant_id = ?').get(req.params.id, req.user.tenant_id);
     if (!survey) return notFound(res, 'Pesquisa');
-    const questions = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
-    return ok(res, { survey, questions });
+    const rows = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
+    const dims = {};
+    db.prepare(`SELECT qd.question_id, qd.dimension_id FROM question_dimensions qd
+                JOIN questions q ON q.id = qd.question_id WHERE q.survey_id = ?`).all(survey.id)
+      .forEach(r => (dims[r.question_id] = dims[r.question_id] || []).push(r.dimension_id));
+    const questions = rows.map(r => ({ ...Q.fromRow(r), dimensions: dims[r.id] || [] }));
+    const responseCount = db.prepare('SELECT COUNT(*) c FROM responses WHERE survey_id = ?').get(survey.id).c;
+    // Com respostas já coletadas as perguntas ficam travadas — editar apagaria a apuração.
+    return ok(res, { survey, questions, responseCount, questionsLocked: responseCount > 0 });
   } catch (e) { return err(res, 'Erro ao buscar pesquisa', 500, e.message); }
 }
 
@@ -147,8 +148,17 @@ function update(req, res) {
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ? AND tenant_id = ?').get(req.params.id, req.user.tenant_id);
     if (!survey) return notFound(res, 'Pesquisa');
 
-    const { name, description, category, targetGroup, anonymous, deadline, status } = req.body;
-    db.prepare(`UPDATE surveys SET name=?, description=?, category=?, target_group=?, anonymous=?, deadline=?, status=? WHERE id=?`).run(
+    const { name, description, category, targetGroup, anonymous, deadline, status,
+            questions, onePerDevice, maxResponses } = req.body;
+
+    // Trocar as perguntas de uma pesquisa que já tem resposta invalidaria a apuração.
+    if (Array.isArray(questions)) {
+      const respCount = db.prepare('SELECT COUNT(*) c FROM responses WHERE survey_id = ?').get(survey.id).c;
+      if (respCount > 0) return badReq(res, 'Esta pesquisa já tem respostas: as perguntas não podem ser alteradas. Use Duplicar para criar uma nova versão.');
+      if (!questions.length) return badReq(res, 'A pesquisa precisa de ao menos uma pergunta');
+    }
+
+    db.prepare(`UPDATE surveys SET name=?, description=?, category=?, target_group=?, anonymous=?, deadline=?, status=?, one_per_device=?, max_responses=? WHERE id=?`).run(
       name        ?? survey.name,
       description ?? survey.description,
       category    ?? survey.category,
@@ -156,10 +166,51 @@ function update(req, res) {
       anonymous === undefined ? survey.anonymous : (anonymous ? 1 : 0),
       deadline    ?? survey.deadline,
       status      ?? survey.status,
+      onePerDevice === undefined ? survey.one_per_device : (onePerDevice ? 1 : 0),
+      maxResponses === undefined ? survey.max_responses : (maxResponses > 0 ? Math.round(maxResponses) : null),
       req.params.id
     );
+    if (Array.isArray(questions)) Q.replaceQuestions(db, survey.id, questions, uuid);
     return ok(res, { id: req.params.id }, 'Pesquisa atualizada');
   } catch (e) { return err(res, 'Erro ao atualizar pesquisa', 500, e.message); }
+}
+
+/* POST /surveys/:id/duplicate — copia a pesquisa e todas as perguntas como novo rascunho.
+   As respostas NÃO são copiadas: a cópia nasce zerada, com link público próprio. */
+function duplicate(req, res) {
+  try {
+    const db     = getDB();
+    const survey = db.prepare("SELECT * FROM surveys WHERE id=? AND tenant_id=? AND status != 'excluido'").get(req.params.id, req.user.tenant_id);
+    if (!survey) return notFound(res, 'Pesquisa');
+
+    const newId = uuid();
+    const name  = String(req.body.name || '').trim() || `${survey.name} (cópia)`;
+    db.exec('BEGIN');
+    try {
+      db.prepare(`INSERT INTO surveys (id, tenant_id, created_by_id, name, name_en, name_es, description, description_en, description_es,
+                    category, target_group, anonymous, deadline, lgpd_basis, public_token, status, one_per_device, max_responses)
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'rascunho', ?, ?)`).run(
+        newId, survey.tenant_id, req.user.id, name, survey.name_en, survey.name_es,
+        survey.description, survey.description_en, survey.description_es,
+        survey.category, survey.target_group, survey.anonymous, survey.deadline,
+        survey.lgpd_basis, uuid(), survey.one_per_device || 0, survey.max_responses ?? null);
+
+      const rows = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
+      const ins  = db.prepare(Q.INSERT_SQL);
+      const link = db.prepare('INSERT OR IGNORE INTO question_dimensions (question_id, dimension_id) VALUES (?,?)');
+      const getDims = db.prepare('SELECT dimension_id FROM question_dimensions WHERE question_id = ?');
+      rows.forEach((r, i) => {
+        const qid = uuid();
+        ins.run(...Q.insertParams(qid, newId, { ...r, order_num: i + 1 }));
+        getDims.all(r.id).forEach(d => link.run(qid, d.dimension_id));
+      });
+      db.exec('COMMIT');
+    } catch (e) { try { db.exec('ROLLBACK'); } catch {} throw e; }
+
+    const copy = db.prepare('SELECT * FROM surveys WHERE id = ?').get(newId);
+    logger.info('Pesquisa duplicada', { by: req.user.id, from: survey.id, to: newId });
+    return created(res, { survey: copy }, 'Pesquisa duplicada como rascunho');
+  } catch (e) { return err(res, 'Erro ao duplicar pesquisa', 500, e.message); }
 }
 
 /* POST /surveys/:id/publish */
@@ -199,14 +250,24 @@ async function generateAI(req, res) {
       ]}, 'Perguntas geradas (modo demo — configure ANTHROPIC_API_KEY para IA real)');
     }
 
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'x-api-key': apiKey, 'anthropic-version':'2023-06-01' },
-      body: JSON.stringify({
-        model:'claude-sonnet-4-6', max_tokens:1000,
-        messages:[{ role:'user', content:`Gere 6 perguntas de avaliação de RH para: "${context}". Retorne APENAS JSON: [{"text":"...","type":"nps|scale|multiple|text|rating|yesno"}]` }]
-      })
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 45000);
+    let resp;
+    try {
+      resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'x-api-key': apiKey, 'anthropic-version':'2023-06-01' },
+        body: JSON.stringify({
+          model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5', max_tokens:1500,
+          messages:[{ role:'user', content:`Gere 6 perguntas de avaliação de RH para: "${context}". Para os tipos com alternativas (scale, multiple, dropdown) inclua também "options" com os rótulos. Retorne APENAS JSON: [{"text":"...","type":"nps|scale|multiple|dropdown|text|rating|yesno","options":["..."]}]` }]
+        }),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      if (e.name === 'AbortError') return err(res, 'A IA não respondeu a tempo. Tente novamente.', 504);
+      throw e;
+    } finally { clearTimeout(timer); }
+    if (!resp.ok) { const et = await resp.text().catch(() => ''); return err(res, 'A IA recusou a solicitação. Tente novamente.', 502, et.slice(0, 200)); }
     const data      = await resp.json();
     const raw       = (data.content?.[0]?.text || '[]').replace(/\`\`\`json|\`\`\`/g,'').trim();
     const questions = JSON.parse(raw);
@@ -276,4 +337,4 @@ function segmentLinks(req, res) {
   } catch (e) { return err(res, 'Erro ao gerar links', 500, e.message); }
 }
 
-module.exports = { list, create, getOne, update, publish, remove, generateAI, translateExisting, setDeadline, listSegmentLinks, segmentLinks, bulkCreate };
+module.exports = { list, create, getOne, update, duplicate, publish, remove, generateAI, translateExisting, setDeadline, listSegmentLinks, segmentLinks, bulkCreate };

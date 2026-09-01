@@ -16,15 +16,36 @@ function tempPassword() {
   return p + '@' + new Date().getFullYear();
 }
 
+/* Valida um id de regional/distrito dentro do tenant; devolve null se não existir. */
+function scopeValue(db, tenantId, table, id) {
+  if (!id) return null;
+  const row = db.prepare(`SELECT id FROM ${table} WHERE id=? AND tenant_id=?`).get(id, tenantId);
+  return row ? row.id : null;
+}
+
+/* Categorias de pesquisa cujos resultados ficam ocultos para o usuário. */
+function categoriesValue(list) {
+  if (!Array.isArray(list)) return null;
+  const clean = [...new Set(list.map(c => String(c || '').trim()).filter(Boolean))];
+  return clean.length ? JSON.stringify(clean) : null;
+}
+
 /* GET /users — list all users in the tenant (admin only) */
 function list(req, res) {
   try {
     const db = getDB();
     const rows = db.prepare(
-      `SELECT id, name, email, role, active, two_fa_enabled, last_login, created_at
-       FROM users WHERE tenant_id = ? ORDER BY created_at DESC`
+      `SELECT u.id, u.name, u.email, u.role, u.active, u.two_fa_enabled, u.last_login, u.created_at,
+              u.regional_id, u.distrito_id, u.blocked_categories,
+              r.name AS regional_name, d.name AS distrito_name
+       FROM users u
+       LEFT JOIN regionais r ON r.id = u.regional_id
+       LEFT JOIN distritos d ON d.id = u.distrito_id
+       WHERE u.tenant_id = ? ORDER BY u.created_at DESC`
     ).all(req.user.tenant_id);
-    return ok(res, { users: rows, total: rows.length });
+    const PJ = v => { try { return v ? JSON.parse(v) : []; } catch { return []; } };
+    const users = rows.map(u => ({ ...u, blocked_categories: PJ(u.blocked_categories) }));
+    return ok(res, { users, total: users.length });
   } catch (e) {
     logger.error('users.list error', { error: e.message });
     return err(res, 'Erro ao listar usuários', 500, e.message);
@@ -34,7 +55,7 @@ function list(req, res) {
 /* POST /users — create a user with a defined role (admin only) */
 async function create(req, res) {
   try {
-    const { name, email, role, password } = req.body;
+    const { name, email, role, password, regionalId, distritoId, blockedCategories } = req.body;
     if (!name || !email)          return badReq(res, 'Nome e e-mail são obrigatórios');
     if (!VALID_ROLES.includes(role)) return badReq(res, `Papel inválido. Use: ${VALID_ROLES.join(', ')}`);
 
@@ -48,15 +69,19 @@ async function create(req, res) {
     const id    = uuid();
 
     db.prepare(
-      `INSERT INTO users (id, tenant_id, name, email, password_hash, role, must_change_password)
-       VALUES (?,?,?,?,?,?,1)`
-    ).run(id, req.user.tenant_id, name, email, hash, role);
+      `INSERT INTO users (id, tenant_id, name, email, password_hash, role, must_change_password,
+                          regional_id, distrito_id, blocked_categories)
+       VALUES (?,?,?,?,?,?,1,?,?,?)`
+    ).run(id, req.user.tenant_id, name, email, hash, role,
+      scopeValue(db, req.user.tenant_id, 'regionais', regionalId),
+      scopeValue(db, req.user.tenant_id, 'distritos', distritoId),
+      categoriesValue(blockedCategories));
 
     logger.info('Usuário criado', { by: req.user.id, newUser: id, role });
 
     // Return the temporary password ONLY when the system generated it,
     // so the admin can share it for first access.
-    const payload = { user: { id, name, email, role, active: 1 } };
+    const payload = { user: { id, name, email, role, active: 1, regional_id: regionalId || null, distrito_id: distritoId || null } };
     if (!password) payload.temporaryPassword = plain;
 
     // Envio opcional do e-mail de acesso (automático se RESEND_API_KEY estiver configurada).
@@ -82,7 +107,7 @@ function update(req, res) {
     const user = db.prepare('SELECT * FROM users WHERE id = ? AND tenant_id = ?').get(req.params.id, req.user.tenant_id);
     if (!user) return notFound(res, 'Usuário');
 
-    const { name, role, active } = req.body;
+    const { name, role, active, regionalId, distritoId, blockedCategories } = req.body;
     if (role !== undefined && !VALID_ROLES.includes(role)) return badReq(res, `Papel inválido. Use: ${VALID_ROLES.join(', ')}`);
 
     // Prevent an admin from demoting or deactivating themselves (lockout guard).
@@ -91,10 +116,13 @@ function update(req, res) {
       if (active === false || active === 0)        return forbidden(res, 'Você não pode desativar a sua própria conta');
     }
 
-    db.prepare('UPDATE users SET name=?, role=?, active=? WHERE id=?').run(
+    db.prepare('UPDATE users SET name=?, role=?, active=?, regional_id=?, distrito_id=?, blocked_categories=? WHERE id=?').run(
       name ?? user.name,
       role ?? user.role,
       active === undefined ? user.active : (active ? 1 : 0),
+      regionalId === undefined ? user.regional_id : scopeValue(db, req.user.tenant_id, 'regionais', regionalId),
+      distritoId === undefined ? user.distrito_id : scopeValue(db, req.user.tenant_id, 'distritos', distritoId),
+      blockedCategories === undefined ? user.blocked_categories : categoriesValue(blockedCategories),
       req.params.id
     );
     return ok(res, { id: req.params.id }, 'Usuário atualizado');

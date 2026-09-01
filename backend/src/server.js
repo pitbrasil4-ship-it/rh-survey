@@ -36,14 +36,22 @@ async function start() {
 
   await ensureSeed();
 
+  // Lembretes agendados: verifica a cada minuto se algum venceu e dispara para
+  // quem ainda não respondeu. Leve o bastante para rodar no próprio processo.
+  const { runDueReminders } = require('./controllers/invitations.controller');
+  const reminderTimer = setInterval(() => {
+    runDueReminders().catch(e => logger.warn('Falha ao processar lembretes agendados: ' + e.message));
+  }, 60000);
+  reminderTimer.unref();
+
   const server = app.listen(PORT, '0.0.0.0', () => {
     logger.info('RH Survey API running on port ' + PORT);
     logger.info('Health: http://0.0.0.0:' + PORT + '/health');
     logger.info('LGPD compliant | Helmet + Rate Limiting active');
   });
 
-  process.on('SIGTERM', () => { server.close(() => { logger.info('Server closed'); process.exit(0); }); });
-  process.on('SIGINT',  () => { server.close(() => { logger.info('Server closed'); process.exit(0); }); });
+  process.on('SIGTERM', () => { clearInterval(reminderTimer); server.close(() => { logger.info('Server closed'); process.exit(0); }); });
+  process.on('SIGINT',  () => { clearInterval(reminderTimer); server.close(() => { logger.info('Server closed'); process.exit(0); }); });
 }
 
 start();

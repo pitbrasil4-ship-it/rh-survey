@@ -157,6 +157,72 @@ function initSchema() {
     id TEXT PRIMARY KEY, tenant_id TEXT, survey_id TEXT, token TEXT UNIQUE,
     distrito_id TEXT, departamento_id TEXT, created_at TEXT DEFAULT (datetime('now'))
   )`); } catch (e) {}
+
+  // ── Editor de perguntas: configuração por tipo, lógica condicional e taxonomias ──
+  // config: JSON por tipo de pergunta (matriz, lista suspensa, bloco de formulário,
+  // opção neutra, opção "Outros", nº de pontos da Likert). Ver utils/questions.js.
+  try { db.exec("ALTER TABLE questions ADD COLUMN config TEXT"); } catch (e) {}
+  // logic: JSON { showIf: { questionId, options:[] }, endIf: { options:[] } }
+  try { db.exec("ALTER TABLE questions ADD COLUMN logic TEXT"); } catch (e) {}
+  // Identificador externo da pergunta (coluna ID da planilha de importação).
+  try { db.exec("ALTER TABLE questions ADD COLUMN external_id TEXT"); } catch (e) {}
+
+  // ── Conjuntos de dimensões (taxonomias) e vínculo N:N com as perguntas ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS dimension_sets (
+    id TEXT PRIMARY KEY, tenant_id TEXT, name TEXT NOT NULL, description TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS dimensions (
+    id TEXT PRIMARY KEY, tenant_id TEXT, set_id TEXT, name TEXT NOT NULL,
+    description TEXT, order_num INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS question_dimensions (
+    question_id TEXT, dimension_id TEXT,
+    PRIMARY KEY (question_id, dimension_id)
+  )`); } catch (e) {}
+
+  // ── Campanhas (instrumento x período) e aplicações (campanha x distrito) ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS survey_campaigns (
+    id TEXT PRIMARY KEY, tenant_id TEXT, survey_id TEXT, name TEXT NOT NULL,
+    starts_at TEXT, ends_at TEXT, status TEXT DEFAULT 'planejada',
+    created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS campaign_applications (
+    id TEXT PRIMARY KEY, campaign_id TEXT, distrito_id TEXT, meta INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec("ALTER TABLE responses ADD COLUMN campaign_id TEXT"); } catch (e) {}
+
+  // ── Convites individuais: envio pelo servidor, rastreio e lembretes ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS invitations (
+    id TEXT PRIMARY KEY, tenant_id TEXT, survey_id TEXT, campaign_id TEXT,
+    respondent_id TEXT, name TEXT, email TEXT, token TEXT UNIQUE,
+    distrito_id TEXT, departamento_id TEXT,
+    status TEXT DEFAULT 'pendente', sent_at TEXT, opened_at TEXT, responded_at TEXT,
+    reminders_sent INTEGER DEFAULT 0, last_reminder_at TEXT, last_error TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS reminder_schedules (
+    id TEXT PRIMARY KEY, tenant_id TEXT, survey_id TEXT, run_at TEXT,
+    sent_at TEXT, sent_count INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec("ALTER TABLE responses ADD COLUMN invitation_id TEXT"); } catch (e) {}
+
+  // ── Escopo do usuário (Gestor vê apenas o próprio distrito/regional) ──
+  try { db.exec("ALTER TABLE users ADD COLUMN regional_id TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN distrito_id TEXT"); } catch (e) {}
+  // JSON com as categorias de pesquisa cujos resultados ficam ocultos para o usuário.
+  try { db.exec("ALTER TABLE users ADD COLUMN blocked_categories TEXT"); } catch (e) {}
+
+  // ── Controle de duplicidade e limite de respostas ──
+  try { db.exec("ALTER TABLE surveys ADD COLUMN one_per_device INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE surveys ADD COLUMN max_responses INTEGER"); } catch (e) {}
+  try { db.exec("ALTER TABLE responses ADD COLUMN device_id TEXT"); } catch (e) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_responses_device ON responses(survey_id, device_id)"); } catch (e) {}
+  // Distrito do respondente (liga o cadastro de Respondentes à Estrutura).
+  try { db.exec("ALTER TABLE respondents ADD COLUMN distrito_id TEXT"); } catch (e) {}
 }
 
 module.exports = { getDB };
