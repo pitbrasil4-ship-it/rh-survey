@@ -8,7 +8,7 @@ import {
   Trash2, X, Loader2, Target, Award, Mail, Link2, ChevronDown, ArrowUpRight,
   UserCheck, Building2, MessageSquare, ChevronRight, Shield, Lock, AlertTriangle,
   FileText, Key, Activity, EyeOff, Database, RefreshCw, Info,
-  FileCheck, Zap, MessageCircle, BarChart2, Star, LogOut, Menu
+  FileCheck, Zap, MessageCircle, BarChart2, Star, LogOut, Menu, Copy, ListChecks, Layers, Megaphone, MailCheck
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -39,6 +39,9 @@ function mapTipoToType(raw) {
   if (t.includes("escala") || t.includes("likert")) return { type: "scale", unknown: false };
   if (t.includes("estrela") || t.includes("nota") || t === "rating") return { type: "rating", unknown: false };
   if (t.includes("sim") || t.includes("não") || t.includes("nao") || t.includes("boolean") || t.includes("yesno")) return { type: "yesno", unknown: false };
+  if (t.includes("matriz") || t.includes("matrix") || t.includes("grade")) return { type: "matrix", unknown: false };
+  if (t.includes("suspensa") || t.includes("dropdown") || t.includes("lista") || t.includes("combo")) return { type: "dropdown", unknown: false };
+  if (t.includes("formul") || t.includes("form") || t.includes("cadastro") || t.includes("contato")) return { type: "form", unknown: false };
   if (t.includes("múlt") || t.includes("mult") || t.includes("escolha") || t.includes("checkbox") || t.includes("seleç") || t.includes("selec")) return { type: "multiple", unknown: false };
   if (t.includes("text") || t.includes("aberta") || t.includes("disserta") || t.includes("livre") || t.includes("coment")) return { type: "text", unknown: false };
   return { type: "text", unknown: true };
@@ -82,15 +85,39 @@ function extractOptionPoints(labels) {
   return { options: opts.length ? opts : null, points: any ? pts : null };
 }
 
+/* Lê a coluna "Obrigatória" da planilha (sim/não, 1/0, true/false). */
+function parseRequired(raw) {
+  const v = (raw == null ? "" : String(raw)).trim().toLowerCase();
+  if (!v) return undefined;
+  if (["não", "nao", "n", "0", "false", "no", "opcional"].includes(v)) return false;
+  if (["sim", "s", "1", "true", "yes", "obrigatória", "obrigatoria"].includes(v)) return true;
+  return undefined;
+}
+
+/* Modelo de planilha com todas as colunas aceitas na importação. */
+function downloadImportTemplate() {
+  downloadCSV("modelo-importacao-perguntas.csv", [
+    ["ID", "Pergunta", "Pergunta (EN)", "Pergunta (ES)", "Tipo", "Opções", "Pesos", "Obrigatória", "Dimensões"],
+    ["Q01", "Meu gestor me mantém informado.", "My manager keeps me informed.", "Mi gerente me mantiene informado.",
+     "Escala Likert", "Nunca;Quase nunca;Às vezes;Quase sempre;Sempre", "0;25;50;75;100", "Sim", "Liderança;Suporte do Gestor"],
+    ["Q02", "O que mais contribui para o seu bem-estar?", "", "", "Múltipla Escolha", "Equipe;Autonomia;Reconhecimento", "", "Não", "Reconhecimento"],
+    ["Q03", "Qual o seu turno?", "", "", "Lista Suspensa", "Manhã;Tarde;Noite", "", "Sim", ""],
+    ["Q04", "Avalie os aspectos abaixo.", "", "", "Matriz", "Ruim;Regular;Bom;Excelente", "0;33;66;100", "Sim", "Condições de Trabalho"],
+    ["Q05", "Deixe seus comentários.", "", "", "Texto Aberto", "", "", "Não", ""],
+  ]);
+}
+
 function rowsToQuestions(rows, delim) {
   if (!rows || rows.length === 0) return { questions: [], skipped: 0, unknown: 0 };
   const norm = s => (s == null ? "" : String(s)).trim().toLowerCase();
   const header = rows[0].map(norm);
   const looksHeader = header.some(h => h.includes("pergunta") || h.includes("tipo") || h.startsWith("op") || h.includes("texto") || h.includes("question"));
-  const isOpt = h => h.includes("opç") || h.includes("opc") || h.startsWith("op") || h.includes("alternativa") || h.includes("escolha");
+  const isOpt = h => (h.includes("opç") || h.includes("opc") || h.startsWith("op") || h.includes("alternativa") || h.includes("escolha")) && !h.includes("peso");
   const isEn  = h => h.includes("(en)") || h.includes("english") || h.includes("inglês") || h.includes("ingles") || h.includes(" en)") || h.endsWith(" en");
   const isEs  = h => h.includes("(es)") || h.includes("español") || h.includes("espanol") || h.includes("espanhol") || h.includes("spanish") || h.includes("pregunta") || h.includes(" es)") || h.endsWith(" es");
   let pIdx = 0, tIdx = 1, oIdx = 2, enIdx = -1, esIdx = -1, oEnIdx = -1, oEsIdx = -1, start = 0;
+  // Colunas ampliadas: identificador, pesos por alternativa, obrigatoriedade e dimensões.
+  let idIdx = -1, wIdx = -1, reqIdx = -1, dimIdx = -1, catIdx = -1;
   if (looksHeader) {
     start = 1;
     const fi = pred => header.findIndex(pred);
@@ -101,6 +128,11 @@ function rowsToQuestions(rows, delim) {
     pIdx = fi(h => (h.includes("pergunta") || h.includes("texto") || h.includes("question")) && !isEn(h) && !isEs(h)); if (pIdx < 0) pIdx = 0;
     tIdx = fi(h => h.includes("tipo") || h.includes("type")); if (tIdx < 0) tIdx = 1;
     oIdx = fi(h => isOpt(h) && !isEn(h) && !isEs(h)); if (oIdx < 0) oIdx = 2;
+    idIdx  = fi(h => h === "id" || h.includes("identific") || h === "código" || h === "codigo");
+    wIdx   = fi(h => h.includes("peso") || h.includes("pontua") || h.includes("weight"));
+    reqIdx = fi(h => h.includes("obrigat") || h.includes("required"));
+    dimIdx = fi(h => h.includes("dimens"));
+    catIdx = fi(h => h.includes("categoria") || h.includes("categor"));
   }
   const splitOpts = raw => {
     const s = raw == null ? "" : String(raw);
@@ -119,18 +151,31 @@ function rowsToQuestions(rows, delim) {
     const mapped = mapTipoToType(cols[tIdx]);
     if (mapped.unknown) unknown++;
     let options, options_en, options_es, option_points;
-    if (mapped.type === "scale" || mapped.type === "multiple") {
+    if (hasOptionList(mapped.type)) {
       const sc = extractOptionPoints(splitOpts(cols[oIdx]));
       options = sc.options; option_points = sc.points;
+      // Coluna "Pesos" dedicada tem prioridade sobre o formato "Rótulo:%" nas opções.
+      if (options && wIdx >= 0) {
+        const w = splitOpts(cols[wIdx]);
+        if (w && w.length === options.length) option_points = w.map(x => Math.max(0, Math.min(100, parseInt(x, 10) || 0)));
+      }
       const oe = oEnIdx >= 0 ? splitOpts(cols[oEnIdx]) : null;
       const os = oEsIdx >= 0 ? splitOpts(cols[oEsIdx]) : null;
       if (options && oe && oe.length === options.length) options_en = oe;
       if (options && os && os.length === options.length) options_es = os;
     }
+    const external_id = idIdx >= 0 && cols[idIdx] != null ? String(cols[idIdx]).trim() : "";
+    const required = reqIdx >= 0 ? parseRequired(cols[reqIdx]) : undefined;
+    // Dimensões vêm por nome na planilha; o builder resolve para os ids cadastrados.
+    const dimensionNames = dimIdx >= 0 ? (splitOpts(cols[dimIdx]) || []) : [];
+    const categoryNames  = catIdx >= 0 ? (splitOpts(cols[catIdx]) || []) : [];
     out.push({ id: Date.now() + r, text, type: mapped.type,
       ...(text_en ? { text_en } : {}), ...(text_es ? { text_es } : {}),
       ...(options ? { options } : {}), ...(options_en ? { options_en } : {}), ...(options_es ? { options_es } : {}),
-      ...(option_points ? { option_points } : {}) });
+      ...(option_points ? { option_points } : {}),
+      ...(external_id ? { external_id } : {}),
+      ...(required === undefined ? {} : { required }),
+      ...(dimensionNames.length || categoryNames.length ? { dimensionNames: [...dimensionNames, ...categoryNames] } : {}) });
   }
   return { questions: out, skipped, unknown };
 }
@@ -140,13 +185,43 @@ function rowsToQuestions(rows, delim) {
 
 
 const QUESTION_TYPES = [
-  { id:"nps",      label:"NPS (0–10)",      icon:"📊", desc:"Probabilidade de recomendar" },
-  { id:"scale",    label:"Escala Likert",   icon:"⭐", desc:"Avaliação 1 a 5"             },
-  { id:"multiple", label:"Múltipla Escolha",icon:"☑️", desc:"Uma ou mais opções"          },
-  { id:"text",     label:"Texto Aberto",    icon:"✏️", desc:"Resposta livre"               },
-  { id:"rating",   label:"Estrelas",        icon:"🌟", desc:"Avaliação visual 1–5"         },
-  { id:"yesno",    label:"Sim / Não",       icon:"✅", desc:"Escolha binária"              },
+  { id:"nps",      label:"NPS (0–10)",       icon:"📊", desc:"Probabilidade de recomendar" },
+  { id:"scale",    label:"Escala Likert",    icon:"⭐", desc:"Pontos e rótulos configuráveis" },
+  { id:"multiple", label:"Múltipla Escolha", icon:"☑️", desc:"Uma ou mais opções"          },
+  { id:"dropdown", label:"Lista Suspensa",   icon:"🔽", desc:"Uma opção, em lista"         },
+  { id:"matrix",   label:"Matriz",           icon:"🔲", desc:"Linhas × colunas, média por linha" },
+  { id:"form",     label:"Bloco de Formulário", icon:"📋", desc:"Campos com validação"     },
+  { id:"text",     label:"Texto Aberto",     icon:"✏️", desc:"Resposta livre"               },
+  { id:"rating",   label:"Estrelas",         icon:"🌟", desc:"Avaliação visual 1–5"         },
+  { id:"yesno",    label:"Sim / Não",        icon:"✅", desc:"Escolha binária"              },
 ];
+
+// Tipos que têm lista de alternativas editável (rótulo, peso, opção neutra).
+const OPTION_TYPES = ["scale", "multiple", "dropdown", "matrix"];
+const hasOptionList = (type) => OPTION_TYPES.includes(type);
+
+// Alternativas iniciais por tipo — a pergunta nasce com a lista pronta para editar,
+// em vez de sair da tela sem opção nenhuma.
+const DEFAULT_OPTIONS = {
+  scale:    ["Discordo totalmente", "Discordo", "Concordo", "Concordo totalmente"],
+  multiple: ["Opção 1", "Opção 2", "Opção 3"],
+  dropdown: ["Opção 1", "Opção 2", "Opção 3"],
+  matrix:   ["Ruim", "Regular", "Bom", "Excelente"],
+};
+
+// Rótulos prontos para as escalas Likert mais usadas (4 pontos no clima, 3 na performance).
+const LIKERT_PRESETS = [
+  { points: 3, labels: ["Abaixo do esperado", "Dentro do esperado", "Acima do esperado"] },
+  { points: 4, labels: ["Discordo totalmente", "Discordo", "Concordo", "Concordo totalmente"] },
+  { points: 5, labels: ["Nunca", "Quase nunca", "Às vezes", "Quase sempre", "Sempre"] },
+  { points: 5, labels: ["Muito ruim", "Ruim", "Regular", "Bom", "Excelente"] },
+];
+
+/* Distribui pesos de 0 a 100 uniformemente entre as alternativas (a primeira vale 0). */
+function rampPoints(n) {
+  if (n <= 1) return [100];
+  return Array.from({ length: n }, (_, i) => Math.round((i / (n - 1)) * 100));
+}
 
 
 
@@ -264,6 +339,8 @@ const TYPE_COLORS = {
   nps:"bg-purple-100 text-purple-700", scale:"bg-blue-100 text-blue-700",
   multiple:"bg-green-100 text-green-700", text:"bg-orange-100 text-orange-700",
   rating:"bg-amber-100 text-amber-700", yesno:"bg-teal-100 text-teal-700",
+  dropdown:"bg-indigo-100 text-indigo-700", matrix:"bg-pink-100 text-pink-700",
+  form:"bg-slate-200 text-slate-700",
 };
 
 // ─── ATOMS ─────────────────────────────────────────────────────────────────────
@@ -364,6 +441,8 @@ function Sidebar({ page, setPage }) {
     { id:"surveys",       label:"Pesquisas",       Icon:ClipboardList   },
     { id:"respondents",   label:"Respondentes",    Icon:Users           },
     { id:"estrutura",     label:"Estrutura",        Icon:Building2        },
+    { id:"dimensions",    label:"Dimensões",        Icon:Layers          },
+    { id:"campanhas",     label:"Campanhas",        Icon:Megaphone       },
     { id:"evaluation360", label:"Avaliação 360°",  Icon:Target          },
     { id:"results",       label:"Resultados",      Icon:BarChart3       },
     { id:"templates",     label:"Templates",        Icon:FileCheck       },
@@ -687,7 +766,7 @@ function Dashboard({ setPage }) {
 
 
 // ─── SURVEY LIST ───────────────────────────────────────────────────────────────
-function SurveyList({ onCreateNew, onView }) {
+function SurveyList({ onCreateNew, onView, onEdit }) {
   const { t } = useLang();
   const [search,  setSearch]  = useState("");
   const [filter,  setFilter]  = useState("todos");
@@ -738,6 +817,17 @@ function SurveyList({ onCreateNew, onView }) {
     } catch (e) {
       alert(e.message || t('sl_delete_error'));
     }
+  };
+
+  const [duplicating, setDuplicating] = useState("");
+  const handleDuplicate = async (s) => {
+    if (duplicating) return;
+    setDuplicating(s.id);
+    try {
+      await api.surveys.duplicate(s.id);
+      await load();
+    } catch (e) { alert((e && e.message) || t('sl_duplicate_err')); }
+    setDuplicating("");
   };
 
   const [copiedId, setCopiedId] = useState(null);
@@ -855,6 +945,13 @@ function SurveyList({ onCreateNew, onView }) {
                     <div className="flex items-center gap-1.5">
                       <button onClick={() => onView && onView(s)} title={t('sl_view_results')}
                         className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><Eye size={14} /></button>
+                      <button onClick={() => onEdit && onEdit(s.id)}
+                        title={s.responses > 0 ? t('sl_edit_locked') : t('sl_edit_survey')}
+                        className="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"><Edit size={14} /></button>
+                      <button onClick={() => handleDuplicate(s)} disabled={duplicating===s.id} title={t('sl_duplicate_survey')}
+                        className="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors disabled:opacity-40">
+                        {duplicating===s.id ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
+                      </button>
                       <button onClick={() => handleDelete(s)} title={t('sl_delete_survey')}
                         className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 size={14} /></button>
                     </div>
@@ -925,16 +1022,475 @@ function SurveyList({ onCreateNew, onView }) {
   );
 }
 
+// ─── EDITOR DE PERGUNTA ────────────────────────────────────────────────────────
+// Bloco de alternativas com rótulo por idioma, peso, opção neutra, "Outros",
+// obrigatoriedade, lógica condicional e vínculo com dimensões — na mesma tela em
+// que a pergunta é criada, valendo para qualquer origem (painel, template, IA ou planilha).
+
+/* Move um item de array de `from` para `to`, devolvendo um novo array. */
+function moveItem(arr, from, to) {
+  const a = [...(arr || [])];
+  if (to < 0 || to >= a.length) return a;
+  const [x] = a.splice(from, 1);
+  a.splice(to, 0, x);
+  return a;
+}
+
+function MiniBtn({ onClick, title, disabled, danger, children }) {
+  return (
+    <button type="button" onClick={onClick} title={title} disabled={disabled}
+      className={`px-1.5 py-1 rounded-md border text-xs leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+        danger ? "border-red-200 text-red-500 hover:bg-red-50" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+      {children}
+    </button>
+  );
+}
+
+function OptionEditor({ q, onChange }) {
+  const { t } = useLang();
+  const opts = q.options || [];
+  const pts  = q.option_points || null;
+  const cfg  = q.config || {};
+
+  const setOpts = (next, extra) => {
+    const patch = { options: next, ...(extra || {}) };
+    // Traduções e pesos andam colados às alternativas: se mudou a quantidade, realinha.
+    ["options_en", "options_es"].forEach(k => {
+      if (Array.isArray(q[k])) patch[k] = next.map((_, i) => q[k][i] ?? "");
+    });
+    if (pts) patch.option_points = next.map((_, i) => pts[i] ?? 0);
+    onChange(patch);
+  };
+
+  const setLabel = (i, v, lang) => {
+    const key = lang === "pt" ? "options" : `options_${lang}`;
+    const arr = [...(q[key] || opts.map(() => ""))];
+    arr[i] = v;
+    onChange({ [key]: arr });
+  };
+  const setPoint = (i, v) => {
+    const arr = [...(pts || opts.map(() => 0))];
+    let n = parseInt(v, 10); if (isNaN(n)) n = 0;
+    arr[i] = Math.max(0, Math.min(100, n));
+    onChange({ option_points: arr });
+  };
+  const addOpt    = () => setOpts([...opts, `${t('qe_option')} ${opts.length + 1}`]);
+  const removeOpt = (i) => {
+    const next = opts.filter((_, x) => x !== i);
+    const nextCfg = { ...cfg };
+    // A opção neutra é guardada por índice: se ela sai (ou anda), o índice acompanha.
+    if (Number.isInteger(cfg.neutralIndex)) {
+      if (cfg.neutralIndex === i) delete nextCfg.neutralIndex;
+      else if (cfg.neutralIndex > i) nextCfg.neutralIndex = cfg.neutralIndex - 1;
+    }
+    setOpts(next, { config: nextCfg });
+  };
+  const move = (i, dir) => {
+    const to = i + dir;
+    if (to < 0 || to >= opts.length) return;
+    const patch = { options: moveItem(opts, i, to) };
+    ["options_en", "options_es"].forEach(k => { if (Array.isArray(q[k])) patch[k] = moveItem(q[k], i, to); });
+    if (pts) patch.option_points = moveItem(pts, i, to);
+    if (Number.isInteger(cfg.neutralIndex)) {
+      const n = cfg.neutralIndex;
+      patch.config = { ...cfg, neutralIndex: n === i ? to : (n === to ? i : n) };
+    }
+    onChange(patch);
+  };
+  const toggleScore = () => onChange({ option_points: pts ? null : rampPoints(opts.length) });
+  const toggleNeutral = (i) => {
+    const next = { ...cfg };
+    if (cfg.neutralIndex === i) delete next.neutralIndex; else next.neutralIndex = i;
+    onChange({ config: next });
+  };
+
+  return (
+    <div className="mt-3 border border-slate-200 rounded-xl p-3 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <span className="text-xs font-semibold text-slate-600">{q.type === "matrix" ? t('qe_columns') : t('qe_options')}</span>
+        <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+          <input type="checkbox" checked={!!pts} onChange={toggleScore} className="accent-purple-600" />
+          {t('sb_score_toggle')}
+        </label>
+      </div>
+
+      {opts.length === 0 && <p className="text-xs text-slate-400 mb-2">{t('qe_no_options')}</p>}
+
+      <div className="space-y-2">
+        {opts.map((opt, i) => (
+          <div key={i} className="border border-slate-100 rounded-lg p-2 bg-slate-50">
+            <div className="flex items-center gap-1.5">
+              <span className="w-5 text-xs text-slate-400 text-center">{i + 1}</span>
+              <input value={opt} onChange={e => setLabel(i, e.target.value, "pt")}
+                placeholder={t('qe_label_pt')}
+                className="flex-1 min-w-0 border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-purple-400" />
+              {pts && (
+                <div className="flex items-center gap-1">
+                  <input type="number" min="0" max="100" value={pts[i] ?? 0} onChange={e => setPoint(i, e.target.value)}
+                    title={t('qe_weight')}
+                    className="w-14 border border-slate-200 rounded-md px-1.5 py-1.5 text-xs text-right focus:outline-none focus:border-purple-400" />
+                  <span className="text-xs text-slate-400">%</span>
+                </div>
+              )}
+              <MiniBtn onClick={() => move(i, -1)} disabled={i === 0} title={t('qe_move_up')}>↑</MiniBtn>
+              <MiniBtn onClick={() => move(i, 1)} disabled={i === opts.length - 1} title={t('qe_move_down')}>↓</MiniBtn>
+              <MiniBtn onClick={() => removeOpt(i)} danger title={t('qe_remove_option')}>✕</MiniBtn>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5 pl-6">
+              <input value={(q.options_en || [])[i] || ""} onChange={e => setLabel(i, e.target.value, "en")}
+                placeholder="EN" className="flex-1 min-w-[100px] border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-600 bg-white focus:outline-none focus:border-purple-400" />
+              <input value={(q.options_es || [])[i] || ""} onChange={e => setLabel(i, e.target.value, "es")}
+                placeholder="ES" className="flex-1 min-w-[100px] border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-600 bg-white focus:outline-none focus:border-purple-400" />
+              <label className="inline-flex items-center gap-1 text-xs cursor-pointer whitespace-nowrap"
+                title={t('qe_neutral_hint')}>
+                <input type="checkbox" checked={cfg.neutralIndex === i} onChange={() => toggleNeutral(i)} className="accent-amber-500" />
+                <span className={cfg.neutralIndex === i ? "text-amber-600 font-semibold" : "text-slate-500"}>{t('qe_neutral')}</span>
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 mt-2">
+        <button type="button" onClick={addOpt} className="text-xs font-semibold hover:opacity-80" style={{ color:"#5B21B6" }}>+ {t('qe_add_option')}</button>
+        {q.type !== "matrix" && (
+          <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+            <input type="checkbox" checked={!!cfg.allowOther}
+              onChange={() => onChange({ config: { ...cfg, allowOther: !cfg.allowOther, otherLabel: cfg.otherLabel || t('qe_other_default') } })}
+              className="accent-purple-600" />
+            {t('qe_allow_other')}
+          </label>
+        )}
+        {cfg.allowOther && q.type !== "matrix" && (
+          <input value={cfg.otherLabel || ""} onChange={e => onChange({ config: { ...cfg, otherLabel: e.target.value } })}
+            placeholder={t('qe_other_default')}
+            className="w-32 border border-slate-200 rounded-md px-2 py-1 text-xs focus:outline-none focus:border-purple-400" />
+        )}
+      </div>
+      {Number.isInteger(cfg.neutralIndex) && (
+        <p className="text-xs text-amber-600 mt-2">{t('qe_neutral_note', { label: opts[cfg.neutralIndex] || "" })}</p>
+      )}
+      {pts && <p className="text-xs text-slate-400 mt-1">{t('sb_score_hint')}</p>}
+    </div>
+  );
+}
+
+/* Linhas da matriz (as colunas são as alternativas). */
+function MatrixRowsEditor({ q, onChange }) {
+  const { t } = useLang();
+  const cfg = q.config || {};
+  const rows = cfg.rows || [];
+  const set = (next) => onChange({ config: { ...cfg, rows: next } });
+  return (
+    <div className="mt-3 border border-slate-200 rounded-xl p-3 bg-white">
+      <span className="text-xs font-semibold text-slate-600">{t('qe_rows')}</span>
+      <div className="space-y-1.5 mt-2">
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <input value={r} onChange={e => { const a = [...rows]; a[i] = e.target.value; set(a); }}
+              className="flex-1 min-w-0 border border-slate-200 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-purple-400" />
+            <MiniBtn onClick={() => set(moveItem(rows, i, i - 1))} disabled={i === 0} title={t('qe_move_up')}>↑</MiniBtn>
+            <MiniBtn onClick={() => set(moveItem(rows, i, i + 1))} disabled={i === rows.length - 1} title={t('qe_move_down')}>↓</MiniBtn>
+            <MiniBtn onClick={() => set(rows.filter((_, x) => x !== i))} danger title={t('qe_remove_option')}>✕</MiniBtn>
+          </div>
+        ))}
+      </div>
+      <button type="button" onClick={() => set([...rows, `${t('qe_row')} ${rows.length + 1}`])}
+        className="text-xs font-semibold mt-2 hover:opacity-80" style={{ color:"#5B21B6" }}>+ {t('qe_add_row')}</button>
+      {rows.length === 0 && <p className="text-xs text-slate-400 mt-1">{t('qe_rows_hint')}</p>}
+    </div>
+  );
+}
+
+const FIELD_KINDS = ["text", "email", "phone", "date", "number"];
+
+/* Campos do bloco de formulário, com validação por tipo. */
+function FormFieldsEditor({ q, onChange }) {
+  const { t } = useLang();
+  const cfg = q.config || {};
+  const fields = cfg.fields || [];
+  const set = (next) => onChange({ config: { ...cfg, fields: next } });
+  const patch = (i, p) => set(fields.map((f, x) => x === i ? { ...f, ...p } : f));
+  return (
+    <div className="mt-3 border border-slate-200 rounded-xl p-3 bg-white">
+      <span className="text-xs font-semibold text-slate-600">{t('qe_fields')}</span>
+      <div className="space-y-1.5 mt-2">
+        {fields.map((f, i) => (
+          <div key={i} className="flex flex-wrap items-center gap-1.5">
+            <input value={f.label} onChange={e => patch(i, { label: e.target.value })} placeholder={t('qe_field_label')}
+              className="flex-1 min-w-[120px] border border-slate-200 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-purple-400" />
+            <select value={f.kind} onChange={e => patch(i, { kind: e.target.value })}
+              className="border border-slate-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none">
+              {FIELD_KINDS.map(k => <option key={k} value={k}>{t('qe_kind_' + k)}</option>)}
+            </select>
+            <label className="inline-flex items-center gap-1 text-xs text-slate-500 cursor-pointer">
+              <input type="checkbox" checked={!!f.required} onChange={() => patch(i, { required: !f.required })} className="accent-purple-600" />
+              {t('qe_required_short')}
+            </label>
+            <MiniBtn onClick={() => set(moveItem(fields, i, i - 1))} disabled={i === 0} title={t('qe_move_up')}>↑</MiniBtn>
+            <MiniBtn onClick={() => set(moveItem(fields, i, i + 1))} disabled={i === fields.length - 1} title={t('qe_move_down')}>↓</MiniBtn>
+            <MiniBtn onClick={() => set(fields.filter((_, x) => x !== i))} danger title={t('qe_remove_option')}>✕</MiniBtn>
+          </div>
+        ))}
+      </div>
+      <button type="button" onClick={() => set([...fields, { label: `${t('qe_field_label')} ${fields.length + 1}`, kind: "text", required: false }])}
+        className="text-xs font-semibold mt-2 hover:opacity-80" style={{ color:"#5B21B6" }}>+ {t('qe_add_field')}</button>
+      {fields.length === 0 && <p className="text-xs text-slate-400 mt-1">{t('qe_fields_hint')}</p>}
+    </div>
+  );
+}
+
+/* Lógica condicional: exibir a pergunta só se X for marcada, e encerrar em Y. */
+function LogicEditor({ q, previous, onChange }) {
+  const { t } = useLang();
+  const logic = q.logic || {};
+  const show  = logic.showIf || null;
+  const end   = logic.endIf || null;
+  const src   = previous.find(p => p.id === (show && show.qid));
+  const srcOptions = src ? triggerOptions(src, t) : [];
+  const myOptions  = triggerOptions(q, t);
+
+  const setShow = (patch) => onChange({ logic: { ...logic, showIf: patch } });
+  const setEnd  = (patch) => onChange({ logic: { ...logic, endIf: patch } });
+
+  return (
+    <div className="mt-3 border border-slate-200 rounded-xl p-3 bg-white">
+      <span className="text-xs font-semibold text-slate-600">{t('qe_logic')}</span>
+
+      <div className="mt-2">
+        <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+          <input type="checkbox" checked={!!show}
+            onChange={() => setShow(show ? null : { qid: previous.length ? previous[previous.length - 1].id : null, options: [] })}
+            disabled={!previous.length} className="accent-purple-600" />
+          {t('qe_show_if')}
+        </label>
+        {!previous.length && <p className="text-xs text-slate-400 mt-1">{t('qe_show_if_none')}</p>}
+        {show && (
+          <div className="mt-2 pl-5 space-y-1.5">
+            <select value={show.qid || ""} onChange={e => setShow({ qid: e.target.value, options: [] })}
+              className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none">
+              <option value="">{t('qe_pick_question')}</option>
+              {previous.map((p, i) => <option key={p.id} value={p.id}>{i + 1}. {String(p.text || "").slice(0, 60)}</option>)}
+            </select>
+            <div className="flex flex-wrap gap-1.5">
+              {srcOptions.map(o => {
+                const on = (show.options || []).includes(o);
+                return (
+                  <button key={o} type="button"
+                    onClick={() => setShow({ ...show, options: on ? show.options.filter(x => x !== o) : [...(show.options || []), o] })}
+                    className={`px-2 py-1 rounded-md text-xs border ${on ? "border-purple-400 bg-purple-50 text-purple-700 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                    {o}
+                  </button>
+                );
+              })}
+              {src && !srcOptions.length && <span className="text-xs text-slate-400">{t('qe_no_trigger_options')}</span>}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-slate-100">
+        <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+          <input type="checkbox" checked={!!end} onChange={() => setEnd(end ? null : { options: [] })}
+            disabled={!myOptions.length} className="accent-purple-600" />
+          {t('qe_end_if')}
+        </label>
+        {!myOptions.length && <p className="text-xs text-slate-400 mt-1">{t('qe_end_if_none')}</p>}
+        {end && (
+          <div className="mt-2 pl-5 flex flex-wrap gap-1.5">
+            {myOptions.map(o => {
+              const on = (end.options || []).includes(o);
+              return (
+                <button key={o} type="button"
+                  onClick={() => setEnd({ options: on ? end.options.filter(x => x !== o) : [...(end.options || []), o] })}
+                  className={`px-2 py-1 rounded-md text-xs border ${on ? "border-red-300 bg-red-50 text-red-600 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                  {o}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Alternativas que servem de gatilho para a lógica, conforme o tipo da pergunta. */
+function triggerOptions(q, t) {
+  if (q.type === "yesno") return ["sim", "nao"];
+  if (hasOptionList(q.type) && q.type !== "matrix") return q.options || [];
+  return [];
+}
+
+/* Cartão de uma pergunta no questionário, com o editor completo ao expandir. */
+function QuestionCard({ q, index, total, previous, dimensionSets, expanded, onToggle, onChange, onRemove, onMove }) {
+  const { t } = useLang();
+  const cfg = q.config || {};
+  const dims = q.dimensions || [];
+  const toggleDim = (id) => onChange({ dimensions: dims.includes(id) ? dims.filter(x => x !== id) : [...dims, id] });
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white">
+      <div className="flex items-start gap-3 p-3.5">
+        <div className="w-6 h-6 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 flex-shrink-0">{index + 1}</div>
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={onToggle}>
+          <p className="text-sm text-slate-800 leading-relaxed">{q.text || <span className="text-slate-400 italic">{t('qe_untitled')}</span>}</p>
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+            <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[q.type] || "bg-slate-100 text-slate-600"}`}>{t('type_' + q.type)}</span>
+            {hasOptionList(q.type) && <span className="text-xs text-slate-400">{(q.options || []).length} {t('qe_options').toLowerCase()}</span>}
+            {q.option_points && <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{t('qe_scored')}</span>}
+            {q.required === false && <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{t('qe_optional')}</span>}
+            {Number.isInteger(cfg.neutralIndex) && <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full">{t('qe_neutral')}</span>}
+            {q.logic && (q.logic.showIf || q.logic.endIf) && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{t('qe_has_logic')}</span>}
+            {dims.length > 0 && <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full">{dims.length} {t('qe_dimensions').toLowerCase()}</span>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <MiniBtn onClick={() => onMove(-1)} disabled={index === 0} title={t('qe_move_up')}>↑</MiniBtn>
+          <MiniBtn onClick={() => onMove(1)} disabled={index === total - 1} title={t('qe_move_down')}>↓</MiniBtn>
+          <MiniBtn onClick={onToggle} title={t('qe_edit')}>{expanded ? "▲" : "✎"}</MiniBtn>
+          <MiniBtn onClick={onRemove} danger title={t('qe_remove')}>✕</MiniBtn>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="px-3.5 pb-3.5 border-t border-slate-100 pt-3">
+          <label className="block text-xs font-semibold text-slate-600 mb-1">{t('sb_q_pt')}</label>
+          <textarea rows={2} value={q.text || ""} onChange={e => onChange({ text: e.target.value })}
+            className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-slate-700 focus:outline-none focus:border-purple-400 resize-none" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+            <input value={q.text_en || ""} onChange={e => onChange({ text_en: e.target.value })} placeholder={t('sb_q_en')}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-600 focus:outline-none focus:border-purple-400" />
+            <input value={q.text_es || ""} onChange={e => onChange({ text_es: e.target.value })} placeholder={t('sb_q_es')}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-600 focus:outline-none focus:border-purple-400" />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 mt-3">
+            <select value={q.type} onChange={e => onChange(retypeQuestion(q, e.target.value))}
+              className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none">
+              {QUESTION_TYPES.map(qt => <option key={qt.id} value={qt.id}>{t('qtype_' + qt.id + '_label')}</option>)}
+            </select>
+            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={q.required !== false} onChange={() => onChange({ required: q.required === false })} className="accent-purple-600" />
+              {t('qe_required')}
+            </label>
+            <input value={q.external_id || ""} onChange={e => onChange({ external_id: e.target.value })} placeholder={t('qe_external_id')}
+              title={t('qe_external_id_hint')}
+              className="w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-purple-400" />
+          </div>
+
+          {q.type === "scale" && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-slate-600">{t('qe_likert_preset')}</span>
+              {LIKERT_PRESETS.map((p, i) => (
+                <button key={i} type="button"
+                  onClick={() => onChange({ options: [...p.labels], options_en: null, options_es: null,
+                    option_points: q.option_points ? rampPoints(p.labels.length) : null,
+                    config: { ...cfg, neutralIndex: undefined } })}
+                  className="px-2 py-1 rounded-md text-xs border border-slate-200 text-slate-600 hover:bg-slate-50">
+                  {p.points} {t('qe_points')} · {p.labels[0]}…
+                </button>
+              ))}
+            </div>
+          )}
+
+          {hasOptionList(q.type) && <OptionEditor q={q} onChange={onChange} />}
+          {q.type === "matrix" && <MatrixRowsEditor q={q} onChange={onChange} />}
+          {q.type === "form"   && <FormFieldsEditor q={q} onChange={onChange} />}
+          <LogicEditor q={q} previous={previous} onChange={onChange} />
+
+          {dimensionSets.length > 0 && (
+            <div className="mt-3 border border-slate-200 rounded-xl p-3 bg-white">
+              <span className="text-xs font-semibold text-slate-600">{t('qe_dimensions')}</span>
+              <p className="text-xs text-slate-400 mb-2">{t('qe_dimensions_hint')}</p>
+              {dimensionSets.map(set => (
+                <div key={set.id} className="mb-2">
+                  <div className="text-xs font-medium text-slate-500 mb-1">{set.name}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(set.dimensions || []).map(d => {
+                      const on = dims.includes(d.id);
+                      return (
+                        <button key={d.id} type="button" onClick={() => toggleDim(d.id)}
+                          className={`px-2 py-1 rounded-md text-xs border ${on ? "border-green-400 bg-green-50 text-green-700 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                          {d.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Troca o tipo da pergunta mantendo o que faz sentido no novo tipo. */
+function retypeQuestion(q, type) {
+  const patch = { type };
+  if (hasOptionList(type)) {
+    if (!(q.options || []).length) patch.options = [...(DEFAULT_OPTIONS[type] || DEFAULT_OPTIONS.multiple)];
+    if (type === "matrix" && !((q.config || {}).rows || []).length) {
+      patch.config = { ...(q.config || {}), rows: ["Item 1", "Item 2"] };
+    }
+  } else {
+    // Sem lista de alternativas: pesos, opção neutra e "Outros" deixam de existir.
+    patch.options = null; patch.options_en = null; patch.options_es = null; patch.option_points = null;
+    const cfg = { ...(q.config || {}) };
+    delete cfg.neutralIndex; delete cfg.allowOther; delete cfg.otherLabel; delete cfg.rows;
+    patch.config = cfg;
+  }
+  if (type === "form" && !((q.config || {}).fields || []).length) {
+    patch.config = { ...(patch.config || q.config || {}), fields: [{ label: "Nome", kind: "text", required: true }] };
+  }
+  return patch;
+}
+
 // ─── SURVEY BUILDER ────────────────────────────────────────────────────────────
-function SurveyBuilder({ onBack, initial }) {
+/* Normaliza uma pergunta vinda de template, IA, planilha ou do backend para o
+   formato do editor — e já cria a lista de alternativas quando o tipo pede uma. */
+function toEditorQuestion(q, i) {
+  const type = QUESTION_TYPES.some(t => t.id === q.type) ? q.type : "text";
+  const out = {
+    id: q.id != null && typeof q.id === "number" ? q.id : Date.now() + i * 7 + Math.floor(Math.random() * 5),
+    serverId: typeof q.id === "string" ? q.id : undefined,
+    order_num: q.order_num,
+    text: q.text || "", text_en: q.text_en || "", text_es: q.text_es || "", type,
+    required: q.required === false ? false : true,
+    external_id: q.external_id || "",
+    config: q.config && typeof q.config === "object" ? { ...q.config } : {},
+    logic: q.logic && typeof q.logic === "object" ? { ...q.logic } : null,
+    dimensions: Array.isArray(q.dimensions) ? [...q.dimensions] : [],
+    dimensionNames: Array.isArray(q.dimensionNames) ? [...q.dimensionNames] : undefined,
+  };
+  if (hasOptionList(type)) {
+    out.options = (Array.isArray(q.options) && q.options.length) ? [...q.options] : [...(DEFAULT_OPTIONS[type] || DEFAULT_OPTIONS.multiple)];
+    if (Array.isArray(q.options_en) && q.options_en.length === out.options.length) out.options_en = [...q.options_en];
+    if (Array.isArray(q.options_es) && q.options_es.length === out.options.length) out.options_es = [...q.options_es];
+    if (Array.isArray(q.option_points) && q.option_points.length) out.option_points = out.options.map((_, x) => q.option_points[x] ?? 0);
+    if (type === "matrix" && !(out.config.rows || []).length) out.config = { ...out.config, rows: ["Item 1", "Item 2"] };
+  }
+  if (type === "form" && !(out.config.fields || []).length) {
+    out.config = { ...out.config, fields: [{ label: "Nome", kind: "text", required: true }] };
+  }
+  return out;
+}
+
+function SurveyBuilder({ onBack, initial, editId }) {
   const { t } = useLang();
   const [tab,       setTab]       = useState("builder");
   const [surveyName,setSurveyName]= useState(initial?.name || "");
   const [questions, setQuestions] = useState(
-    Array.isArray(initial?.questions)
-      ? initial.questions.map((q, i) => ({ id: Date.now() + i, text: q.text, type: q.type, ...(q.options ? { options: q.options } : {}), ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}) }))
-      : []
+    Array.isArray(initial?.questions) ? initial.questions.map(toEditorQuestion) : []
   );
+  const [expandedQ, setExpandedQ] = useState(null);
+  const [dimensionSets, setDimensionSets] = useState([]);
+  const [onePerDevice, setOnePerDevice]   = useState(!!initial?.one_per_device);
+  const [maxResponses, setMaxResponses]   = useState(initial?.max_responses ? String(initial.max_responses) : "");
+  const [loadingEdit, setLoadingEdit]     = useState(!!editId);
+  const [locked,      setLocked]          = useState(false);
   const [aiContext, setAiContext]  = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiQs,      setAiQs]      = useState([]);
@@ -953,25 +1509,116 @@ function SurveyBuilder({ onBack, initial }) {
   const [importInfo,  setImportInfo]  = useState("");
 
   const GROUP_MAP = { "Gestores":"gestores", "Fornecedores":"fornecedores", "Subordinados":"subordinados", "Todos":"todos" };
+  const GROUP_REV = { gestores:"Gestores", fornecedores:"Fornecedores", subordinados:"Subordinados", todos:"Todos" };
+
+  // Conjuntos de dimensões cadastrados — alimentam o vínculo por pergunta.
+  useEffect(() => { api.dimensions.list().then(d => setDimensionSets(d.sets || [])).catch(() => {}); }, []);
+
+  // Modo edição: carrega a pesquisa existente com perguntas, config e dimensões.
+  useEffect(() => {
+    if (!editId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const d = await api.surveys.get(editId);
+        if (!alive) return;
+        const sv = d.survey || {};
+        setSurveyName(sv.name || "");
+        setCategory(sv.category || "Avaliação 360°");
+        setTargetGroup(GROUP_REV[sv.target_group] || "Todos");
+        setAnonymous(sv.anonymous !== 0);
+        setDeadline(sv.deadline ? String(sv.deadline).slice(0, 10) : "");
+        setOnePerDevice(!!sv.one_per_device);
+        setMaxResponses(sv.max_responses ? String(sv.max_responses) : "");
+        setQuestions((d.questions || []).map(toEditorQuestion));
+        setLocked(!!d.questionsLocked);
+      } catch (e) {
+        if (alive) setError((e && e.message) || t('sb_save_error'));
+      }
+      if (alive) setLoadingEdit(false);
+    })();
+    return () => { alive = false; };
+  /* eslint-disable-next-line */
+  }, [editId]);
+
+  // Dimensões que vieram por NOME (planilha) viram vínculo assim que o cadastro carrega.
+  useEffect(() => {
+    if (!dimensionSets.length) return;
+    const byName = {};
+    dimensionSets.forEach(s => (s.dimensions || []).forEach(d => { byName[d.name.trim().toLowerCase()] = d.id; }));
+    setQuestions(prev => {
+      if (!prev.some(q => q.dimensionNames && q.dimensionNames.length)) return prev;
+      return prev.map(q => {
+        if (!q.dimensionNames || !q.dimensionNames.length) return q;
+        const ids = q.dimensionNames.map(n => byName[String(n).trim().toLowerCase()]).filter(Boolean);
+        const { dimensionNames, ...rest } = q;
+        return { ...rest, dimensions: [...new Set([...(q.dimensions || []), ...ids])] };
+      });
+    });
+  }, [dimensionSets]);
+
+  const patchQuestion = (id, patch) => setQuestions(p => p.map(q => q.id === id ? { ...q, ...patch } : q));
+  const moveQuestion  = (id, dir) => setQuestions(p => {
+    const i = p.findIndex(q => q.id === id);
+    return (i < 0) ? p : moveItem(p, i, i + dir);
+  });
+  const removeQuestion = (id) => setQuestions(p => {
+    // Remover a pergunta-gatilho deixaria a condicional apontando para o nada.
+    const next = p.filter(q => q.id !== id);
+    return next.map(q => (q.logic && q.logic.showIf && q.logic.showIf.qid === id)
+      ? { ...q, logic: { ...q.logic, showIf: null } } : q);
+  });
+
+  /* Converte as perguntas do editor para o formato da API (lógica por ordem). */
+  const serializeQuestions = () => questions.map((q, i) => {
+    const logic = {};
+    if (q.logic && q.logic.showIf && q.logic.showIf.qid && (q.logic.showIf.options || []).length) {
+      const srcIdx = questions.findIndex(x => x.id === q.logic.showIf.qid);
+      // A condicional só vale se o gatilho estiver ANTES desta pergunta.
+      if (srcIdx >= 0 && srcIdx < i) logic.showIf = { order: srcIdx + 1, options: q.logic.showIf.options };
+    }
+    if (q.logic && q.logic.endIf && (q.logic.endIf.options || []).length) logic.endIf = { options: q.logic.endIf.options };
+    return {
+      type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "",
+      options: hasOptionList(q.type) ? (q.options || []) : null,
+      options_en: q.options_en || null, options_es: q.options_es || null,
+      option_points: q.option_points || null,
+      required: q.required !== false,
+      external_id: q.external_id || "",
+      config: q.config && Object.keys(q.config).length ? q.config : null,
+      logic: Object.keys(logic).length ? logic : null,
+      dimensions: q.dimensions || [],
+    };
+  });
 
   const handleSubmit = async (publishNow) => {
     setError(null);
     if (!surveyName.trim())     { setError(t('sb_name_required')); return; }
     if (questions.length === 0) { setError(t('sb_min_one_q')); return; }
+    if (questions.some(q => !String(q.text || "").trim())) { setError(t('sb_empty_q')); return; }
     if (publishNow && !lgpdOk)  { setError(t('sb_confirm_lgpd')); return; }
     setSaving(true);
     try {
-      const result = await api.surveys.create({
+      const payload = {
         name: surveyName.trim(),
         category,
         targetGroup: GROUP_MAP[targetGroup] || "todos",
         anonymous,
         deadline: deadline ? deadline + "T23:59:59-03:00" : null,
-        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es, ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}) })),
+        onePerDevice,
+        maxResponses: maxResponses ? parseInt(maxResponses, 10) : null,
         lgpdBasis: "consentimento",
-      });
-      const id = result && result.survey && result.survey.id;
-      if (publishNow && id) await api.post(`/surveys/${id}/publish`);
+      };
+      let id = editId;
+      if (editId) {
+        // Com respostas registradas o backend recusa trocar as perguntas — por isso só
+        // mandamos a lista quando a pesquisa ainda está destravada.
+        await api.surveys.update(editId, locked ? payload : { ...payload, questions: serializeQuestions() });
+      } else {
+        const result = await api.surveys.create({ ...payload, questions: serializeQuestions() });
+        id = result && result.survey && result.survey.id;
+      }
+      if (publishNow && id) await api.surveys.publish(id);
       onBack();
     } catch (e) {
       setError((e && e.message) || t('sb_save_error'));
@@ -981,24 +1628,13 @@ function SurveyBuilder({ onBack, initial }) {
 
   const addQ = () => {
     if (!newQ.trim()) return;
-    setQuestions(p => [...p,{ id:Date.now(), text:newQ, text_en:newQEn.trim(), text_es:newQEs.trim(), type:selType }]);
+    // A pergunta já nasce com o bloco de alternativas do tipo escolhido — o editor
+    // abre expandido para ajustar rótulos, pesos e obrigatoriedade na hora.
+    const q = toEditorQuestion({ text: newQ.trim(), text_en: newQEn.trim(), text_es: newQEs.trim(), type: selType }, questions.length);
+    setQuestions(p => [...p, q]);
+    if (hasOptionList(selType) || selType === "form") setExpandedQ(q.id);
     setNewQ(""); setNewQEn(""); setNewQEs("");
   };
-
-  // Pontuação por opção: liga/desliga e edita a % de cada alternativa.
-  const toggleScore = (qid) => setQuestions(p => p.map(q => {
-    if (q.id !== qid) return q;
-    if (q.option_points) { const { option_points, ...rest } = q; return rest; }
-    const n = (q.options || []).length;
-    const ramp = (q.options || []).map((_, i) => n > 1 ? Math.round(((n - 1 - i) / (n - 1)) * 100) : 100);
-    return { ...q, option_points: ramp };
-  }));
-  const setOptPoint = (qid, idx, val) => setQuestions(p => p.map(q => {
-    if (q.id !== qid) return q;
-    const arr = [...(q.option_points || (q.options || []).map(() => 0))];
-    let v = parseInt(val, 10); if (isNaN(v)) v = 0; v = Math.max(0, Math.min(100, v));
-    arr[idx] = v; return { ...q, option_points: arr };
-  }));
 
   const generateAI = async () => {
     if (!aiContext.trim()) return;
@@ -1094,13 +1730,13 @@ function SurveyBuilder({ onBack, initial }) {
           <ChevronRight size={17} className="rotate-180" />
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">{t('new_survey')}</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{t('sb_subtitle')}</p>
+          <h1 className="text-2xl font-bold text-slate-800">{editId ? t('sb_edit_title') : t('new_survey')}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{editId ? t('sb_edit_subtitle') : t('sb_subtitle')}</p>
         </div>
         <div className="ml-auto flex gap-3">
           <button onClick={() => handleSubmit(false)} disabled={saving}
             className="px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2">
-            {saving ? <><Loader2 size={14} className="animate-spin" />{t('common_saving')}</> : t('sb_save_draft')}
+            {saving ? <><Loader2 size={14} className="animate-spin" />{t('common_saving')}</> : (editId ? t('sb_save_changes') : t('sb_save_draft'))}
           </button>
           <button onClick={() => handleSubmit(true)} disabled={saving || !lgpdOk} title={!lgpdOk?t('sb_confirm_lgpd_title'):""}
             className="px-4 py-2 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity flex items-center gap-2" style={{ background:GRAD }}>
@@ -1112,6 +1748,11 @@ function SurveyBuilder({ onBack, initial }) {
       {error && (
         <div className="mb-5 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 flex items-center gap-2 text-sm">
           <AlertTriangle size={15} className="flex-shrink-0" />{error}
+        </div>
+      )}
+      {loadingEdit && (
+        <div className="mb-5 bg-slate-50 border border-slate-200 text-slate-500 rounded-xl px-4 py-3 flex items-center gap-2 text-sm">
+          <Loader2 size={15} className="animate-spin" />{t('sb_loading_survey')}
         </div>
       )}
 
@@ -1139,6 +1780,23 @@ function SurveyBuilder({ onBack, initial }) {
             <label className="text-xs font-medium text-slate-600 block mb-1">{t('sb_deadline')}</label>
             <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white" />
             <p className="text-[11px] text-slate-400 mt-1">{t('sb_deadline_hint')}</p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('sb_max_responses')}</label>
+            <input type="number" min="1" value={maxResponses} onChange={e => setMaxResponses(e.target.value.replace(/\D/g, ""))}
+              placeholder={t('sb_max_responses_ph')}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none bg-white" />
+            <p className="text-[11px] text-slate-400 mt-1">{t('sb_max_responses_hint')}</p>
+          </div>
+          <div className="flex items-start gap-3 pt-6">
+            <div onClick={() => setOnePerDevice(!onePerDevice)}
+              className={`w-10 h-5 rounded-full relative transition-colors cursor-pointer flex-shrink-0 ${onePerDevice?"bg-purple-600":"bg-slate-300"}`}>
+              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${onePerDevice?"translate-x-5":"translate-x-0.5"}`} />
+            </div>
+            <div>
+              <div className="text-xs font-medium text-slate-700">{t('sb_one_per_device')}</div>
+              <div className="text-[11px] text-slate-500">{t('sb_one_per_device_hint')}</div>
+            </div>
           </div>
         </div>
 
@@ -1238,7 +1896,7 @@ function SurveyBuilder({ onBack, initial }) {
                 <div className="mt-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-semibold text-slate-600">{t('sb_n_generated',{n:aiQs.length})}</span>
-                    <button onClick={() => setQuestions(p => [...p,...aiQs.map((q,i) => ({ id:Date.now()+i,...q }))])}
+                    <button onClick={() => setQuestions(p => [...p, ...aiQs.map((q,i) => toEditorQuestion(q, p.length + i))])}
                       className="text-xs font-semibold hover:opacity-80" style={{ color:"#5B21B6" }}>
                       {t('sb_add_all')}
                     </button>
@@ -1252,7 +1910,7 @@ function SurveyBuilder({ onBack, initial }) {
                             {t('type_'+q.type)}
                           </span>
                         </div>
-                        <button onClick={() => setQuestions(p => [...p,{ id:Date.now()+i,...q }])}
+                        <button onClick={() => setQuestions(p => [...p, toEditorQuestion(q, p.length)])}
                           className="p-1.5 text-white rounded-lg flex-shrink-0 hover:opacity-80" style={{ background:"#5B21B6" }}>
                           <Plus size={11} />
                         </button>
@@ -1280,10 +1938,17 @@ function SurveyBuilder({ onBack, initial }) {
                 <p className="text-xs font-semibold text-slate-600 mb-2">{t('sb_sheet_format')}</p>
                 <p className="text-xs text-slate-500 mb-2 leading-relaxed">{t('sb_one_per_row')}</p>
                 <ul className="text-xs text-slate-600 space-y-1.5 mb-3 list-disc pl-4">
+                  <li><strong>{t('sb_col_id')}</strong>{t('sb_col_id_desc')}</li>
                   <li><strong>{t('sb_col_q')}</strong>{t('sb_col_q_desc')}</li>
                   <li><strong>{t('sb_col_type')}</strong>{t('sb_col_type_desc')}</li>
                   <li><strong>{t('sb_col_opts')}</strong>{t('sb_col_opts_desc')}</li>
+                  <li><strong>{t('sb_col_weights')}</strong>{t('sb_col_weights_desc')}</li>
+                  <li><strong>{t('sb_col_required')}</strong>{t('sb_col_required_desc')}</li>
+                  <li><strong>{t('sb_col_dims')}</strong>{t('sb_col_dims_desc')}</li>
                 </ul>
+                <button onClick={downloadImportTemplate} className="text-xs font-semibold flex items-center gap-1 hover:opacity-80 mb-2" style={{ color:"#5B21B6" }}>
+                  <Download size={12} />{t('sb_download_template')}
+                </button>
                 <p className="text-xs text-slate-400">{t('sb_import_hint')}</p>
               </div>
             </>
@@ -1298,6 +1963,11 @@ function SurveyBuilder({ onBack, initial }) {
               {questions.length===1 ? t('sb_q_count_one') : t('sb_q_count_many',{n:questions.length})}
             </span>
           </div>
+          {locked && (
+            <div className="mx-5 mt-4 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl px-3 py-2 text-xs flex items-start gap-2">
+              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />{t('sb_locked_hint')}
+            </div>
+          )}
           <div className="flex-1 p-5 space-y-2 overflow-y-auto" style={{ minHeight:300 }}>
             {questions.length===0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-10">
@@ -1306,40 +1976,19 @@ function SurveyBuilder({ onBack, initial }) {
                 <p className="text-xs text-slate-400 mt-1">{t('sb_no_q_hint')}</p>
               </div>
             ) : questions.map((q,i) => (
-              <div key={q.id} className="flex items-start gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-100 group">
-                <div className="w-6 h-6 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 flex-shrink-0">{i+1}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-slate-800 leading-relaxed">{q.text}</p>
-                  <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[q.type]||"bg-slate-100 text-slate-600"}`}>
-                    {t('type_'+q.type)}
-                  </span>
-                  {Array.isArray(q.options) && q.options.length > 0 && (q.type === 'scale' || q.type === 'multiple') && (
-                    <div className="mt-2">
-                      <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
-                        <input type="checkbox" checked={!!q.option_points} onChange={() => toggleScore(q.id)} className="accent-purple-600" />
-                        {t('sb_score_toggle')}
-                      </label>
-                      {q.option_points && (
-                        <div className="mt-2 space-y-1 bg-white rounded-lg border border-slate-100 p-2">
-                          {q.options.map((opt, oi) => (
-                            <div key={oi} className="flex items-center gap-2">
-                              <span className="text-xs text-slate-600 flex-1 min-w-0 truncate">{opt}</span>
-                              <input type="number" min="0" max="100" value={q.option_points[oi] ?? 0} onChange={e => setOptPoint(q.id, oi, e.target.value)}
-                                className="w-16 border border-slate-200 rounded-md px-2 py-1 text-xs text-right focus:outline-none focus:border-purple-400" />
-                              <span className="text-xs text-slate-400">%</span>
-                            </div>
-                          ))}
-                          <p className="text-xs text-slate-400 pt-1">{t('sb_score_hint')}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <button onClick={() => setQuestions(p => p.filter(x => x.id!==q.id))}
-                  className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all flex-shrink-0">
-                  <X size={13} />
-                </button>
-              </div>
+              <QuestionCard
+                key={q.id}
+                q={q}
+                index={i}
+                total={questions.length}
+                previous={questions.slice(0, i)}
+                dimensionSets={dimensionSets}
+                expanded={expandedQ === q.id}
+                onToggle={() => setExpandedQ(x => x === q.id ? null : q.id)}
+                onChange={patch => patchQuestion(q.id, patch)}
+                onRemove={() => removeQuestion(q.id)}
+                onMove={dir => moveQuestion(q.id, dir)}
+              />
             ))}
           </div>
         </div>
@@ -2082,6 +2731,34 @@ function ScoreBadge({ pct }) {
   return <span className="text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ color: col, background: col + "1A" }}>{t('qr_score')}: {pct}%</span>;
 }
 
+/* Barra de distribuição com rótulo da alternativa e contagem absoluta ao lado do %.
+   Antes aparecia só "3 · 50%" — quem lia precisava saber de cor que 3 era "Às vezes". */
+function LabelledBar({ label, count, pct, color, neutral, wide }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className={`text-xs flex-1 min-w-0 truncate ${neutral ? "text-amber-600" : "text-slate-500"}`} title={label}>{label}</span>
+      <div className={`${wide ? "w-32" : "flex-1"} h-2.5 bg-slate-100 rounded-full overflow-hidden`}>
+        <div className="h-full rounded-full" style={{ width:`${pct}%`, background: neutral ? "#F59E0B" : (color || "#5B21B6") }} />
+      </div>
+      <span className="text-xs font-semibold text-slate-700 w-20 text-right tabular-nums">
+        {count != null ? `${count} · ` : ""}{pct}%
+      </span>
+    </div>
+  );
+}
+
+/* Chips das dimensões (taxonomias) às quais a pergunta pertence. */
+function DimensionChips({ dimensions }) {
+  if (!dimensions || !dimensions.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mt-2">
+      {dimensions.map(d => (
+        <span key={d.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full" title={d.set || ""}>{d.name}</span>
+      ))}
+    </div>
+  );
+}
+
 function QuestionResult({ q }) {
   const { t } = useLang();
   // NPS
@@ -2112,6 +2789,7 @@ function QuestionResult({ q }) {
             ))}
           </div>
         </div>
+        <DimensionChips dimensions={q.dimensions} />
       </div>
     );
   }
@@ -2134,14 +2812,74 @@ function QuestionResult({ q }) {
           </div>
           <div className="flex-1 space-y-1.5">
             {dist.length === 0 ? (q.comments && q.comments.length ? <CommentsBlock items={q.comments} /> : <span className="text-xs text-slate-400">{t('qr_no_answers')}</span>) : dist.map((d,i) => (
-              <div key={i} className="flex items-center gap-3">
-                <span className="text-xs text-slate-500 w-8">{d.value}</span>
-                <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${d.pct}%`,background:"#5B21B6" }} /></div>
-                <span className="text-xs font-semibold text-slate-700 w-9 text-right">{d.pct}%</span>
-              </div>
+              <LabelledBar key={i} label={d.label || d.value} count={d.count} pct={d.pct} neutral={q.neutralIndex === i} />
             ))}
           </div>
         </div>
+        {q.neutralCount > 0 && (
+          <p className="text-xs text-amber-600 mt-3">{t('qr_neutral_note', { label: q.neutralLabel || "", n: q.neutralCount })}</p>
+        )}
+        <DimensionChips dimensions={q.dimensions} />
+      </div>
+    );
+  }
+
+  // Matriz — uma linha por item, com média e distribuição rotulada
+  if (q.type === "matrix") {
+    const rows = q.rows || [];
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-start justify-between mb-4">
+          <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <ScoreBadge pct={q.scorePct} />
+            <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
+          </div>
+        </div>
+        {rows.length === 0 ? <span className="text-xs text-slate-400">{t('qr_no_answers')}</span> : (
+          <div className="space-y-4">
+            {rows.map((r,i) => (
+              <div key={i}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-semibold text-slate-600">{r.label}</span>
+                  <span className="text-xs text-slate-400">{t('qr_average')} {r.average ?? "—"} · {r.count} {t('qr_answers_short')}</span>
+                </div>
+                <div className="space-y-1">
+                  {(r.distribution || []).map((d,x) => (
+                    <LabelledBar key={x} label={d.label || d.value} count={d.count} pct={d.pct} neutral={q.neutralIndex === x} wide />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <DimensionChips dimensions={q.dimensions} />
+      </div>
+    );
+  }
+
+  // Bloco de formulário — respostas por campo
+  if (q.type === "form") {
+    const fields = q.fields || [];
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-start justify-between mb-3">
+          <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
+        </div>
+        {fields.length === 0 ? <span className="text-xs text-slate-400">{t('qr_no_answers')}</span> : (
+          <div className="space-y-3">
+            {fields.map((f,i) => (
+              <div key={i}>
+                <div className="text-xs font-semibold text-slate-600 mb-1">{f.label} <span className="font-normal text-slate-400">· {f.count} {t('qr_answers_short')}</span></div>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {f.responses.slice(0,20).map((v,x) => <div key={x} className="text-xs text-slate-600 bg-slate-50 rounded px-2 py-1 border border-slate-100">{v}</div>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <DimensionChips dimensions={q.dimensions} />
       </div>
     );
   }
@@ -2153,26 +2891,17 @@ function QuestionResult({ q }) {
           <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
           <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:(q.yes||0)+(q.no||0)})}</span>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-500 w-12">{t('yes')}</span>
-              <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${q.yesPct||0}%`,background:"#10B981" }} /></div>
-              <span className="text-xs font-semibold text-slate-700 w-9 text-right">{q.yesPct||0}%</span>
-            </div>
-            <div className="flex items-center gap-3 mt-2">
-              <span className="text-xs text-slate-500 w-12">{t('no')}</span>
-              <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${100-(q.yesPct||0)}%`,background:"#EF4444" }} /></div>
-              <span className="text-xs font-semibold text-slate-700 w-9 text-right">{100-(q.yesPct||0)}%</span>
-            </div>
-          </div>
+        <div className="space-y-2">
+          <LabelledBar label={t('yes')} count={q.yes||0} pct={q.yesPct||0} color="#10B981" />
+          <LabelledBar label={t('no')}  count={q.no||0}  pct={(q.yes||0)+(q.no||0) ? 100-(q.yesPct||0) : 0} color="#EF4444" />
         </div>
+        <DimensionChips dimensions={q.dimensions} />
       </div>
     );
   }
-  // Múltipla escolha
-  if (q.type === "multiple") {
-    const freq = q.frequency || [];
+  // Múltipla escolha / lista suspensa
+  if (q.type === "multiple" || q.type === "dropdown") {
+    const freq = q.choices || q.frequency || [];
     return (
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-start justify-between mb-4">
@@ -2184,13 +2913,11 @@ function QuestionResult({ q }) {
         </div>
         <div className="space-y-1.5">
           {freq.length === 0 ? (q.comments && q.comments.length ? <CommentsBlock items={q.comments} /> : <span className="text-xs text-slate-400">{t('qr_no_answers')}</span>) : freq.map((d,i) => (
-            <div key={i} className="flex items-center gap-3">
-              <span className="text-xs text-slate-500 flex-1 truncate">{d.value}</span>
-              <div className="w-32 h-2.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${d.pct}%`,background:"#5B21B6" }} /></div>
-              <span className="text-xs font-semibold text-slate-700 w-9 text-right">{d.pct}%</span>
-            </div>
+            <LabelledBar key={i} label={(d.label || d.value) + (d.other ? ` (${t('qr_other')})` : "")}
+              count={d.count} pct={d.pct} neutral={q.neutralIndex === i} wide />
           ))}
         </div>
+        <DimensionChips dimensions={q.dimensions} />
       </div>
     );
   }
@@ -2212,6 +2939,47 @@ function QuestionResult({ q }) {
     );
   }
   return null;
+}
+
+/* Nota consolidada por dimensão — a leitura que o RH pede ("como está Liderança?"),
+   em vez de percorrer pergunta a pergunta. Uma pergunta pode entrar em mais de uma. */
+function DimensionResults({ dimensions }) {
+  const { t } = useLang();
+  if (!dimensions || !dimensions.length) return null;
+  const bySet = {};
+  dimensions.forEach(d => (bySet[d.set || "—"] = bySet[d.set || "—"] || []).push(d));
+  return (
+    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+      <div className="flex items-center gap-2 mb-1">
+        <Layers size={15} style={{ color:"#5B21B6" }} />
+        <h4 className="text-sm font-semibold text-slate-800">{t('rd_by_dimension')}</h4>
+      </div>
+      <p className="text-xs text-slate-400 mb-4">{t('rd_by_dimension_sub')}</p>
+      {Object.entries(bySet).map(([setName, dims]) => (
+        <div key={setName} className="mb-4 last:mb-0">
+          <div className="text-xs font-medium text-slate-500 mb-2">{setName}</div>
+          <div className="space-y-1.5">
+            {dims.map(d => (
+              <div key={d.id} className="flex items-center gap-3">
+                <span className="text-xs text-slate-600 flex-1 min-w-0 truncate">{d.name}</span>
+                <span className="text-xs text-slate-400 whitespace-nowrap">{d.questions === 1 ? t('rd_dim_one_q') : t('rd_dim_n_q', { n: d.questions })}</span>
+                {d.scorePct != null ? (
+                  <>
+                    <div className="w-28 h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width:`${d.scorePct}%`, background:GRAD }} />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-700 w-12 text-right tabular-nums">{d.scorePct}%</span>
+                  </>
+                ) : (
+                  <span className="text-xs font-semibold text-slate-700 w-12 text-right tabular-nums">{d.average != null ? d.average : "—"}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function ResultsDashboard() {
@@ -2428,6 +3196,7 @@ function ResultsDashboard() {
         </div>
       ) : (
         <div className="space-y-4">
+          <DimensionResults dimensions={result?.dimensions} />
           {questions.map((q,i) => (
             <div key={q.questionId || i}>
               <QuestionResult q={q} />
@@ -4094,9 +4863,341 @@ function SettingsPage({ setPage }) {
   );
 }
 
+// ─── DIMENSÕES (TAXONOMIAS) ────────────────────────────────────────────────────
+// Cadastro dos conjuntos de dimensões. Uma pergunta pode pertencer a várias ao
+// mesmo tempo, inclusive de conjuntos diferentes: "Liderança" no Clima e, na mesma
+// pergunta, "Demandas" + "Suporte do Gestor" no HSE.
+function DimensionsPage() {
+  const { t } = useLang();
+  const [sets, setSets]       = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+  const [newSet, setNewSet]   = useState("");
+  const [newDim, setNewDim]   = useState({});     // por conjunto
+  const [editing, setEditing] = useState(null);   // { id, name, kind }
+  const [busy, setBusy]       = useState(false);
+
+  const load = async () => {
+    try { const d = await api.dimensions.list(); setSets(d.sets || []); setError(""); }
+    catch (e) { setError((e && e.message) || t('dim_load_err')); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const guard = async (fn) => {
+    if (busy) return;
+    setBusy(true);
+    try { await fn(); await load(); } catch (e) { alert((e && e.message) || t('dim_save_err')); }
+    setBusy(false);
+  };
+
+  const addSet = () => { const n = newSet.trim(); if (!n) return; guard(async () => { await api.dimensions.createSet({ name: n }); setNewSet(""); }); };
+  const addDim = (setId) => {
+    const n = String(newDim[setId] || "").trim(); if (!n) return;
+    guard(async () => { await api.dimensions.create({ setId, name: n }); setNewDim(p => ({ ...p, [setId]: "" })); });
+  };
+  const saveEdit = () => {
+    if (!editing || !editing.name.trim()) { setEditing(null); return; }
+    const { id, name, kind } = editing;
+    guard(async () => { await (kind === "set" ? api.dimensions.updateSet(id, { name }) : api.dimensions.update(id, { name })); setEditing(null); });
+  };
+  const removeSet = (s) => {
+    const used = (s.dimensions || []).reduce((a, d) => a + (d.question_count || 0), 0);
+    if (!window.confirm(t('dim_delete_set_confirm', { name: s.name, n: used }))) return;
+    guard(() => api.dimensions.deleteSet(s.id));
+  };
+  const removeDim = (d) => {
+    if (!window.confirm(t('dim_delete_confirm', { name: d.name, n: d.question_count || 0 }))) return;
+    guard(() => api.dimensions.remove(d.id));
+  };
+
+  if (loading) return <div className="p-4 md:p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('sl_loading')}</div>;
+
+  return (
+    <div className="p-4 md:p-8">
+      <div className="mb-7">
+        <h1 className="text-2xl font-bold text-slate-800">{t('nav_dimensions')}</h1>
+        <p className="text-sm text-slate-500 mt-1">{t('dim_subtitle')}</p>
+      </div>
+
+      {error && <div className="mb-5 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div>}
+
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-5">
+        <label className="text-xs font-semibold text-slate-600 block mb-2">{t('dim_new_set')}</label>
+        <div className="flex flex-wrap gap-2">
+          <input value={newSet} onChange={e => setNewSet(e.target.value)} onKeyDown={e => e.key === "Enter" && addSet()}
+            placeholder={t('dim_new_set_ph')}
+            className="flex-1 min-w-[200px] border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-purple-400" />
+          <button onClick={addSet} disabled={busy || !newSet.trim()}
+            className="px-4 py-2 rounded-xl text-white text-sm font-medium hover:opacity-90 disabled:opacity-40" style={{ background:GRAD }}>
+            <Plus size={14} className="inline mr-1" />{t('dim_add_set')}
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {sets.length === 0 && <div className="bg-white rounded-2xl p-10 border border-slate-100 shadow-sm text-center text-slate-400 text-sm">{t('dim_empty')}</div>}
+        {sets.map(s => (
+          <div key={s.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-2">
+              <Layers size={16} style={{ color:"#5B21B6" }} />
+              {editing && editing.kind === "set" && editing.id === s.id ? (
+                <input autoFocus value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })}
+                  onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") setEditing(null); }} onBlur={saveEdit}
+                  className="flex-1 min-w-[160px] border border-slate-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:border-purple-400" />
+              ) : (
+                <h3 className="font-semibold text-slate-800 text-sm flex-1 min-w-0 truncate">{s.name}</h3>
+              )}
+              <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{(s.dimensions || []).length} {t('nav_dimensions').toLowerCase()}</span>
+              <button onClick={() => setEditing({ id: s.id, name: s.name, kind: "set" })} title={t('qe_edit')}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50"><Edit size={13} /></button>
+              <button onClick={() => removeSet(s)} title={t('qe_remove')}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
+            </div>
+            {s.description && <p className="px-5 pt-3 text-xs text-slate-400">{s.description}</p>}
+            <div className="p-5 pt-3">
+              <div className="flex flex-wrap gap-2 mb-3">
+                {(s.dimensions || []).map(d => (
+                  <div key={d.id} className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+                    {editing && editing.kind === "dim" && editing.id === d.id ? (
+                      <input autoFocus value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })}
+                        onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") setEditing(null); }} onBlur={saveEdit}
+                        className="w-32 border border-slate-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:border-purple-400" />
+                    ) : (
+                      <span className="text-xs text-slate-700 font-medium">{d.name}</span>
+                    )}
+                    {d.question_count > 0 && <span className="text-xs text-slate-400" title={t('dim_used_in')}>· {d.question_count}</span>}
+                    <button onClick={() => setEditing({ id: d.id, name: d.name, kind: "dim" })} className="text-slate-300 hover:text-purple-600"><Edit size={11} /></button>
+                    <button onClick={() => removeDim(d)} className="text-slate-300 hover:text-red-500"><X size={12} /></button>
+                  </div>
+                ))}
+                {(s.dimensions || []).length === 0 && <span className="text-xs text-slate-400">{t('dim_set_empty')}</span>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input value={newDim[s.id] || ""} onChange={e => setNewDim(p => ({ ...p, [s.id]: e.target.value }))}
+                  onKeyDown={e => e.key === "Enter" && addDim(s.id)} placeholder={t('dim_new_ph')}
+                  className="flex-1 min-w-[180px] border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-purple-400" />
+                <button onClick={() => addDim(s.id)} disabled={busy || !String(newDim[s.id] || "").trim()}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-40">
+                  + {t('dim_add')}
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 flex items-start gap-2 p-4 bg-blue-50 border border-blue-100 rounded-xl">
+        <Info size={14} className="text-blue-500 mt-0.5 flex-shrink-0" />
+        <p className="text-xs text-blue-700 leading-relaxed">{t('dim_hint')}</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── CAMPANHAS ─────────────────────────────────────────────────────────────────
+// Campanha = instrumento × período. Aplicação = campanha × distrito, com meta.
+// É o que amarra pesquisa, distrito, meta e respondentes — sem isso os indicadores
+// de participação ficam presos ao que a própria pesquisa consegue contar.
+function CampaignsPage() {
+  const { t } = useLang();
+  const [campaigns, setCampaigns] = useState([]);
+  const [surveys, setSurveys]     = useState([]);
+  const [distritos, setDistritos] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState("");
+  const [form, setForm]           = useState(null);  // { id?, name, surveyId, startsAt, endsAt, metas:{distId:meta} }
+  const [busy, setBusy]           = useState(false);
+
+  const load = async () => {
+    try {
+      const [c, sv, org] = await Promise.all([
+        api.campaigns.list(),
+        api.surveys.list().catch(() => ({ surveys: [] })),
+        api.org.list().catch(() => ({ distritos: [] })),
+      ]);
+      setCampaigns(c.campaigns || []);
+      setSurveys(sv.surveys || []);
+      setDistritos(org.distritos || []);
+      setError("");
+    } catch (e) { setError((e && e.message) || t('camp_load_err')); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const openNew = () => setForm({ name: "", surveyId: "", startsAt: "", endsAt: "", metas: {} });
+  const openEdit = (c) => setForm({
+    id: c.id, name: c.name, surveyId: c.survey_id,
+    startsAt: c.starts_at ? String(c.starts_at).slice(0, 10) : "",
+    endsAt: c.ends_at ? String(c.ends_at).slice(0, 10) : "",
+    metas: (c.aplicacoes || []).reduce((a, x) => { a[x.distritoId] = String(x.meta || ""); return a; }, {}),
+  });
+
+  const save = async () => {
+    if (!form.name.trim())  { alert(t('camp_name_required')); return; }
+    if (!form.surveyId)     { alert(t('camp_survey_required')); return; }
+    setBusy(true);
+    try {
+      const payload = {
+        name: form.name.trim(), surveyId: form.surveyId,
+        startsAt: form.startsAt || null, endsAt: form.endsAt || null,
+        aplicacoes: Object.entries(form.metas)
+          .filter(([, v]) => String(v).trim() !== "")
+          .map(([distritoId, meta]) => ({ distritoId, meta: parseInt(meta, 10) || 0 })),
+      };
+      await (form.id ? api.campaigns.update(form.id, payload) : api.campaigns.create(payload));
+      setForm(null); await load();
+    } catch (e) { alert((e && e.message) || t('camp_save_err')); }
+    setBusy(false);
+  };
+
+  const remove = async (c) => {
+    if (!window.confirm(t('camp_delete_confirm', { name: c.name }))) return;
+    try { await api.campaigns.remove(c.id); await load(); } catch (e) { alert((e && e.message) || ""); }
+  };
+
+  if (loading) return <div className="p-4 md:p-8 flex items-center justify-center text-slate-400 text-sm gap-2" style={{ minHeight:"60vh" }}><Loader2 size={18} className="animate-spin" />{t('sl_loading')}</div>;
+
+  return (
+    <div className="p-4 md:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">{t('nav_campaigns')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('camp_subtitle')}</p>
+        </div>
+        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-medium hover:opacity-90" style={{ background:GRAD }}>
+          <Plus size={15} />{t('camp_new')}
+        </button>
+      </div>
+
+      {error && <div className="mb-5 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2"><AlertTriangle size={15} />{error}</div>}
+
+      {campaigns.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 border border-slate-100 shadow-sm text-center text-slate-400 text-sm">{t('camp_empty')}</div>
+      ) : (
+        <div className="space-y-4">
+          {campaigns.map(c => (
+            <div key={c.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-slate-800">{c.name}</h3>
+                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                    <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">{c.survey_name || "—"}</span>
+                    <span className="text-xs text-slate-400 flex items-center gap-1">
+                      <CalendarClock size={11} />
+                      {c.starts_at ? new Date(c.starts_at).toLocaleDateString("pt-BR") : "—"} → {c.ends_at ? new Date(c.ends_at).toLocaleDateString("pt-BR") : "—"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => openEdit(c)} title={t('qe_edit')} className="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50"><Edit size={14} /></button>
+                  <button onClick={() => remove(c)} title={t('qe_remove')} className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6 mt-4">
+                <div className="flex-1">
+                  <div className="flex justify-between text-xs text-slate-500 mb-1.5">
+                    <span>{t('camp_adherence')}</span>
+                    <span className="font-medium text-slate-700">{c.respostasTotal}/{c.metaTotal || "—"}</span>
+                  </div>
+                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width:`${Math.min(100, c.adesao || 0)}%`, background:GRAD }} />
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-slate-700">{c.adesao != null ? `${c.adesao}%` : "—"}</div>
+                  <div className="text-xs text-slate-400">{t('camp_of_goal')}</div>
+                </div>
+              </div>
+
+              {(c.aplicacoes || []).length > 0 && (
+                <div className="mt-4 pt-3 border-t border-slate-50">
+                  <div className="text-xs font-semibold text-slate-500 mb-2">{t('camp_applications')}</div>
+                  <div className="space-y-1.5">
+                    {c.aplicacoes.map(a => (
+                      <div key={a.id} className="flex items-center gap-3">
+                        <span className="text-xs text-slate-600 flex-1 min-w-0 truncate">{a.distrito}</span>
+                        <span className="text-xs text-slate-400 whitespace-nowrap">{a.respostas}/{a.meta || "—"}</span>
+                        <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width:`${Math.min(100, a.adesao || 0)}%`, background:GRAD }} />
+                        </div>
+                        <span className="text-xs font-semibold text-slate-700 w-10 text-right tabular-nums">{a.adesao != null ? `${a.adesao}%` : "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {form && (
+        <div onClick={() => !busy && setForm(null)} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3" style={{ background:"rgba(15,23,42,0.45)" }}>
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5 max-h-[90vh] overflow-y-auto">
+            <h3 className="font-semibold text-slate-800 text-sm mb-4">{form.id ? t('camp_edit') : t('camp_new')}</h3>
+
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('camp_name')}</label>
+            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder={t('camp_name_ph')}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:border-purple-400" />
+
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('camp_survey')}</label>
+            <select value={form.surveyId} onChange={e => setForm({ ...form, surveyId: e.target.value })}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm mb-3 bg-white focus:outline-none">
+              <option value="">{t('camp_pick_survey')}</option>
+              {surveys.map(sv => <option key={sv.id} value={sv.id}>{sv.name}</option>)}
+            </select>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="text-xs font-medium text-slate-600 block mb-1">{t('camp_start')}</label>
+                <input type="date" value={form.startsAt} onChange={e => setForm({ ...form, startsAt: e.target.value })}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 block mb-1">{t('camp_end')}</label>
+                <input type="date" value={form.endsAt} onChange={e => setForm({ ...form, endsAt: e.target.value })}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none" />
+              </div>
+            </div>
+
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('camp_goals')}</label>
+            <p className="text-xs text-slate-400 mb-2">{t('camp_goals_hint')}</p>
+            {distritos.length === 0 ? (
+              <p className="text-xs text-amber-600 mb-3">{t('camp_no_districts')}</p>
+            ) : (
+              <div className="space-y-1.5 mb-4 max-h-52 overflow-y-auto pr-1">
+                {distritos.map(d => (
+                  <div key={d.id} className="flex items-center gap-2">
+                    <span className="text-xs text-slate-600 flex-1 min-w-0 truncate">{d.name}</span>
+                    <input type="number" min="0" value={form.metas[d.id] || ""} placeholder={d.meta ? String(d.meta) : "0"}
+                      onChange={e => setForm({ ...form, metas: { ...form.metas, [d.id]: e.target.value.replace(/\D/g, "") } })}
+                      className="w-20 border border-slate-200 rounded-lg px-2 py-1 text-xs text-right focus:outline-none focus:border-purple-400" />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <button onClick={save} disabled={busy} className="flex-1 text-xs font-bold text-white rounded-lg px-3 py-2 disabled:opacity-50" style={{ background:GRAD }}>
+                {busy ? t('common_saving') : t('camp_save')}
+              </button>
+              <button onClick={() => setForm(null)} disabled={busy} className="text-xs font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50 disabled:opacity-50">
+                {t('sl_deadline_cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── MAIN APP ──────────────────────────────────────────────────────────────────
 const PAGE_LABELS = {
   dashboard:"Dashboard", surveys:"Pesquisas", respondents:"Respondentes",
+  dimensions:"Dimensões", campanhas:"Campanhas",
   evaluation360:"Avaliação 360°", results:"Resultados",
   distribuicao:"Central de Distribuição",
   templates:"Biblioteca de Templates", relatorios:"Relatórios Avançados",
@@ -4615,6 +5716,7 @@ export default function RHSurvey() {
   const unreadCount = notifications.filter(n => !n.read).length;
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < 768);
   const [navOpen, setNavOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);   // pesquisa aberta para edição
   const [mustChangePw, setMustChangePw] = useState(() => {
     try { return !!JSON.parse(localStorage.getItem('rh_user') || '{}').must_change_password; } catch { return false; }
   });
@@ -4651,15 +5753,20 @@ export default function RHSurvey() {
     })();
   }, []);
 
-  const handleNav = p => { setCreating(false); setTmpl(null); setPage(p); setNavOpen(false); };
+  const handleNav = p => { setCreating(false); setTmpl(null); setEditingId(null); setPage(p); setNavOpen(false); };
 
   const renderContent = () => {
-    if (creating) return <SurveyBuilder onBack={() => { setCreating(false); setTmpl(null); }} initial={tmpl} />;
+    if (creating || editingId) return <SurveyBuilder
+      onBack={() => { setCreating(false); setTmpl(null); setEditingId(null); }}
+      initial={tmpl} editId={editingId} />;
     switch (page) {
       case "dashboard":     return <Dashboard     setPage={handleNav} />;
-      case "surveys":       return <SurveyList    onCreateNew={() => setCreating(true)} onView={() => handleNav("results")} />;
+      case "surveys":       return <SurveyList    onCreateNew={() => setCreating(true)} onView={() => handleNav("results")}
+                                                   onEdit={(id) => { setTmpl(null); setEditingId(id); }} />;
       case "respondents":   return <RespondentManager />;
       case "estrutura":     return <OrgStructure />;
+      case "dimensions":    return <DimensionsPage />;
+      case "campanhas":     return <CampaignsPage />;
       case "evaluation360": return <Evaluation360 />;
       case "results":       return <ResultsDashboard />;
       case "templates":     return <TemplatesLibrary onUseTemplate={(t) => { setTmpl(t); setCreating(true); }} />;
