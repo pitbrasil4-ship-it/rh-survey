@@ -2014,7 +2014,12 @@ function RespondentManager() {
   const [saving,   setSaving]     = useState(false);
   const [formError,setFormError]  = useState("");
 
-  const resetForm = () => { setFName(""); setFEmail(""); setFGroup("subordinados"); setFDept(""); setFRole(""); setFormError(""); };
+  const [fDistrito, setFDistrito] = useState("");
+  const [distritos, setDistritos] = useState([]);
+  // O distrito liga o respondente à Estrutura — é o que dá adesão e escopo por distrito.
+  useEffect(() => { api.org.list().then(d => setDistritos(d.distritos || [])).catch(() => {}); }, []);
+
+  const resetForm = () => { setFName(""); setFEmail(""); setFGroup("subordinados"); setFDept(""); setFRole(""); setFDistrito(""); setFormError(""); };
 
   const handleAdd = async () => {
     setFormError("");
@@ -2027,6 +2032,7 @@ function RespondentManager() {
         groupType: fGroup,
         department: fDept.trim() || undefined,
         role: fRole.trim() || undefined,
+        distritoId: fDistrito || undefined,
       });
       const r = res.respondent;
       setRespondents(prev => [{
@@ -2206,7 +2212,15 @@ function RespondentManager() {
               <label className="text-xs font-medium text-slate-600 block mb-1">{t('rm_department')}</label>
               <input value={fDept} onChange={e=>setFDept(e.target.value)} placeholder={t('rm_dept_ph')} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
             </div>
-            <div className="col-span-2">
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('rm_distrito')}</label>
+              <select value={fDistrito} onChange={e=>setFDistrito(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white">
+                <option value="">{t('rm_distrito_none')}</option>
+                {distritos.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1">{t('rm_distrito_hint')}</p>
+            </div>
+            <div>
               <label className="text-xs font-medium text-slate-600 block mb-1">{t('rm_role')}</label>
               <input value={fRole} onChange={e=>setFRole(e.target.value)} placeholder={t('rm_role_ph')} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
             </div>
@@ -3514,6 +3528,240 @@ function SecurityPage() {
 
 
 // ─── DISTRIBUTION CENTER ───────────────────────────────────────────────────────
+// ─── CONVITES PELO SERVIDOR ────────────────────────────────────────────────────
+// O disparo sai do servidor, não da caixa de e-mail de quem monta a campanha.
+// É isso que dá rastreamento (enviado / aberto / respondido), lembrete automático
+// para quem não respondeu e o painel de adesão por distrito durante a coleta.
+function InvitationsPanel({ surveyId, surveyName, isActive }) {
+  const { t } = useLang();
+  const [data, setData]         = useState(null);   // { invitations, summary, scheduled }
+  const [adherence, setAdher]   = useState(null);
+  const [loading, setLoading]   = useState(false);
+  const [busy, setBusy]         = useState("");
+  const [msg, setMsg]           = useState(null);   // { kind:'ok'|'warn', text }
+  const [paste, setPaste]       = useState("");
+  const [fromRespondents, setFromRespondents] = useState(false);
+  const [remindAt, setRemindAt] = useState("");
+  const [showList, setShowList] = useState(false);
+
+  const load = async () => {
+    if (!surveyId) { setData(null); setAdher(null); return; }
+    setLoading(true);
+    try {
+      const [d, a] = await Promise.all([
+        api.invitations.list(surveyId),
+        api.invitations.adherence(surveyId).catch(() => null),
+      ]);
+      setData(d); setAdher(a);
+    } catch (e) { setMsg({ kind:"warn", text:(e && e.message) || t('inv_load_err') }); }
+    setLoading(false);
+  };
+  useEffect(() => { setMsg(null); setPaste(""); load(); /* eslint-disable-next-line */ }, [surveyId]);
+
+  /* Lê a lista colada: um convidado por linha, "Nome <email>" ou "Nome; email". */
+  const parsePeople = () => paste.split(/\r?\n/).map(line => {
+    const raw = line.trim();
+    if (!raw) return null;
+    const m = raw.match(/^(.*?)[<;,\t]\s*([^\s<>;,]+@[^\s<>;,]+)\s*>?$/);
+    if (m) return { name: m[1].trim().replace(/[;,]$/, ""), email: m[2].trim() };
+    const only = raw.match(/([^\s<>;,]+@[^\s<>;,]+)/);
+    return only ? { name: "", email: only[1] } : null;
+  }).filter(Boolean);
+
+  const run = async (key, fn) => {
+    if (busy) return;
+    setBusy(key); setMsg(null);
+    try {
+      const r = await fn();
+      setMsg({ kind: (r && r.sent === 0 && r.failed > 0) ? "warn" : "ok", text: r && r.__message ? r.__message : t('inv_done') });
+      await load();
+    } catch (e) { setMsg({ kind:"warn", text:(e && e.message) || t('inv_err') }); }
+    setBusy("");
+  };
+
+  const addInvites = () => {
+    const people = parsePeople();
+    if (!people.length && !fromRespondents) { setMsg({ kind:"warn", text:t('inv_need_people') }); return; }
+    run("add", async () => {
+      const r = await api.invitations.create(surveyId, { people, fromRespondents, send: true });
+      setPaste("");
+      return { ...r, __message: t('inv_created', { n: r.createdCount || 0, sent: r.sent || 0 }) +
+        (r.failed ? " · " + t('inv_failed', { n: r.failed, reason: r.reason === "not_configured" ? t('inv_mail_off') : (r.reason || "") }) : "") };
+    });
+  };
+  const sendPending = () => run("send", async () => {
+    const r = await api.invitations.send(surveyId);
+    return { ...r, __message: r.sent ? t('inv_sent_n', { n: r.sent }) : t('inv_nothing_sent', { reason: r.reason === "not_configured" ? t('inv_mail_off') : (r.reason || "—") }) };
+  });
+  const remindNow = () => run("remind", async () => {
+    const r = await api.invitations.remind(surveyId);
+    return { ...r, __message: r.sent ? t('inv_reminded_n', { n: r.sent }) : t('inv_no_pending') };
+  });
+  const schedule = () => {
+    if (!remindAt) { setMsg({ kind:"warn", text:t('inv_pick_date') }); return; }
+    run("sched", async () => {
+      await api.invitations.schedule(surveyId, remindAt + "T09:00:00-03:00");
+      setRemindAt("");
+      return { __message: t('inv_scheduled') };
+    });
+  };
+  const unschedule = (id) => run("unsched", async () => {
+    await api.invitations.unschedule(id);
+    return { __message: t('inv_unscheduled') };
+  });
+
+  if (!surveyId) return null;
+  const sum = data?.summary || { total:0, sent:0, opened:0, responded:0, pending:0, failed:0 };
+  const scheduled = (data?.scheduled || []).filter(s => !s.sent_at);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mt-6">
+      <div className="flex items-center gap-2 mb-1">
+        <MailCheck size={16} style={{ color:"#5B21B6" }} />
+        <h3 className="font-semibold text-slate-800 text-sm">{t('inv_title')}</h3>
+        {loading && <Loader2 size={13} className="animate-spin text-slate-400" />}
+      </div>
+      <p className="text-xs text-slate-400 mb-4">{t('inv_subtitle')}</p>
+
+      {!isActive && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl px-3 py-2 text-xs flex items-center gap-2">
+          <AlertTriangle size={13} />{t('inv_publish_first')}
+        </div>
+      )}
+
+      {/* Funil de adesão */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        {[
+          [t('inv_st_total'),     sum.total,     "bg-slate-50 text-slate-700"],
+          [t('inv_st_sent'),      sum.sent,      "bg-blue-50 text-blue-700"],
+          [t('inv_st_opened'),    sum.opened,    "bg-amber-50 text-amber-700"],
+          [t('inv_st_responded'), sum.responded, "bg-green-50 text-green-700"],
+        ].map(([lbl, val, cls], i) => (
+          <div key={i} className={`rounded-xl px-3 py-2.5 text-center ${cls}`}>
+            <div className="text-lg font-bold">{val}</div>
+            <div className="text-xs opacity-80">{lbl}</div>
+          </div>
+        ))}
+      </div>
+      {sum.failed > 0 && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-xs flex items-center gap-2">
+          <AlertTriangle size={13} />{t('inv_failed_n', { n: sum.failed })}
+        </div>
+      )}
+
+      {/* Novos convites */}
+      <label className="text-xs font-semibold text-slate-600 block mb-1">{t('inv_add_title')}</label>
+      <textarea value={paste} onChange={e => setPaste(e.target.value)} rows={3} placeholder={t('inv_add_ph')}
+        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:border-purple-400" style={{ resize:"vertical" }} />
+      <label className="flex items-center gap-2 mt-2 text-xs text-slate-600 cursor-pointer">
+        <input type="checkbox" checked={fromRespondents} onChange={e => setFromRespondents(e.target.checked)} className="accent-purple-600" />
+        {t('inv_from_respondents')}
+      </label>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <button onClick={addInvites} disabled={!!busy || !isActive}
+          className="flex items-center gap-2 px-4 py-2 text-white rounded-xl text-xs font-medium hover:opacity-90 disabled:opacity-40" style={{ background:GRAD }}>
+          {busy==="add" ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}{t('inv_add_send')}
+        </button>
+        <button onClick={sendPending} disabled={!!busy || !sum.pending}
+          className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs hover:bg-slate-50 disabled:opacity-40">
+          {busy==="send" ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}{t('inv_send_pending', { n: sum.pending })}
+        </button>
+        <button onClick={remindNow} disabled={!!busy || !(sum.total - sum.responded)}
+          className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs hover:bg-slate-50 disabled:opacity-40">
+          {busy==="remind" ? <Loader2 size={13} className="animate-spin" /> : <Bell size={13} />}{t('inv_remind_now')}
+        </button>
+      </div>
+
+      {msg && (
+        <div className={`mt-3 rounded-xl px-3 py-2 text-xs flex items-center gap-2 ${msg.kind==="ok" ? "bg-green-50 border border-green-200 text-green-700" : "bg-amber-50 border border-amber-200 text-amber-700"}`}>
+          {msg.kind==="ok" ? <CheckCircle size={13} /> : <AlertTriangle size={13} />}{msg.text}
+        </div>
+      )}
+
+      {/* Lembretes agendados */}
+      <div className="mt-5 pt-4 border-t border-slate-100">
+        <label className="text-xs font-semibold text-slate-600 block mb-1">{t('inv_schedule_title')}</label>
+        <p className="text-xs text-slate-400 mb-2">{t('inv_schedule_hint')}</p>
+        <div className="flex flex-wrap gap-2">
+          <input type="date" value={remindAt} onChange={e => setRemindAt(e.target.value)}
+            className="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:border-purple-400" />
+          <button onClick={schedule} disabled={!!busy || !remindAt}
+            className="flex items-center gap-2 px-3 py-2 border border-purple-200 text-purple-700 rounded-xl text-xs font-medium hover:bg-purple-50 disabled:opacity-40">
+            <CalendarClock size={13} />{t('inv_schedule')}
+          </button>
+        </div>
+        {scheduled.length > 0 && (
+          <div className="mt-2 space-y-1">
+            {scheduled.map(s => (
+              <div key={s.id} className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-1.5">
+                <CalendarClock size={12} className="text-slate-400" />
+                <span className="text-xs text-slate-600 flex-1">{new Date(s.run_at).toLocaleDateString("pt-BR")}</span>
+                <button onClick={() => unschedule(s.id)} className="text-slate-300 hover:text-red-500"><X size={12} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Adesão por distrito */}
+      {adherence && adherence.distritos && adherence.distritos.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-slate-100">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-slate-600">{t('inv_adherence_title')}</span>
+            <span className="text-xs text-slate-400">
+              {adherence.totals.respostas}/{adherence.totals.meta || "—"}
+              {adherence.totals.adesao != null ? ` · ${adherence.totals.adesao}%` : ""}
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {adherence.distritos.map(d => (
+              <div key={d.distritoId} className="flex items-center gap-3">
+                <span className="text-xs text-slate-600 flex-1 min-w-0 truncate" title={d.regional || ""}>{d.distrito}</span>
+                <span className="text-xs text-slate-400 whitespace-nowrap">{d.respostas}/{d.meta || "—"}</span>
+                <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width:`${Math.min(100, d.adesao || 0)}%`, background:GRAD }} />
+                </div>
+                <span className="text-xs font-semibold text-slate-700 w-10 text-right tabular-nums">{d.adesao != null ? `${d.adesao}%` : "—"}</span>
+              </div>
+            ))}
+          </div>
+          {adherence.totals.semDistrito > 0 && (
+            <p className="text-xs text-slate-400 mt-2">{t('inv_no_district', { n: adherence.totals.semDistrito })}</p>
+          )}
+        </div>
+      )}
+
+      {/* Lista de convidados */}
+      {(data?.invitations || []).length > 0 && (
+        <div className="mt-5 pt-4 border-t border-slate-100">
+          <button onClick={() => setShowList(v => !v)} className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+            <ChevronDown size={13} className={`transition-transform ${showList ? "rotate-180" : ""}`} />
+            {t('inv_list_title', { n: data.invitations.length })}
+          </button>
+          {showList && (
+            <div className="mt-2 space-y-1 max-h-64 overflow-y-auto">
+              {data.invitations.map(i => (
+                <div key={i.id} className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-1.5">
+                  <span className="text-xs text-slate-700 flex-1 min-w-0 truncate" title={i.email}>{i.name || i.email}</span>
+                  {i.distrito_name && <span className="text-xs text-slate-400 truncate max-w-[100px]">{i.distrito_name}</span>}
+                  <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${
+                    i.responded_at ? "bg-green-100 text-green-700"
+                    : i.opened_at  ? "bg-amber-100 text-amber-700"
+                    : i.sent_at    ? "bg-blue-100 text-blue-700"
+                    : i.status === "erro" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-600"}`}>
+                    {i.responded_at ? t('inv_st_responded') : i.opened_at ? t('inv_st_opened') : i.sent_at ? t('inv_st_sent') : i.status === "erro" ? t('inv_st_error') : t('inv_st_pending')}
+                  </span>
+                  {i.reminders_sent > 0 && <span className="text-xs text-slate-400 whitespace-nowrap">{t('inv_reminders', { n: i.reminders_sent })}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DistributionCenter() {
   const { t } = useLang();
   const [surveys, setSurveys]         = useState([]);
@@ -3688,6 +3936,7 @@ function DistributionCenter() {
           </div>
         </>
       )}
+      <InvitationsPanel surveyId={selectedId} surveyName={survey?.name} isActive={isActive} />
       <SegmentLinksPanel surveyId={selectedId} />
     </div>
   );
@@ -3702,6 +3951,7 @@ function AIInsights() {
   const [loading,     setLoading]     = useState(false);
   const [insights,    setInsights]    = useState(null);
   const [dataMode,    setDataMode]    = useState(null);
+  const [temas,       setTemas]       = useState([]);   // comentários abertos agrupados por tema
   const [exportingInsPdf, setExportingInsPdf] = useState(false);
   const [error,       setError]       = useState("");
 
@@ -3726,6 +3976,7 @@ function AIInsights() {
     try {
       const data = await api.results.insights(selectedId, lang);
       setInsights(data.insights);
+      setTemas(data.temasComentarios || []);
       setDataMode(data.aiUnavailable ? 'fallback' : data.demo ? 'demo' : 'ai');
     } catch (e) {
       setError(e.message || t('ai_gen_error'));
@@ -3884,20 +4135,62 @@ function AIInsights() {
             </div>
           </div>
 
+          {(insights.analiseDimensoesArr||[]).length > 0 && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+                <Layers size={15} style={{ color:"#5B21B6" }} />{t('ai_dimensions')}
+              </h3>
+              <div className="space-y-2">
+                {insights.analiseDimensoesArr.map((d,i) => (
+                  <div key={i} className="flex items-start gap-2.5 p-3 bg-purple-50 rounded-xl">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5 flex-shrink-0" />
+                    <p className="text-xs text-slate-700 leading-relaxed">{d}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {insights.leituraResultados && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <h3 className="font-semibold text-slate-800 text-sm mb-2 flex items-center gap-2">
+                <FileText size={15} className="text-slate-500" />{t('ai_reading')}
+              </h3>
+              <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{insights.leituraResultados}</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {/* Temas */}
+            {/* Temas dos comentários abertos, com contagem */}
             <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
               <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
                 <MessageCircle size={15} className="text-blue-500" />{t('ai_themes')}
               </h3>
-              <div className="space-y-2">
-                {(insights.temasAbertosArr||[]).map((t,i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl">
-                    <span className="text-xs font-bold text-blue-600 w-5 text-center">{i+1}</span>
-                    <span className="text-xs text-slate-700">{t}</span>
-                  </div>
-                ))}
-              </div>
+              {temas.length > 0 ? (
+                <div className="space-y-2">
+                  {temas.map((tm,i) => (
+                    <div key={i} className="p-3 bg-blue-50 rounded-xl">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-700 flex-1">{tm.tema}</span>
+                        <span className="text-xs font-bold text-blue-600 whitespace-nowrap">{tm.count} {tm.count===1 ? t('ai_mention_one') : t('ai_mention_many')}</span>
+                      </div>
+                      {(tm.exemplos||[]).length > 0 && (
+                        <p className="text-xs text-slate-500 mt-1.5 italic leading-relaxed">"{tm.exemplos[0]}"</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {(insights.temasAbertosArr||[]).map((tx,i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl">
+                      <span className="text-xs font-bold text-blue-600 w-5 text-center">{i+1}</span>
+                      <span className="text-xs text-slate-700">{tx}</span>
+                    </div>
+                  ))}
+                  {!(insights.temasAbertosArr||[]).length && <span className="text-xs text-slate-400">{t('ai_no_themes')}</span>}
+                </div>
+              )}
             </div>
 
             {/* Prioridade + Benchmark */}
@@ -4022,6 +4315,11 @@ function TeamManagement() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [copied,   setCopied]   = useState(false);
+  const [org,      setOrg]      = useState({ regionais: [], distritos: [] });
+  const [categories, setCategories] = useState([]);   // categorias de pesquisa existentes
+  const [scopeUser, setScopeUser]   = useState(null); // usuário com o escopo aberto
+  const [scopeSaving, setScopeSaving] = useState(false);
+  const [newScope, setNewScope]     = useState({ regionalId:"", distritoId:"" });
 
   const roleConfig = {
     admin:   { label:"Administrador", bg:"bg-purple-100 text-purple-700" },
@@ -4055,14 +4353,39 @@ function TeamManagement() {
 
   useEffect(() => { loadUsers(); }, []);
 
+  // Estrutura e categorias alimentam o escopo: a que distrito o Gestor pertence e
+  // quais categorias de pesquisa ficam ocultas para ele.
+  useEffect(() => {
+    api.org.list().then(d => setOrg({ regionais: d.regionais || [], distritos: d.distritos || [] })).catch(() => {});
+    api.surveys.list()
+      .then(d => setCategories([...new Set((d.surveys || []).map(x => x.category).filter(Boolean))].sort()))
+      .catch(() => {});
+  }, []);
+
+  const saveScope = async () => {
+    if (!scopeUser) return;
+    setScopeSaving(true); setError("");
+    try {
+      await api.users.update(scopeUser.id, {
+        regionalId: scopeUser.regional_id || null,
+        distritoId: scopeUser.distrito_id || null,
+        blockedCategories: scopeUser.blocked_categories || [],
+      });
+      setScopeUser(null);
+      await loadUsers();
+    } catch (e) { setError((e && e.message) || t('tm_scope_err')); }
+    setScopeSaving(false);
+  };
+
   async function handleCreate() {
     if (!newName || !newEmail) { setError(t('tm_fill_name_email')); return; }
     setSaving(true); setError(""); setTempPw(null); setEmailStatus(null);
     try {
-      const data = await api.users.create({ name:newName, email:newEmail, role:newRole, sendEmail });
+      const data = await api.users.create({ name:newName, email:newEmail, role:newRole, sendEmail,
+        regionalId: newScope.regionalId || null, distritoId: newScope.distritoId || null });
       if (data.temporaryPassword) { setTempPw(data.temporaryPassword); setTempName(newName); setTempEmail(newEmail); }
       if (sendEmail) setEmailStatus(data.emailSent ? 'sent' : 'manual');
-      setNewName(""); setNewEmail(""); setNewRole("viewer"); setShowForm(false);
+      setNewName(""); setNewEmail(""); setNewRole("viewer"); setNewScope({ regionalId:"", distritoId:"" }); setShowForm(false);
       await loadUsers();
     } catch (e) {
       setError(e.message || t('tm_create_error'));
@@ -4187,7 +4510,29 @@ function TeamManagement() {
                 <option value="viewer">{t('role_viewer')}</option>
               </select>
             </div>
+            {newRole !== "admin" && (
+              <>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-slate-600 block mb-1">{t('tm_scope_regional')}</label>
+                  <select className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white"
+                    value={newScope.regionalId} onChange={e => setNewScope({ regionalId: e.target.value, distritoId: "" })}>
+                    <option value="">{t('tm_scope_all')}</option>
+                    {org.regionais.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-slate-600 block mb-1">{t('tm_scope_distrito')}</label>
+                  <select className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white"
+                    value={newScope.distritoId} onChange={e => setNewScope({ ...newScope, distritoId: e.target.value })}>
+                    <option value="">{newScope.regionalId ? t('tm_scope_whole_regional') : t('tm_scope_all')}</option>
+                    {org.distritos.filter(d => !newScope.regionalId || d.regional_id === newScope.regionalId)
+                      .map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
           </div>
+          {newRole !== "admin" && <p className="text-xs text-slate-500 mt-2">{t('tm_scope_hint')}</p>}
           <label className="flex items-center gap-2 mt-3 text-xs text-slate-600 cursor-pointer select-none">
             <input type="checkbox" checked={sendEmail} onChange={e => setSendEmail(e.target.checked)} className="accent-purple-600" />
             {t('tm_send_email_cb')}
@@ -4232,9 +4577,29 @@ function TeamManagement() {
                         {!u.active && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{t('rd_inactive')}</span>}
                       </div>
                       <div className="text-xs text-slate-400 truncate">{u.email}</div>
-                      <div className="text-xs text-slate-400">{t('tm_last_login')}: {fmtDate(u.last_login)}</div>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <span className="text-xs text-slate-400">{t('tm_last_login')}: {fmtDate(u.last_login)}</span>
+                        {u.role !== "admin" && (u.distrito_name || u.regional_name) && (
+                          <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Building2 size={9} />{u.distrito_name || u.regional_name}
+                          </span>
+                        )}
+                        {u.role !== "admin" && (u.blocked_categories || []).length > 0 && (
+                          <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full flex items-center gap-1"
+                            title={(u.blocked_categories || []).join(", ")}>
+                            <EyeOff size={9} />{t('tm_hidden_n', { n: u.blocked_categories.length })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {u.role !== "admin" && (
+                        <button onClick={() => setScopeUser({ ...u, blocked_categories: [...(u.blocked_categories || [])] })}
+                          title={t('tm_scope_title')}
+                          className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors">
+                          <Shield size={13} />
+                        </button>
+                      )}
                       <select value={u.role} onChange={e => handleRoleChange(u.id, e.target.value)}
                         className={`text-xs font-semibold px-2 py-1 rounded-lg border-0 cursor-pointer ${r.bg}`}>
                         <option value="admin">{t('role_admin')}</option>
@@ -4315,6 +4680,64 @@ function TeamManagement() {
           </div>
         )}
       </div>
+
+      {/* Escopo de visualização do usuário */}
+      {scopeUser && (
+        <div onClick={() => !scopeSaving && setScopeUser(null)} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3" style={{ background:"rgba(15,23,42,0.45)" }}>
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background:GRAD }}><Shield size={17} /></div>
+              <h3 className="font-semibold text-slate-800 text-sm">{t('tm_scope_title')}</h3>
+            </div>
+            <p className="text-xs text-slate-500 mb-4 truncate">{scopeUser.name} · {scopeUser.email}</p>
+
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('tm_scope_regional')}</label>
+            <select value={scopeUser.regional_id || ""} onChange={e => setScopeUser({ ...scopeUser, regional_id: e.target.value || null, distrito_id: null })}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm mb-3 bg-white focus:outline-none">
+              <option value="">{t('tm_scope_all')}</option>
+              {org.regionais.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('tm_scope_distrito')}</label>
+            <select value={scopeUser.distrito_id || ""} onChange={e => setScopeUser({ ...scopeUser, distrito_id: e.target.value || null })}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm mb-1 bg-white focus:outline-none">
+              <option value="">{scopeUser.regional_id ? t('tm_scope_whole_regional') : t('tm_scope_all')}</option>
+              {org.distritos.filter(d => !scopeUser.regional_id || d.regional_id === scopeUser.regional_id)
+                .map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+            <p className="text-xs text-slate-400 mb-4">{t('tm_scope_hint')}</p>
+
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('tm_hidden_title')}</label>
+            <p className="text-xs text-slate-400 mb-2">{t('tm_hidden_hint')}</p>
+            {categories.length === 0 ? (
+              <p className="text-xs text-slate-400 mb-4">{t('tm_hidden_none')}</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {categories.map(c => {
+                  const on = (scopeUser.blocked_categories || []).includes(c);
+                  return (
+                    <button key={c} type="button"
+                      onClick={() => setScopeUser({ ...scopeUser,
+                        blocked_categories: on ? scopeUser.blocked_categories.filter(x => x !== c) : [...(scopeUser.blocked_categories || []), c] })}
+                      className={`px-2.5 py-1 rounded-lg text-xs border ${on ? "border-amber-300 bg-amber-50 text-amber-700 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                      {on ? <EyeOff size={10} className="inline mr-1" /> : null}{c}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <button onClick={saveScope} disabled={scopeSaving} className="flex-1 text-xs font-bold text-white rounded-lg px-3 py-2 disabled:opacity-50" style={{ background:GRAD }}>
+                {scopeSaving ? t('common_saving') : t('tm_scope_save')}
+              </button>
+              <button onClick={() => setScopeUser(null)} disabled={scopeSaving} className="text-xs font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50 disabled:opacity-50">
+                {t('sl_deadline_cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
