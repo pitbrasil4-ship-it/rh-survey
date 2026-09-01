@@ -5339,7 +5339,7 @@ function DimensionsPage() {
   return (
     <div className="p-4 md:p-8">
       <div className="mb-7">
-        <h1 className="text-2xl font-bold text-slate-800">{t('nav_dimensions')}</h1>
+        <h1 className="text-2xl font-bold text-slate-800">{t('title_dimensions')}</h1>
         <p className="text-sm text-slate-500 mt-1">{t('dim_subtitle')}</p>
       </div>
 
@@ -5485,7 +5485,7 @@ function CampaignsPage() {
     <div className="p-4 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">{t('nav_campaigns')}</h1>
+          <h1 className="text-2xl font-bold text-slate-800">{t('title_campanhas')}</h1>
           <p className="text-sm text-slate-500 mt-1">{t('camp_subtitle')}</p>
         </div>
         <button onClick={openNew} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-medium hover:opacity-90" style={{ background:GRAD }}>
@@ -5549,6 +5549,7 @@ function CampaignsPage() {
                       </div>
                     ))}
                   </div>
+                  {c.semDistrito > 0 && <p className="text-xs text-slate-400 mt-2">{t('inv_no_district', { n: c.semDistrito })}</p>}
                 </div>
               )}
             </div>
@@ -6220,7 +6221,7 @@ export default function RHSurvey() {
         <Sidebar page={creating?"surveys":page} setPage={handleNav} />
       )}
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
-        <TopBar title={creating ? translate(lang,"new_survey") : translate(lang,"title_"+page)} unreadCount={unreadCount} onBell={() => handleNav("notificacoes")} onMenu={() => setNavOpen(true)} showMenu={isMobile} />
+        <TopBar title={editingId ? translate(lang,"sb_edit_title") : creating ? translate(lang,"new_survey") : translate(lang,"title_"+page)} unreadCount={unreadCount} onBell={() => handleNav("notificacoes")} onMenu={() => setNavOpen(true)} showMenu={isMobile} />
         <main style={{ flex:1, overflowY:"auto", overflowX:"hidden" }}>{renderContent()}</main>
       </div>
       {!lgpdOk && <LGPDBanner onAccept={() => setLgpdOk(true)} />}

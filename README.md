@@ -108,6 +108,50 @@ VITE_API_URL=https://rh-survey-api.railway.app
 
 ---
 
+## ✉️ Envio de convites pelo servidor
+
+A Central de Distribuição dispara os convites pelo próprio servidor — é o que dá
+rastreamento (enviado / aberto / respondido), lembrete automático para quem não
+respondeu e o painel de adesão por distrito durante a coleta.
+
+Para ligar o envio automático, defina no Railway:
+
+```env
+RESEND_API_KEY=re_...                      # conta em resend.com
+MAIL_FROM=RH Survey <rh@suaempresa.com.br> # domínio verificado no Resend
+APP_URL=https://rh-survey.vercel.app       # base dos links de convite
+```
+
+Sem a chave, os convites são criados mas não saem: a tela mostra o motivo e o RH
+continua podendo usar o envio manual (mailto / copiar mensagem / WhatsApp).
+
+Os lembretes agendados são processados pelo próprio servidor, a cada minuto,
+enviando apenas para quem ainda não respondeu.
+
+---
+
+## 🧩 Modelo de perguntas
+
+Cada pergunta guarda, além do texto em PT/EN/ES:
+
+| Campo | Para que serve |
+|-------|----------------|
+| `options` + `options_en/es` | rótulos das alternativas, editáveis por idioma |
+| `option_points` | peso (%) de cada alternativa, alinhado por índice |
+| `required` | obrigatoriedade por questão |
+| `config.neutralIndex` | opção neutra (ex.: "Não se aplica") — fora do denominador |
+| `config.allowOther` / `otherLabel` | opção "Outros" com campo aberto |
+| `config.rows` | linhas da Matriz (as colunas são as `options`) |
+| `config.fields` | campos do Bloco de Formulário, com validação de e-mail/telefone/data |
+| `logic.showIf` | exibe a pergunta só se a de nº `order` tiver uma das alternativas |
+| `logic.endIf` | encerra o questionário quando uma destas alternativas é marcada |
+| `dimensions` | vínculo N:N com as dimensões cadastradas (várias taxonomias) |
+
+Tipos disponíveis: `nps`, `scale` (Likert configurável), `multiple`, `dropdown`,
+`matrix`, `form`, `text`, `rating`, `yesno`.
+
+---
+
 ## 🔄 Fluxo de deploy automático
 
 ```
@@ -148,12 +192,28 @@ rodando  no ar
 | GET    | /api/v1/lgpd/consents | ✅ | Consentimentos |
 | GET    | /api/v1/lgpd/report | ✅ Admin | Relatório LGPD |
 | GET    | /api/v1/lgpd/audit-log | ✅ Admin | Trilha de auditoria |
+| PUT    | /api/v1/surveys/:id | ✅ | Editar pesquisa (perguntas incluídas, se não houver respostas) |
+| POST   | /api/v1/surveys/:id/duplicate | ✅ | Duplicar como novo rascunho |
+| GET    | /api/v1/dimensions | ✅ | Conjuntos de dimensões e suas dimensões |
+| POST   | /api/v1/dimensions/sets · /api/v1/dimensions | ✅ | Cadastrar conjunto / dimensão |
+| GET    | /api/v1/campaigns | ✅ | Campanhas (instrumento × período) e adesão |
+| POST   | /api/v1/campaigns | ✅ | Criar campanha com meta por distrito |
+| GET    | /api/v1/invitations/survey/:id | ✅ | Convites, com rastreio e lembretes agendados |
+| POST   | /api/v1/invitations/survey/:id | ✅ | Criar e disparar convites pelo servidor |
+| POST   | /api/v1/invitations/survey/:id/remind | ✅ | Lembrar quem não respondeu |
+| GET    | /api/v1/invitations/survey/:id/adherence | ✅ | Adesão por distrito durante a coleta |
 
 ---
 
 ## 🛡️ Segurança
 
 - JWT access token (1h) + refresh token revogável (7d)
+- Escopo por regional/distrito no usuário: um Gestor amarrado a um distrito só
+  enxerga resultados e respondentes daquele distrito
+- Supressão de resultados por categoria de pesquisa (o Gestor não vê a avaliação
+  em que ele é o avaliado)
+- Controle de duplicidade por dispositivo, link de convite de uso único e limite
+  de respostas por pesquisa
 - bcryptjs rounds 12 (~250ms por hash)
 - Helmet: CSP + HSTS + X-Frame-Options
 - Rate limiting: 300 req/15min global · 10 req/15min em /login

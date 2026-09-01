@@ -53,7 +53,7 @@ export const STRINGS = {
     qtype_form_label: "Bloco de Formulário", qtype_form_desc: "Campos com validação",
     // ── navegação ──
     nav_dimensions: "Dimensões", title_dimensions: "Dimensões e Classificações",
-    nav_campaigns: "Campanhas", title_campanhas: "Campanhas",
+    nav_campanhas: "Campanhas", title_campanhas: "Campanhas",
     // ── editor de perguntas ──
     qe_options: "Alternativas", qe_columns: "Colunas", qe_option: "Opção", qe_add_option: "Adicionar alternativa",
     qe_remove_option: "Remover", qe_move_up: "Subir", qe_move_down: "Descer", qe_no_options: "Nenhuma alternativa ainda.",
@@ -487,7 +487,7 @@ export const STRINGS = {
     qtype_matrix_label: "Matrix", qtype_matrix_desc: "Rows × columns, average per row",
     qtype_form_label: "Form Block", qtype_form_desc: "Fields with validation",
     nav_dimensions: "Dimensions", title_dimensions: "Dimensions and Taxonomies",
-    nav_campaigns: "Campaigns", title_campanhas: "Campaigns",
+    nav_campanhas: "Campaigns", title_campanhas: "Campaigns",
     qe_options: "Options", qe_columns: "Columns", qe_option: "Option", qe_add_option: "Add option",
     qe_remove_option: "Remove", qe_move_up: "Move up", qe_move_down: "Move down", qe_no_options: "No options yet.",
     qe_label_pt: "Label (PT)", qe_weight: "Option weight (%)",
@@ -911,7 +911,7 @@ export const STRINGS = {
     qtype_matrix_label: "Matriz", qtype_matrix_desc: "Filas × columnas, promedio por fila",
     qtype_form_label: "Bloque de Formulario", qtype_form_desc: "Campos con validación",
     nav_dimensions: "Dimensiones", title_dimensions: "Dimensiones y Clasificaciones",
-    nav_campaigns: "Campañas", title_campanhas: "Campañas",
+    nav_campanhas: "Campañas", title_campanhas: "Campañas",
     qe_options: "Alternativas", qe_columns: "Columnas", qe_option: "Opción", qe_add_option: "Agregar alternativa",
     qe_remove_option: "Quitar", qe_move_up: "Subir", qe_move_down: "Bajar", qe_no_options: "Aún no hay alternativas.",
     qe_label_pt: "Etiqueta (PT)", qe_weight: "Peso de la alternativa (%)",

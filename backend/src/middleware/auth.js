@@ -13,7 +13,11 @@ function authenticate(req, res, next) {
   try {
     const payload = verifyAccess(token);
     const db      = getDB();
-    const user    = db.prepare('SELECT id, tenant_id, name, email, role, active FROM users WHERE id = ?').get(payload.sub);
+    // O escopo (regional/distrito) e as categorias suprimidas precisam vir junto:
+    // é o que filtra resultados e respondentes em todo o restante da API.
+    const user    = db.prepare(`SELECT id, tenant_id, name, email, role, active,
+                                       regional_id, distrito_id, blocked_categories
+                                FROM users WHERE id = ?`).get(payload.sub);
     if (!user || !user.active) return unauth(res, 'Usuário inativo ou não encontrado');
     req.user = user;
     next();

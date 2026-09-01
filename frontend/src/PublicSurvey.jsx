@@ -486,7 +486,7 @@ export default function PublicSurvey({ token }) {
         const otherPicked = otherLabel && Array.isArray(answers[q.id]) && answers[q.id].includes(otherLabel);
         const unanswered = showErrors && q.required && !filled(answers[q.id]);
         return (
-        <Card key={q.id} style={{ marginBottom:14, ...(unanswered ? { borderColor:'#FCA5A5' } : {}) }}>
+        <Card key={q.id} style={{ marginBottom:14, ...(unanswered ? { border:'1px solid #FCA5A5' } : {}) }}>
           <div style={{ display:'flex', gap:10, marginBottom:14 }}>
             <span style={{ flexShrink:0, width:24, height:24, borderRadius:'50%', background:RED, color:'white', fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }}>{idx+1}</span>
             <p style={{ margin:0, fontSize:15, fontWeight:600, color:'#1E293B', lineHeight:1.4 }}>

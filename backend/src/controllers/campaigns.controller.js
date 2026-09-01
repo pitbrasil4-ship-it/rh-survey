@@ -43,8 +43,11 @@ function list(req, res) {
                    meta: a.meta || 0, respostas, adesao: a.meta > 0 ? Math.round((respostas / a.meta) * 100) : null };
         });
         const metaTotal = aplicacoes.reduce((s, a) => s + a.meta, 0);
-        const respTotal = aplicacoes.reduce((s, a) => s + a.respostas, 0);
-        return { ...c, aplicacoes, metaTotal, respostasTotal: respTotal,
+        // Respostas pelo link geral não têm distrito: continuam contando na campanha,
+        // só não entram no rateio por distrito.
+        const semDistrito = resp['—'] || 0;
+        const respTotal = aplicacoes.reduce((s, a) => s + a.respostas, 0) + semDistrito;
+        return { ...c, aplicacoes, metaTotal, respostasTotal: respTotal, semDistrito,
                  adesao: metaTotal > 0 ? Math.round((respTotal / metaTotal) * 100) : null };
       }),
     });
