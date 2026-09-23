@@ -92,6 +92,148 @@ function getSurveyResults(req, res) {
   } catch (e) { return err(res, 'Erro ao carregar resultados', 500, e.message); }
 }
 
+/* Resumo de uma edição, no mesmo cálculo da tela de resultados: favorabilidade geral,
+   por dimensão e por pergunta. É a unidade de comparação entre 2025 e 2026. */
+function editionSummary(db, user, survey) {
+  const scope = responseScopeSQL(db, user, 'r');
+  const questions = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id).map(Q.fromRow);
+  const responses = db.prepare(`SELECT r.id, r.completed_at FROM responses r
+                                WHERE r.survey_id = ? AND r.completed_at IS NOT NULL${scope.sql}`).all(survey.id, ...scope.params);
+  const respMeta = {}; responses.forEach(r => respMeta[r.id] = r);
+  const byQuestion = {};
+  if (responses.length) {
+    const ph = responses.map(() => '?').join(',');
+    db.prepare(`SELECT question_id, response_id, value_text, value_num, value_json
+                FROM answers WHERE response_id IN (${ph})`).all(...responses.map(r => r.id))
+      .forEach(a => (byQuestion[a.question_id] = byQuestion[a.question_id] || []).push(a));
+  }
+  const links = db.prepare(`SELECT l.question_id, l.dimension_id, l.effective_from, l.effective_to,
+                                   d.name, ds.name AS set_name, ds.code AS set_code
+                            FROM question_dimension_links l
+                            JOIN dimensions d ON d.id = l.dimension_id
+                            LEFT JOIN dimension_sets ds ON ds.id = d.set_id
+                            JOIN questions q ON q.id = l.question_id
+                            WHERE q.survey_id = ?`).all(survey.id);
+
+  const all = responses.map(r => r.id);
+  const stats = questions.map(q => questionStats(q, byQuestion[q.id] || [], all));
+  const overall = rollUp(stats);
+
+  return {
+    id: survey.id, name: survey.name, category: survey.category,
+    status: survey.status, publishedAt: survey.published_at, deadline: survey.deadline,
+    responses: responses.length,
+    favorability: overall.favorability,
+    scorePct: overall.scorePct,
+    dimensions: dimensionResults(links, questions, byQuestion, respMeta, all),
+    questions: stats.map((st, i) => ({
+      key: keyOf(questions[i]),
+      externalId: questions[i].external_id || null,
+      text: questions[i].text,
+      favorability: st.favorability,
+      scorePct: st.scorePct,
+      responseCount: st.responseCount,
+    })),
+  };
+}
+
+/* Chave de comparação entre edições: o ID externo (Q1…Q30) quando existe, porque é o que
+   sobrevive a uma reformulação do texto. Sem ID, cai no texto normalizado. */
+function keyOf(q) {
+  const ext = String(q.external_id || '').trim();
+  if (ext) return 'id:' + ext.toLowerCase();
+  return 'txt:' + String(q.text || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+}
+
+/* GET /results/trend?surveys=id1,id2,…
+ *
+ * Tendência entre edições do mesmo instrumento: favorabilidade geral, por dimensão e por
+ * pergunta, lado a lado e na ordem das publicações. A dimensão casa pelo NOME (é o que a
+ * taxonomia garante entre edições) e a pergunta pelo ID externo.
+ *
+ * O que só existe em uma das edições não é escondido: vem com null na outra, para a
+ * leitura não confundir "não perguntamos" com "caiu para zero". */
+function getTrend(req, res) {
+  try {
+    const db = getDB();
+    const ids = String(req.query.surveys || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 8);
+    if (ids.length < 1) return badReq(res, 'Informe as pesquisas a comparar (surveys=id1,id2)');
+
+    const editions = [];
+    for (const id of ids) {
+      const sv = db.prepare("SELECT * FROM surveys WHERE id=? AND tenant_id=? AND status != 'excluido'").get(id, req.user.tenant_id);
+      if (!sv) return notFound(res, 'Pesquisa ' + id);
+      if (!canSeeSurvey(req.user, sv)) return err(res, 'Você não tem permissão para ver os resultados de ' + sv.name, 403);
+      editions.push(editionSummary(db, req.user, sv));
+    }
+    // Na ordem em que foram a campo — é assim que a tendência se lê.
+    editions.sort((a, b) => String(a.publishedAt || '').localeCompare(String(b.publishedAt || '')));
+
+    const fav = e => (e.favorability ? e.favorability.favorablePct : null);
+    const delta = (a, b) => (a == null || b == null) ? null : b - a;
+
+    // Linhas por dimensão (casadas pelo nome) e por pergunta (pelo ID externo).
+    const dimRows = alignRows(editions, e => e.dimensions.map(d => ({
+      key: (d.setCode || d.set || '') + '|' + d.name, label: d.name, set: d.set, setCode: d.setCode,
+      value: d.favorability ? d.favorability.favorablePct : null, questions: d.questions,
+    })));
+    const qRows = alignRows(editions, e => e.questions.map(q => ({
+      key: q.key, label: q.text, externalId: q.externalId,
+      value: q.favorability ? q.favorability.favorablePct : null,
+    })));
+
+    return ok(res, {
+      editions: editions.map(e => ({
+        id: e.id, name: e.name, category: e.category, status: e.status,
+        publishedAt: e.publishedAt, responses: e.responses,
+        favorablePct: fav(e), scorePct: e.scorePct,
+        semaforo: e.favorability ? e.favorability.semaforo : null,
+      })),
+      overall: {
+        values: editions.map(fav),
+        delta: delta(fav(editions[0]), fav(editions[editions.length - 1])),
+      },
+      dimensions: dimRows,
+      questions: qRows,
+    });
+  } catch (e) { return err(res, 'Erro ao comparar edições', 500, e.message); }
+}
+
+/* Alinha as linhas de várias edições pela chave, preservando a ordem da edição mais
+   recente que traz a linha — é a leitura que o RH espera (o questionário de hoje). */
+function alignRows(editions, pick) {
+  const rows = new Map();
+  editions.forEach((e, i) => {
+    pick(e).forEach(r => {
+      const cur = rows.get(r.key) || { key: r.key, label: r.label, set: r.set, setCode: r.setCode,
+                                        externalId: r.externalId,
+                                        values: editions.map(() => null), present: editions.map(() => false) };
+      cur.label = r.label;            // o rótulo mais recente manda
+      if (r.set) { cur.set = r.set; cur.setCode = r.setCode; }
+      cur.values[i] = r.value;
+      // Estar na edição e ter favorabilidade são coisas diferentes: a pergunta de
+      // segmentação e a de texto aberto estão lá, só não produzem número.
+      cur.present[i] = true;
+      rows.set(r.key, cur);
+    });
+  });
+  return [...rows.values()].map(r => {
+    const seen = r.values.filter(v => v != null);
+    const first = r.values.find(v => v != null);
+    const last = [...r.values].reverse().find(v => v != null);
+    return {
+      ...r,
+      delta: seen.length > 1 ? last - first : null,
+      // Esteve em todas as edições? É o que separa uma tendência de uma estreia.
+      inAll: r.present.every(Boolean),
+      // Dá para comparar o número? Só quando houve favorabilidade em mais de uma edição.
+      comparable: seen.length > 1,
+      semaforo: last == null ? null : semaforo(100 - last),
+    };
+  }).sort((a, b) => (a.set || '').localeCompare(b.set || '') || String(a.externalId || a.label).localeCompare(String(b.externalId || b.label), 'pt', { numeric: true }));
+}
+
 /* GET /results/:surveyId/crosstab?rows=<chave>&cols=<chave>
  *
  * Chaves aceitas: "q:<id>" (as alternativas de uma pergunta) ou "seg:distrito",
@@ -1155,4 +1297,4 @@ function getSegmentQuestions(req, res) {
   } catch (e) { return err(res, 'Erro ao detalhar por pergunta', 500, e.message); }
 }
 
-module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions, getPdf, getInsightsPdf, getCrosstab, getCrosstabAxes };
+module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions, getPdf, getInsightsPdf, getCrosstab, getCrosstabAxes, getTrend };

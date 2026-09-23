@@ -8,7 +8,8 @@ import {
   Trash2, X, Loader2, Target, Award, Mail, Link2, ChevronDown, ArrowUpRight,
   UserCheck, Building2, MessageSquare, ChevronRight, Shield, Lock, AlertTriangle,
   FileText, Key, Activity, EyeOff, Database, RefreshCw, Info,
-  FileCheck, Zap, MessageCircle, BarChart2, Star, LogOut, Menu, Copy, ListChecks, Layers, Megaphone, MailCheck
+  FileCheck, Zap, MessageCircle, BarChart2, Star, LogOut, Menu, Copy, ListChecks, Layers, Megaphone, MailCheck,
+  GitCompare, Library
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -1822,6 +1823,129 @@ function HistoryModal({ surveyId, onClose }) {
   );
 }
 
+/* Banco de perguntas: o catálogo do que o RH já aplicou, montado a partir das próprias
+   pesquisas — não é um cadastro à parte, então nasce cheio e nunca fica defasado. Mostra
+   a dimensão vigente e em quantos instrumentos a pergunta já foi usada, que é o que
+   decide se ela serve para o questionário novo. */
+function QuestionBank({ excludeSurveyId, onAdd }) {
+  const { t } = useLang();
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+  const [term, setTerm]       = useState("");
+  const [dim, setDim]         = useState("");
+  const [picked, setPicked]   = useState([]);
+  const [added, setAdded]     = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setError("");
+    api.library.questions({ exclude: excludeSurveyId })
+      .then(d => { if (alive) setData(d); })
+      .catch(e => { if (alive) setError((e && e.message) || t('qb_error')); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [excludeSurveyId]);
+
+  const norm = v => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const list = (data?.questions || []).filter(q => {
+    if (dim && !q.dimensions.some(d => d.name === dim)) return false;
+    if (!term.trim()) return true;
+    const x = norm(term);
+    return norm(q.text).includes(x) || norm(q.externalId).includes(x);
+  });
+
+  const toggle = key => setPicked(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key]);
+  const adicionar = () => {
+    const escolhidas = (data?.questions || []).filter(q => picked.includes(q.key));
+    if (!escolhidas.length) return;
+    // Entra como pergunta nova do editor: sem id de servidor e sem vínculo de dimensão
+    // herdado, porque a dimensão é escolhida por instrumento.
+    onAdd(escolhidas.map(q => ({
+      type: q.type, text: q.text, text_en: q.text_en, text_es: q.text_es,
+      options: q.options, options_en: q.options_en, options_es: q.options_es,
+      option_points: q.option_points, config: q.config, required: q.required,
+      external_id: q.externalId || "", notes: q.notes,
+      dimensionNames: q.dimensions.map(d => d.name),
+    })));
+    setAdded(escolhidas.length);
+    setPicked([]);
+    setTimeout(() => setAdded(0), 4000);
+  };
+
+  if (loading) return <div className="flex items-center justify-center py-12 text-slate-400 text-sm gap-2"><Loader2 size={16} className="animate-spin" />{t('sl_loading')}</div>;
+  if (error)   return <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm">{error}</div>;
+
+  return (
+    <>
+      <div className="flex items-center gap-2 mb-1">
+        <Library size={15} style={{ color:"#5B21B6" }} />
+        <h3 className="font-semibold text-slate-800 text-sm">{t('qb_title')}</h3>
+      </div>
+      <p className="text-xs text-slate-400 mb-4">{t('qb_sub', { n: data?.total || 0 })}</p>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={term} onChange={e => setTerm(e.target.value)} placeholder={t('qb_search')}
+            className="w-full border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs focus:outline-none focus:border-purple-400" />
+        </div>
+        <select value={dim} onChange={e => setDim(e.target.value)}
+          className="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:border-purple-400">
+          <option value="">{t('qb_all_dimensions')}</option>
+          {(data?.dimensions || []).map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <button onClick={adicionar} disabled={!picked.length}
+          className="px-4 py-2 text-white text-xs rounded-xl disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+          style={{ background: GRAD }}>
+          <Plus size={13} />{t('qb_add_n', { n: picked.length })}
+        </button>
+      </div>
+
+      {added > 0 && (
+        <div className="mb-3 bg-green-50 border border-green-200 text-green-700 rounded-xl px-3 py-2 text-xs">
+          {t('qb_added', { n: added })}
+        </div>
+      )}
+
+      {!list.length ? (
+        <p className="text-sm text-slate-400 py-8 text-center">{t('qb_empty')}</p>
+      ) : (
+        <div className="space-y-2 max-h-[540px] overflow-y-auto pr-1">
+          {list.map(q => {
+            const on = picked.includes(q.key);
+            return (
+              <button key={q.key} onClick={() => toggle(q.key)} type="button"
+                className={`w-full text-left border rounded-xl p-3 transition-all ${on ? "border-purple-400 bg-purple-50/50" : "border-slate-100 hover:bg-slate-50"}`}>
+                <div className="flex items-start gap-2.5">
+                  <input type="checkbox" checked={on} readOnly className="accent-purple-600 mt-0.5 pointer-events-none" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-slate-700">
+                      {idPrefix(q.externalId, q.text) && <span className="text-slate-400 mr-1">{q.externalId}.</span>}
+                      {q.text}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[q.type] || "bg-slate-100 text-slate-600"}`}>{t('type_' + q.type)}</span>
+                      {q.dimensions.map(d => (
+                        <span key={d.name} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full">{d.name}</span>
+                      ))}
+                      <span className="text-xs text-slate-400" title={q.usedIn.map(u => u.surveyName).join(' · ')}>
+                        {t('qb_used_in', { n: q.usedIn.length })}
+                      </span>
+                      {q.totalAnswers > 0 && <span className="text-xs text-slate-400">· {t('qb_answers', { n: q.totalAnswers })}</span>}
+                      {q.alreadyHere && <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">{t('qb_already_here')}</span>}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── SURVEY BUILDER ────────────────────────────────────────────────────────────
 /* Páginas no editor: a quebra fica na pergunta que ABRE a página seguinte, então a
    página de uma pergunta é 1 + quantas quebras vieram antes dela. */
@@ -2265,6 +2389,7 @@ function SurveyBuilder({ onBack, initial, editId }) {
 
   const tabs = [
     { id:"builder", label:"sb_tab_builder" },
+    { id:"bank",    label:"sb_tab_bank"   },
     { id:"ai",      label:"sb_tab_ai"    },
     { id:"import",  label:"sb_tab_import"        },
   ];
@@ -2613,6 +2738,11 @@ function SurveyBuilder({ onBack, initial, editId }) {
                 </div>
               )}
             </>
+          )}
+
+          {tab==="bank" && (
+            <QuestionBank excludeSurveyId={editId}
+              onAdd={qs => setQuestions(p => [...p, ...qs.map((q, i) => toEditorQuestion(q, p.length + i))])} />
           )}
 
           {tab==="import" && (
@@ -3506,7 +3636,12 @@ function FavorabilityBar({ fav, showLegend }) {
         <div className="flex flex-wrap items-center justify-between gap-2 mt-1.5 text-xs">
           <span className="text-green-700 font-semibold">{fav.favorablePct}% {t('qr_favorable')}</span>
           <span className="text-slate-400">
-            {t('qr_base_n', { n: fav.base })}{fav.neutralOut ? ` · ${t('qr_neutral_out', { n: fav.neutralOut })}` : ""}
+            {/* Numa pergunta a base são as respostas pontuadas; num recorte ou dimensão,
+                a favorabilidade é a média das perguntas — e aí a base é o nº de perguntas. */}
+            {fav.base != null ? t('qr_base_n', { n: fav.base })
+              : fav.questions != null ? t('qr_base_questions', { n: fav.questions })
+              : ""}
+            {fav.neutralOut ? ` · ${t('qr_neutral_out', { n: fav.neutralOut })}` : ""}
           </span>
           <span className="text-red-700 font-semibold">{fav.unfavorablePct}% {t('qr_unfavorable')}</span>
         </div>
@@ -3936,6 +4071,326 @@ function CrosstabPanel({ surveyId }) {
   );
 }
 
+/* O ID externo só vira prefixo quando o texto ainda não o traz: a planilha da Carina já
+   escreve "Q12. …" no enunciado, e repetir viraria "Q12. Q12. …". */
+function idPrefix(externalId, text) {
+  if (!externalId) return null;
+  const t = String(text || "").trim().toLowerCase();
+  const id = String(externalId).trim().toLowerCase();
+  return (t.startsWith(id + ".") || t.startsWith(id + " ") || t.startsWith(id + ")")) ? null : externalId;
+}
+
+/* Tendência entre edições: a mesma pesquisa aplicada em anos diferentes, lado a lado.
+   A dimensão casa pelo nome e a pergunta pelo ID externo (Q1…Q30) — é o que sobrevive a
+   uma reformulação de texto. O que só existiu numa edição não some: vem marcado, para
+   não confundir "não perguntamos" com "caiu para zero". */
+function TrendPanel({ surveys, currentId }) {
+  const { t } = useLang();
+  const [open, setOpen]   = useState(false);
+  const [picked, setPicked] = useState([]);
+  const [data, setData]   = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [view, setView]   = useState("dimensoes");
+
+  // Candidatas: pesquisas com resposta. Comparar edição vazia não diz nada.
+  const options = (surveys || []).filter(s => (s.response_count || 0) > 0);
+
+  useEffect(() => {
+    if (!open) return;
+    // Começa com a pesquisa aberta e a edição anterior da mesma categoria, que é a
+    // comparação que o RH faz primeiro.
+    const cur = options.find(s => s.id === currentId);
+    if (!cur) return;
+    const irma = options.find(s => s.id !== cur.id && s.category === cur.category);
+    setPicked(irma ? [irma.id, cur.id] : [cur.id]);
+  }, [open, currentId, surveys.length]);
+
+  useEffect(() => {
+    if (!open || picked.length < 2) { setData(null); return; }
+    let alive = true;
+    setLoading(true); setError("");
+    api.results.trend(picked)
+      .then(d => { if (alive) setData(d); })
+      .catch(e => { if (alive) { setError((e && e.message) || t('tr_error')); setData(null); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [open, picked.join(",")]);
+
+  const toggle = (id) => setPicked(p => p.includes(id) ? p.filter(x => x !== id) : (p.length >= 6 ? p : [...p, id]));
+  const rows = data ? (view === "dimensoes" ? data.dimensions : data.questions) : [];
+
+  const exportCsv = () => {
+    if (!data) return;
+    const head = [view === "dimensoes" ? t('qe_dimensions') : t('ct_questions'), ...data.editions.map(e => e.name), t('tr_delta')];
+    const body = rows.map(r => [idPrefix(r.externalId, r.label) ? `${r.externalId}. ${r.label}` : r.label,
+      ...r.values.map((v, i) => v == null ? (r.present[i] ? "" : t('tr_absent')) : `${v}%`),
+      r.delta == null ? "" : `${r.delta > 0 ? "+" : ""}${r.delta}`]);
+    downloadCSV("tendencia.csv", [head, ...body]);
+  };
+
+  if (options.length < 2) return null;
+
+  return (
+    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 w-full text-left">
+        <ChevronDown size={15} className={`text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        <TrendingUp size={15} style={{ color:"#5B21B6" }} />
+        <span className="text-sm font-semibold text-slate-800 flex-1">{t('tr_title')}</span>
+      </button>
+      {!open && <p className="text-xs text-slate-400 mt-1 pl-7">{t('tr_sub')}</p>}
+
+      {open && (
+        <>
+          <p className="text-xs text-slate-400 mt-1 mb-3 pl-7">{t('tr_sub')}</p>
+          <div className="flex flex-wrap gap-1.5 mb-4">
+            {options.map(s => (
+              <button key={s.id} onClick={() => toggle(s.id)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs border transition-all ${picked.includes(s.id)
+                  ? "border-purple-400 bg-purple-50 text-purple-700 font-semibold"
+                  : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                {String(s.name).slice(0, 40)}
+              </button>
+            ))}
+          </div>
+          {picked.length < 2 && <p className="text-sm text-slate-400 py-4 text-center">{t('tr_pick_two')}</p>}
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-xs">{error}</div>}
+          {loading && <div className="flex items-center justify-center py-8 text-slate-400 text-sm gap-2"><Loader2 size={16} className="animate-spin" />{t('sl_loading')}</div>}
+
+          {data && !loading && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
+                {data.editions.map(e => (
+                  <div key={e.id} className="border border-slate-100 rounded-xl p-3">
+                    <p className="text-xs text-slate-500 truncate" title={e.name}>{e.name}</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-xl font-bold text-slate-800">{e.favorablePct == null ? "—" : `${e.favorablePct}%`}</span>
+                      {e.semaforo && <SemaforoChip value={e.semaforo} />}
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">{t('tr_responses', { n: e.responses })}</p>
+                  </div>
+                ))}
+              </div>
+              {data.overall.delta != null && (
+                <div className="flex items-center gap-2 mb-4 text-sm">
+                  <span className="text-slate-500">{t('tr_overall_delta')}</span>
+                  <DeltaChip value={data.overall.delta} big />
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 mb-3">
+                {[["dimensoes", t('qe_dimensions')], ["perguntas", t('ct_questions')]].map(([id, label]) => (
+                  <button key={id} onClick={() => setView(id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${view === id ? "text-white" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                    style={view === id ? { background: GRAD } : {}}>{label}</button>
+                ))}
+                <button onClick={exportCsv} className="ml-auto px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50 flex items-center gap-1.5">
+                  <Download size={12} />{t('common_export_csv')}
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50">
+                      <th className="text-left font-semibold text-slate-500 px-3 py-2 border-b border-slate-200">
+                        {view === "dimensoes" ? t('qe_dimensions') : t('ct_questions')}
+                      </th>
+                      {data.editions.map(e => (
+                        <th key={e.id} className="text-center font-semibold text-slate-500 px-3 py-2 border-b border-slate-200 align-bottom">
+                          <span className="block max-w-[150px] mx-auto leading-tight">{String(e.name)}</span>
+                          {e.publishedAt && <span className="block text-[10px] font-normal text-slate-400 mt-0.5">{String(e.publishedAt).slice(0, 10).split('-').reverse().join('/')}</span>}
+                        </th>
+                      ))}
+                      <th className="text-center font-semibold text-slate-500 px-3 py-2 border-b border-slate-200">{t('tr_delta')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(r => (
+                      <tr key={r.key} className="hover:bg-slate-50">
+                        <td className="px-3 py-2 border-b border-slate-100 text-slate-700">
+                          {idPrefix(r.externalId, r.label) && <span className="text-slate-400 mr-1">{r.externalId}.</span>}
+                          {String(r.label).slice(0, 70)}
+                          {!r.inAll && <span className="ml-1.5 text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-full">{t('tr_not_in_all')}</span>}
+                        </td>
+                        {r.values.map((v, i) => (
+                          <td key={i} className="px-3 py-2 border-b border-slate-100 text-center tabular-nums">
+                            {v == null
+                              ? <span className="text-slate-300" title={r.present[i] ? t('tr_no_score') : t('tr_absent')}>—</span>
+                              : <span className="font-semibold text-slate-700">{v}%</span>}
+                          </td>
+                        ))}
+                        <td className="px-3 py-2 border-b border-slate-100 text-center">
+                          {r.delta == null ? <span className="text-slate-300">—</span> : <DeltaChip value={r.delta} />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-slate-400 mt-2">{t('tr_note')}</p>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* Variação em pontos percentuais. Verde sobe, vermelho desce — e o zero é neutro, não
+   um "sem mudança" escondido. */
+function DeltaChip({ value, big }) {
+  if (value == null) return null;
+  const up = value > 0, flat = value === 0;
+  const st = flat ? { bg: "bg-slate-100", tx: "text-slate-500" }
+           : up   ? { bg: "bg-green-50",  tx: "text-green-700" }
+                  : { bg: "bg-red-50",    tx: "text-red-600" };
+  return (
+    <span className={`inline-flex items-center gap-1 font-semibold rounded-full ${st.bg} ${st.tx} ${big ? "text-sm px-2.5 py-1" : "text-xs px-2 py-0.5"}`}>
+      {flat ? "=" : up ? "▲" : "▼"} {up ? "+" : ""}{value} p.p.
+    </span>
+  );
+}
+
+/* Comparação de duas edições pergunta a pergunta: o que mudou de texto, de dimensão, o
+   que entrou e o que saiu. Mudança de texto ou de dimensão quebra a série histórica, e é
+   melhor ver isso antes de pôr a edição nova na rua. */
+function ComparePanel({ surveys, currentId }) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [only, setOnly] = useState("mudou");
+
+  useEffect(() => {
+    if (!open || !surveys.length) return;
+    const cur = surveys.find(s => s.id === currentId) || surveys[0];
+    const irma = surveys.find(s => s.id !== cur.id && s.category === cur.category) || surveys.find(s => s.id !== cur.id);
+    setB(cur.id); setA(irma ? irma.id : "");
+  }, [open, currentId, surveys.length]);
+
+  useEffect(() => {
+    if (!open || !a || !b || a === b) { setData(null); return; }
+    let alive = true;
+    setLoading(true); setError("");
+    api.library.compare(a, b)
+      .then(d => { if (alive) setData(d); })
+      .catch(e => { if (alive) { setError((e && e.message) || t('cp_error')); setData(null); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [open, a, b]);
+
+  const STATUS = {
+    igual:    { label: t('cp_same'),    cls: "bg-slate-100 text-slate-500" },
+    alterada: { label: t('cp_changed'), cls: "bg-amber-50 text-amber-700" },
+    nova:     { label: t('cp_new'),     cls: "bg-green-50 text-green-700" },
+    removida: { label: t('cp_removed'), cls: "bg-red-50 text-red-600" },
+  };
+  const rows = data ? (only === "mudou" ? data.rows.filter(r => r.status !== "igual") : data.rows) : [];
+
+  const exportCsv = () => {
+    if (!data) return;
+    downloadCSV("comparacao-edicoes.csv", [
+      ["ID", t('cp_status'), t('cp_changes'), data.a.name, data.b.name, `${t('qe_dimensions')} (${data.a.name})`, `${t('qe_dimensions')} (${data.b.name})`],
+      ...data.rows.map(r => [r.externalId || "", STATUS[r.status].label, (r.changes || []).join(" · "),
+        r.textA || "", r.textB || "", r.dimensionsA || "", r.dimensionsB || ""]),
+    ]);
+  };
+
+  if (surveys.length < 2) return null;
+
+  return (
+    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 w-full text-left">
+        <ChevronDown size={15} className={`text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        <GitCompare size={15} style={{ color:"#5B21B6" }} />
+        <span className="text-sm font-semibold text-slate-800 flex-1">{t('cp_title')}</span>
+      </button>
+      {!open && <p className="text-xs text-slate-400 mt-1 pl-7">{t('cp_sub')}</p>}
+
+      {open && (
+        <>
+          <p className="text-xs text-slate-400 mt-1 mb-3 pl-7">{t('cp_sub')}</p>
+          <div className="flex flex-wrap items-end gap-2 mb-4">
+            {[[t('cp_before'), a, setA], [t('cp_after'), b, setB]].map(([label, val, set], i) => (
+              <div key={i} className="flex-1 min-w-[200px]">
+                <label className="text-xs font-medium text-slate-600 block mb-1">{label}</label>
+                <select value={val} onChange={e => set(e.target.value)}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:border-purple-400">
+                  <option value="">{t('ct_pick')}</option>
+                  {surveys.map(s => <option key={s.id} value={s.id}>{String(s.name).slice(0, 60)}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          {a && b && a === b && <p className="text-sm text-slate-400 py-4 text-center">{t('cp_same_survey')}</p>}
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-xs">{error}</div>}
+          {loading && <div className="flex items-center justify-center py-8 text-slate-400 text-sm gap-2"><Loader2 size={16} className="animate-spin" />{t('sl_loading')}</div>}
+
+          {data && !loading && (
+            <>
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                {["igual", "alterada", "nova", "removida"].map(k => (
+                  <span key={k} className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS[k].cls}`}>
+                    {data.summary[k]} {STATUS[k].label.toLowerCase()}
+                  </span>
+                ))}
+                <span className="text-xs text-slate-500 ml-1">{t('cp_comparable', { n: data.summary.comparaveis })}</span>
+                <button onClick={exportCsv} className="ml-auto px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50 flex items-center gap-1.5">
+                  <Download size={12} />{t('common_export_csv')}
+                </button>
+              </div>
+              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer mb-3">
+                <input type="checkbox" checked={only === "mudou"} onChange={() => setOnly(o => o === "mudou" ? "tudo" : "mudou")} className="accent-purple-600" />
+                {t('cp_only_changed')}
+              </label>
+
+              {!rows.length ? (
+                <p className="text-sm text-slate-400 py-6 text-center">{t('cp_no_changes')}</p>
+              ) : (
+                <div className="space-y-2">
+                  {rows.map(r => (
+                    <div key={r.key} className="border border-slate-100 rounded-xl p-3">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        {r.externalId && <span className="text-xs font-semibold text-slate-500">{r.externalId}</span>}
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS[r.status].cls}`}>{STATUS[r.status].label}</span>
+                        {(r.changes || []).map(c => (
+                          <span key={c} className="text-[11px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{t('cp_field_' + c) || c}</span>
+                        ))}
+                      </div>
+                      {r.status === "alterada" && (r.changes || []).includes("texto") ? (
+                        <>
+                          <p className="text-xs text-slate-400 line-through">{r.textA}</p>
+                          <p className="text-sm text-slate-700">{r.textB}</p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-slate-700">{r.textB || r.textA}</p>
+                      )}
+                      {(r.changes || []).includes("dimensao") && (
+                        <p className="text-xs mt-1">
+                          <span className="text-slate-400">{r.dimensionsA || t('cp_no_dimension')}</span>
+                          <span className="text-slate-400 mx-1.5">→</span>
+                          <span className="text-purple-600 font-medium">{r.dimensionsB || t('cp_no_dimension')}</span>
+                        </p>
+                      )}
+                      {r.status === "removida" && r.answers > 0 && (
+                        <p className="text-xs text-slate-400 mt-1">{t('cp_removed_answers', { n: r.answers })}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /* Recortes obrigatórios: modalidade de contratação, distrito, regional e departamento.
    É o cruzamento que hoje obriga uma segunda exportação manual. */
 function SegmentResults({ segments, segmentation }) {
@@ -4249,6 +4704,8 @@ function ResultsDashboard() {
           <DimensionResults dimensions={result?.dimensions} />
           <SegmentResults segments={result?.segments} segmentation={result?.segmentation} />
           <CrosstabPanel surveyId={selectedId} />
+          <TrendPanel surveys={surveys} currentId={selectedId} />
+          <ComparePanel surveys={surveys} currentId={selectedId} />
           {questions.map((q,i) => (
             <div key={q.questionId || i}>
               <QuestionResult q={q} />

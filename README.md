@@ -312,6 +312,42 @@ rodapé, em vez de sumirem da conta.
 
 ---
 
+## 📚 Banco de perguntas, comparação e tendência
+
+Três recursos que só fazem sentido juntos: reaproveitar a pergunta, saber o que mudou
+entre uma edição e outra, e ler a série.
+
+**Banco de perguntas** (aba no construtor). Não é um cadastro à parte: é o catálogo do
+que o RH já aplicou, montado a partir das próprias pesquisas do tenant. Nasce cheio,
+nunca fica defasado e mostra, em cada pergunta, a dimensão vigente, em quantos
+instrumentos foi usada e quantas respostas já acumulou — que é o que decide se ela serve
+para o questionário novo. Marcar e adicionar traz texto, alternativas, pesos e ID
+externo; a dimensão é reaplicada por nome, porque cada instrumento classifica a sua.
+
+**Comparar edições** (painel em Resultados). Casa as duas edições pergunta a pergunta e
+diz o que continua igual, o que mudou de **texto**, de **dimensão**, de tipo, de
+alternativa, de peso ou de favorabilidade, o que entrou e o que saiu. Mudança de texto ou
+de dimensão é o que quebra a série histórica, então o resumo separa quantas perguntas
+ainda permitem comparar o resultado. A pergunta que saiu aparece com o número de
+respostas que ficam na edição anterior, em vez de sumir.
+
+**Tendência entre edições** (painel em Resultados). Até 6 edições lado a lado:
+favorabilidade geral, por dimensão e por pergunta, com a variação em pontos percentuais
+entre a primeira e a última edição com número.
+
+O que casa uma edição com a outra:
+
+| Nível | Chave |
+|---|---|
+| Pergunta | **ID externo** (Q1…Q30) — é o que sobrevive a uma reformulação do texto. Sem ID, cai no texto normalizado (sem acento nem caixa). |
+| Dimensão | **Nome** — é o que a taxonomia oficial garante entre edições. |
+
+Estar na edição e ter número são coisas diferentes, e a tela separa as duas: a pergunta
+que não existia numa edição vem marcada, e a que existe mas não pontua (segmentação,
+texto aberto) aparece sem valor em vez de contar como queda.
+
+---
+
 ## 🔄 Fluxo de deploy automático
 
 ```
@@ -366,6 +402,9 @@ rodando  no ar
 | GET    | /api/v1/results/:surveyId/crosstab | ✅ | Matriz de cruzamento (`rows`/`cols`: `q:<id>` ou `seg:<recorte>`) |
 | GET    | /api/v1/surveys/:id/versions · /history | ✅ | Versões publicadas e histórico de alterações |
 | GET    | /api/v1/surveys/:id/export-questions | ✅ | Questionário no formato da planilha |
+| GET    | /api/v1/library/questions | ✅ | Banco de perguntas já usadas, com dimensão e onde foram aplicadas |
+| GET    | /api/v1/library/compare | ✅ | Comparação entre duas edições (`a`/`b`), pergunta a pergunta |
+| GET    | /api/v1/results/trend | ✅ | Tendência entre edições (`surveys=id1,id2,…`) |
 
 ---
 

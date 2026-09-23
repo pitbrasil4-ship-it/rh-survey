@@ -14,4 +14,5 @@ router.use('/org',         require('./org.routes'));
 router.use('/dimensions',  require('./dimensions.routes'));
 router.use('/invitations', require('./invitations.routes'));
 router.use('/campaigns',   require('./campaigns.routes'));
+router.use('/library',     require('./library.routes'));
 module.exports = router;

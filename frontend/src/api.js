@@ -124,6 +124,14 @@ export const api = {
     listSegmentLinks: (id) => request('GET',  `/surveys/${id}/segment-links`),
     bulk:             (payload) => request('POST', '/surveys/bulk', payload),
   },
+  library: {
+    questions: (params = {}) => {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });
+      return request('GET', `/library/questions${qs.toString() ? '?' + qs : ''}`);
+    },
+    compare: (a, b) => request('GET', `/library/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
+  },
   dimensions: {
     list:         ()          => request('GET', '/dimensions'),
     resolve:      (names)     => request('POST', '/dimensions/resolve', { names }),
@@ -165,6 +173,7 @@ export const api = {
     crosstabAxes: (surveyId) => request('GET', `/results/${encodeURIComponent(surveyId)}/crosstab-axes`),
     crosstab: (surveyId, rows, cols) =>
       request('GET', `/results/${encodeURIComponent(surveyId)}/crosstab?rows=${encodeURIComponent(rows)}&cols=${encodeURIComponent(cols)}`),
+    trend:     (surveyIds) => request('GET', `/results/trend?surveys=${encodeURIComponent(surveyIds.join(','))}`),
     pdf: async (surveyId, lang) => {
       const q = lang ? `?lang=${encodeURIComponent(lang)}` : '';
       const path = `/results/${encodeURIComponent(surveyId)}/pdf${q}`;
