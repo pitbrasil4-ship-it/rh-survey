@@ -130,6 +130,31 @@ enviando apenas para quem ainda não respondeu.
 
 ---
 
+## 📄 Planilha de importação
+
+A importação lê a planilha do RH como ela é. Colunas aceitas:
+
+| Coluna | Conteúdo |
+|--------|----------|
+| `Nº` / `ID` | identificador; na falta dele, o prefixo `Q12.` do próprio texto |
+| `Pergunta` (+ `(EN)` / `(ES)`) | enunciado, com as traduções opcionais |
+| `Tipo` | escala, múltipla, lista suspensa, matriz, formulário, texto, NPS, estrelas, sim/não |
+| `Opções` (+ `(EN)` / `(ES)`) | alternativas separadas por `;` |
+| `Pesos` | posição na escala (`1;2;3;4`) **ou** percentual (`0;33;67;100`); `(sem peso)` marca a opção neutra |
+| `Dimensão_Clima`, `Dimensão_HSE` | uma coluna por taxonomia; dentro da coluna, `\|` separa duas dimensões |
+| `Obrigatória` | Sim / Não |
+| `Observação` | nota interna; “segmentação” aqui marca a pergunta como recorte |
+
+Título e subtítulo antes do cabeçalho são ignorados, assim como as linhas de
+rodapé. Nomes de dimensão são resolvidos com tolerância a acento, caixa e nome
+curto (“Segurança” → “Segurança no Trabalho”); o que não casar é listado na tela
+em vez de sumir calado.
+
+`GET /api/v1/surveys/:id/export` devolve as perguntas **nesse mesmo formato**,
+para revisão fora do sistema e reimportação sem conversão manual.
+
+---
+
 ## 🧩 Modelo de perguntas
 
 Cada pergunta guarda, além do texto em PT/EN/ES:
@@ -143,12 +168,73 @@ Cada pergunta guarda, além do texto em PT/EN/ES:
 | `config.allowOther` / `otherLabel` | opção "Outros" com campo aberto |
 | `config.rows` | linhas da Matriz (as colunas são as `options`) |
 | `config.fields` | campos do Bloco de Formulário, com validação de e-mail/telefone/data |
+| `config.favorableFrom` | a partir de qual posição a resposta conta como Favorável |
+| `config.segmentation` | pergunta de recorte: não pontua e abre os demais resultados |
 | `logic.showIf` | exibe a pergunta só se a de nº `order` tiver uma das alternativas |
 | `logic.endIf` | encerra o questionário quando uma destas alternativas é marcada |
 | `dimensions` | vínculo N:N com as dimensões cadastradas (várias taxonomias) |
+| `notes` | observação interna, não exibida a quem responde |
 
 Tipos disponíveis: `nps`, `scale` (Likert configurável), `multiple`, `dropdown`,
 `matrix`, `form`, `text`, `rating`, `yesno`.
+
+---
+
+## 📐 Duas taxonomias sobre a mesma coleta
+
+A classificação das perguntas não é configuração inicial: muda a cada ciclo. Por
+isso é **campo da pergunta**, com um campo por taxonomia e seleção múltipla em cada:
+
+| Conjunto | Código | Regra na RGIS |
+|----------|--------|---------------|
+| Clima Organizacional — RGIS | `clima` | 12 dimensões; cada pergunta pertence a exatamente uma |
+| HSE Management Standards | `hse` | 7 dimensões; a mesma pergunta pode pertencer a duas |
+
+A mesma resposta alimenta o relatório de Clima e o de HSE — a pesquisa não é
+aplicada duas vezes. Pergunta sem dimensão é válida (segmentação e campo aberto
+não entram em nenhuma). Duas dimensões do mesmo conjunto geram **aviso, não
+bloqueio**: o sistema explica que a resposta contará duas vezes na média e deixa
+salvar.
+
+**Reclassificar tem vigência.** Ao mudar a dimensão de uma pesquisa que já tem
+respostas, o sistema pergunta se vale para as respostas já coletadas (retroativo)
+ou só daqui em diante (prospectivo). No modo prospectivo, cada resposta continua
+sendo lida com a classificação que valia no dia em que foi enviada — escolher por
+omissão corromperia a série histórica em silêncio.
+
+---
+
+## 📊 Favorabilidade e semáforo
+
+| Regra | Definição |
+|-------|-----------|
+| Favorável | posições a partir de `favorableFrom` (numa escala de 4 pontos, a metade de cima) |
+| Desfavorável | posições abaixo disso |
+| Base | exclui a opção neutra (`neutralIndex`) |
+| Níveis | por pergunta, por dimensão (média das perguntas) e geral (média das dimensões) |
+
+O **semáforo corta sobre a desfavorabilidade**, não sobre a favorabilidade:
+
+- 🟢 verde — desfavorabilidade abaixo de 20%
+- 🟡 atenção — de 20% a 30%
+- 🔴 crítico — 30% ou mais
+
+Vale igualmente para pergunta, dimensão, distrito, regional e recorte por
+modalidade.
+
+---
+
+## 🕓 Versões e histórico
+
+Cada publicação congela uma **versão numerada e datada**, com o questionário
+inteiro, e a resposta fica ligada à versão que estava no ar quando foi enviada.
+Em paralelo, o **histórico** registra quem alterou o quê e quando em texto,
+alternativa, peso e classificação.
+
+Pesquisa publicada continua editável: texto, rótulos, pesos e dimensão mudam sem
+perder resposta. Só é recusado o que invalidaria dado já gravado — trocar o tipo,
+encurtar a escala abaixo do que já foi respondido, ou remover pergunta respondida
+— e a recusa é por pergunta, com o motivo na tela.
 
 ---
 

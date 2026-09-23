@@ -1890,8 +1890,11 @@ function SurveyBuilder({ onBack, initial, editId }) {
     setExporting(true);
     try {
       const d = await api.surveys.export(editId);
-      const nome = String(d.survey?.name || surveyName || "pesquisa").replace(/[^\w\s-]/g, "").trim().slice(0, 50);
-      downloadCSV(`${nome} — perguntas e dimensões.csv`, [d.header, ...d.rows]);
+      // Nome de arquivo simples: acento e espaço fazem o navegador descartar o nome.
+      const nome = String(d.survey?.name || surveyName || "pesquisa")
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase().slice(0, 50);
+      downloadCSV(`perguntas-e-dimensoes-${nome || "pesquisa"}.csv`, [d.header, ...d.rows]);
     } catch (e) { setError((e && e.message) || t('sb_export_err')); }
     setExporting(false);
   };
