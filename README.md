@@ -96,7 +96,19 @@ NODE_ENV=production
 BCRYPT_ROUNDS=12
 PORT=4000
 DPO_EMAIL=dpo@suaempresa.com.br
+
+# Limites de requisição, POR IP (opcionais — os padrões abaixo já valem)
+# RATE_LIMIT_MAX=300         # painel, por 15 min
+# PUBLIC_RATE_LIMIT_MAX=300  # formulário público, por minuto
 ```
+
+**Sobre os limites.** Eles são por IP, e a empresa inteira responde a pesquisa atrás de
+poucos IPs de saída — o distrito todo sai pelo mesmo endereço. Por isso o formulário
+público tem limitador próprio, dimensionado para a coleta, e fica de fora do teto do
+painel: com o teto do painel valendo para ele, uma convocação de campanha derrubava o
+formulário no primeiro minuto. Contra resposta em massa o que protege é o controle de
+duplicidade, a cota por distrito e o convite nominal, não o limitador — que existe para
+conter abuso automatizado. Se a sua operação for maior, suba os dois valores.
 
 ---
 

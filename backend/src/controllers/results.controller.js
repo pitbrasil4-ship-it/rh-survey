@@ -68,6 +68,17 @@ function getSurveyResults(req, res) {
       dimensions: currentDims[q.id] || [],
     }));
 
+    // Anexos: o id do arquivo vive na tabela própria, não dentro da resposta. Sem trazê-lo
+    // aqui, a tela lista o anexo mas não tem como endereçar o download.
+    const comAnexo = questionResults.filter(q => q.type === 'file');
+    if (comAnexo.length) {
+      const idPor = {};
+      db.prepare(`SELECT f.id, f.response_id, f.question_id FROM response_files f
+                  JOIN responses r ON r.id = f.response_id WHERE r.survey_id = ?`).all(survey.id)
+        .forEach(f => { idPor[f.question_id + '|' + f.response_id] = f.id; });
+      comAnexo.forEach(q => (q.files || []).forEach(f => { f.id = idPor[q.questionId + '|' + f.responseId] || null; }));
+    }
+
     const npsQ = questionResults.find(q => Q.NPS_TYPES.includes(q.type));
     const overall = rollUp(questionResults);
 

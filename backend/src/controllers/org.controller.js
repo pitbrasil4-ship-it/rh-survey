@@ -62,7 +62,10 @@ function updateDistrito(req, res) {
 }
 function deleteDistrito(req, res) {
   try {
-    getDB().prepare('DELETE FROM distritos WHERE id=? AND tenant_id=?').run(req.params.id, req.user.tenant_id);
+    const db = getDB();
+    // A resposta já gravada fica "sem distrito" em vez de apontar para uma linha morta.
+    db.prepare('UPDATE responses SET distrito_id=NULL WHERE distrito_id=?').run(req.params.id);
+    db.prepare('DELETE FROM distritos WHERE id=? AND tenant_id=?').run(req.params.id, req.user.tenant_id);
     return ok(res, { deleted: true }, 'Distrito removido');
   } catch (e) { return err(res, 'Erro ao remover distrito', 500, e.message); }
 }
@@ -89,17 +92,48 @@ function updateDepartamento(req, res) {
 }
 function deleteDepartamento(req, res) {
   try {
-    getDB().prepare('DELETE FROM departamentos WHERE id=? AND tenant_id=?').run(req.params.id, req.user.tenant_id);
+    const db = getDB();
+    db.prepare('UPDATE responses SET departamento_id=NULL WHERE departamento_id=?').run(req.params.id);
+    db.prepare('DELETE FROM departamentos WHERE id=? AND tenant_id=?').run(req.params.id, req.user.tenant_id);
     return ok(res, { deleted: true }, 'Departamento removido');
   } catch (e) { return err(res, 'Erro ao remover departamento', 500, e.message); }
 }
 
 /* POST /org/import — importa a estrutura da planilha (substitui por padrão) */
+/* POST /org/import — { regionais:[nome], distritos:[{name, regional, meta}],
+                         departamentos:[{name, meta}], replace }
+
+   `replace` APAGA a estrutura do tenant antes de importar e por isso é opt-in: antes
+   era o padrão, e um payload com outro formato (ou vazio) zerava regionais, distritos e
+   departamentos devolvendo "Estrutura importada". Como a estrutura é o que classifica as
+   respostas, o estrago só aparecia depois, na apuração, com todo mundo sem distrito. */
 function importStructure(req, res) {
   try {
     const db = getDB(); const t = req.user.tenant_id;
-    const { regionais = [], distritos = [], departamentos = [], replace = true } = req.body;
+    const { regionais = [], distritos = [], departamentos = [], replace = false } = req.body;
+
+    const total = (Array.isArray(regionais) ? regionais.length : 0)
+                + (Array.isArray(distritos) ? distritos.length : 0)
+                + (Array.isArray(departamentos) ? departamentos.length : 0);
+    // Substituir por nada é sempre engano: ou o formato veio errado, ou o arquivo está
+    // vazio. Apagar em silêncio seria o pior desfecho possível.
+    if (!total) return badReq(res,
+      'Nada a importar. Informe regionais, distritos ou departamentos — o formato esperado é ' +
+      '{ regionais: ["Sudeste"], distritos: [{ name, regional, meta }], departamentos: [{ name, meta }] }.');
+
+    let removidos = null;
     if (replace) {
+      removidos = {
+        distritos:     db.prepare('SELECT COUNT(*) c FROM distritos WHERE tenant_id=?').get(t).c,
+        departamentos: db.prepare('SELECT COUNT(*) c FROM departamentos WHERE tenant_id=?').get(t).c,
+        regionais:     db.prepare('SELECT COUNT(*) c FROM regionais WHERE tenant_id=?').get(t).c,
+      };
+      // A resposta já gravada não some junto: perde a referência e passa a contar como
+      // "sem distrito", em vez de apontar para uma linha que não existe mais.
+      db.prepare(`UPDATE responses SET distrito_id=NULL WHERE distrito_id IN
+                  (SELECT id FROM distritos WHERE tenant_id=?)`).run(t);
+      db.prepare(`UPDATE responses SET departamento_id=NULL WHERE departamento_id IN
+                  (SELECT id FROM departamentos WHERE tenant_id=?)`).run(t);
       db.prepare('DELETE FROM distritos WHERE tenant_id=?').run(t);
       db.prepare('DELETE FROM departamentos WHERE tenant_id=?').run(t);
       db.prepare('DELETE FROM regionais WHERE tenant_id=?').run(t);
@@ -120,7 +154,12 @@ function importStructure(req, res) {
       const nm = String(d.name || '').trim(); if (!nm) return;
       db.prepare('INSERT INTO departamentos (id, tenant_id, name, meta) VALUES (?,?,?,?)').run(uuid(), t, nm, Number(d.meta) || 0);
     });
-    return ok(res, { regionais: regionais.length, distritos: distritos.length, departamentos: departamentos.length }, 'Estrutura importada');
+    return ok(res, {
+      regionais: regionais.length, distritos: distritos.length, departamentos: departamentos.length,
+      replaced: !!replace, removed: removidos,
+    }, replace
+      ? `Estrutura substituída (${removidos.regionais} regionais, ${removidos.distritos} distritos e ${removidos.departamentos} departamentos foram removidos)`
+      : 'Estrutura importada');
   } catch (e) { return err(res, 'Erro ao importar estrutura', 500, e.message); }
 }
 

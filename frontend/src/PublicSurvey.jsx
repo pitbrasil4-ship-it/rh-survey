@@ -329,21 +329,28 @@ function fieldError(field, raw, tr) {
 }
 
 /* Bloco de campos de formulário, com validação de e-mail, telefone e data. */
-function FormInput({ fields, value, onChange, tr, showErrors }) {
+function FormInput({ fields, value, onChange, tr, showErrors, qid }) {
   const cur = (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
       {fields.map((f, i) => {
         const errMsg = showErrors ? fieldError(f, cur[f.label], tr) : '';
+        // O rótulo precisa apontar para o campo: sem isso, clicar nele não foca nada e
+        // o leitor de tela não anuncia de que campo se trata.
+        const campoId = `f-${qid || 'q'}-${i}`;
+        const erroId  = `${campoId}-erro`;
         return (
           <div key={i}>
-            <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#64748B', marginBottom:4 }}>
+            <label htmlFor={campoId} style={{ display:'block', fontSize:12, fontWeight:600, color:'#64748B', marginBottom:4 }}>
               {f.label}{f.required ? <span style={{ color:RED }}> *</span> : null}
             </label>
-            <input type={FIELD_TYPE[f.kind] || 'text'} value={cur[f.label] || ''}
+            <input id={campoId} type={FIELD_TYPE[f.kind] || 'text'} value={cur[f.label] || ''}
+              required={!!f.required}
+              aria-invalid={errMsg ? 'true' : undefined}
+              aria-describedby={errMsg ? erroId : undefined}
               onChange={e => onChange({ ...cur, [f.label]: e.target.value })}
               style={{ width:'100%', boxSizing:'border-box', border:`1px solid ${errMsg ? '#FCA5A5' : '#E2E8F0'}`, borderRadius:10, padding:'11px 14px', fontSize:14, fontFamily:'inherit' }} />
-            {errMsg ? <p style={{ color:RED_DARK, fontSize:12, margin:'4px 0 0' }}>{errMsg}</p> : null}
+            {errMsg ? <p id={erroId} style={{ color:RED_DARK, fontSize:12, margin:'4px 0 0' }}>{errMsg}</p> : null}
           </div>
         );
       })}
@@ -800,7 +807,7 @@ export default function PublicSurvey({ token }) {
             ? <MatrixInput rows={rows} rowLabels={rowLabels} options={q.options} labels={trOpts} value={answers[q.id]} onChange={v => setAns(q.id, v)} />
             : <p style={{ fontSize:13, color:'#94A3B8' }}>{tr('no_options')}</p>)}
           {q.type === 'form'     && (fields.length
-            ? <FormInput fields={fields} value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} showErrors={showErrors} />
+            ? <FormInput fields={fields} value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} showErrors={showErrors} qid={q.id} />
             : <p style={{ fontSize:13, color:'#94A3B8' }}>{tr('no_options')}</p>)}
           {otherPicked &&
             <input value={otherText[q.id] || ''} onChange={e => setOther(q.id, e.target.value)}

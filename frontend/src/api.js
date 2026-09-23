@@ -197,6 +197,16 @@ export const api = {
       if (!resp.ok) throw new Error('Falha ao gerar PDF');
       return resp.blob();
     },
+    /* Anexo enviado numa resposta. Passa pela mesma permissão dos resultados, então vai
+       com o token — não dá para abrir por link simples. */
+    file: async (surveyId, fileId) => {
+      const path = `/results/${encodeURIComponent(surveyId)}/files/${encodeURIComponent(fileId)}`;
+      let resp = await rawRequest('GET', path, null, getToken());
+      if (resp.status === 401 && await tryRefresh()) resp = await rawRequest('GET', path, null, getToken());
+      if (resp.status === 401) { endSession(); throw new Error('Sessão expirada'); }
+      if (!resp.ok) throw new Error('Falha ao baixar o anexo');
+      return resp.blob();
+    },
     insightsPdf: async (surveyId, insights, lang) => {
       const path = '/results/insights-pdf';
       const body = { surveyId, insights, lang };

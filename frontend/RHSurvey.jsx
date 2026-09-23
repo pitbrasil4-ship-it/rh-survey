@@ -3704,6 +3704,36 @@ function FavorabilityBar({ fav, showLegend }) {
   );
 }
 
+/* Baixa um anexo de resposta. O arquivo passa pela mesma permissão dos resultados, então
+   vai por requisição autenticada — um link direto seria recusado. */
+function FileDownload({ surveyId, file }) {
+  const { t } = useLang();
+  const [baixando, setBaixando] = useState(false);
+  const [erro, setErro] = useState(false);
+
+  const baixar = async () => {
+    if (baixando) return;
+    setBaixando(true); setErro(false);
+    try {
+      const blob = await api.results.file(surveyId, file.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = file.filename || "anexo";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { setErro(true); }
+    setBaixando(false);
+  };
+
+  return (
+    <button onClick={baixar} disabled={baixando}
+      title={erro ? t('qr_file_error') : t('qr_file_download')}
+      className={`p-1.5 rounded-lg transition-colors ${erro ? "text-red-500 hover:bg-red-50" : "text-slate-400 hover:text-purple-600 hover:bg-purple-50"}`}>
+      {baixando ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+    </button>
+  );
+}
+
 /* Chips das dimensões (taxonomias) às quais a pergunta pertence. */
 function DimensionChips({ dimensions }) {
   if (!dimensions || !dimensions.length) return null;
@@ -3716,7 +3746,7 @@ function DimensionChips({ dimensions }) {
   );
 }
 
-function QuestionResult({ q }) {
+function QuestionResult({ q, surveyId }) {
   const { t } = useLang();
 
   // Ordenação: a posição média manda (quanto menor, mais no topo). O "1º lugar" mostra
@@ -3766,10 +3796,11 @@ function QuestionResult({ q }) {
         {!(q.files || []).length ? <p className="text-sm text-slate-400 py-4 text-center">{t('rd_no_responses_yet')}</p> : (
           <div className="space-y-1.5 max-h-64 overflow-y-auto">
             {q.files.map((f, i) => (
-              <div key={i} className="flex items-center gap-2.5 border border-slate-100 rounded-lg px-3 py-2">
+              <div key={f.id || i} className="flex items-center gap-2.5 border border-slate-100 rounded-lg px-3 py-2">
                 <span>📎</span>
                 <span className="text-sm text-slate-700 flex-1 min-w-0 truncate" title={f.filename}>{f.filename}</span>
                 <span className="text-xs text-slate-400 whitespace-nowrap">{f.size > 1048576 ? (f.size / 1048576).toFixed(1) + " MB" : Math.round(f.size / 1024) + " KB"}</span>
+                {f.id && <FileDownload surveyId={surveyId} file={f} />}
               </div>
             ))}
           </div>
@@ -5164,7 +5195,7 @@ function ResultsDashboard() {
           <ComparePanel surveys={surveys} currentId={selectedId} />
           {questions.map((q,i) => (
             <div key={q.questionId || i}>
-              <QuestionResult q={q} />
+              <QuestionResult q={q} surveyId={selectedId} />
               <SegPerQuestion segScores={segScoresFor(q.questionId)} />
             </div>
           ))}
