@@ -273,6 +273,22 @@ function initSchema() {
   // A resposta fica presa à versão que estava no ar quando ela foi enviada.
   try { db.exec("ALTER TABLE responses ADD COLUMN version_id TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN version_number INTEGER"); } catch (e) {}
+
+  // ── Opções do coletor ──
+  // Senha de acesso ao formulário (guardada como hash — nunca em texto claro).
+  try { db.exec("ALTER TABLE surveys ADD COLUMN access_password_hash TEXT"); } catch (e) {}
+  // Mensagem da página final, no lugar do texto padrão de agradecimento.
+  try { db.exec("ALTER TABLE surveys ADD COLUMN thank_you TEXT"); } catch (e) {}
+  // Permite ao respondente reabrir o próprio link e corrigir o que enviou.
+  try { db.exec("ALTER TABLE surveys ADD COLUMN allow_edit INTEGER DEFAULT 0"); } catch (e) {}
+  // Randomização: embaralha a ordem das perguntas e/ou das alternativas.
+  try { db.exec("ALTER TABLE surveys ADD COLUMN randomize_questions INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE surveys ADD COLUMN randomize_options INTEGER DEFAULT 0"); } catch (e) {}
+  // Cotas: encerra a coleta de um distrito ao atingir a meta cadastrada na Estrutura.
+  try { db.exec("ALTER TABLE surveys ADD COLUMN enforce_quota INTEGER DEFAULT 0"); } catch (e) {}
+
+  // Variáveis que vieram no link (distrito, regional, departamento, modalidade).
+  try { db.exec("ALTER TABLE responses ADD COLUMN link_vars TEXT"); } catch (e) {}
 }
 
 module.exports = { getDB };

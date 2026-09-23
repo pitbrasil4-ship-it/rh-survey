@@ -92,6 +92,176 @@ function getSurveyResults(req, res) {
   } catch (e) { return err(res, 'Erro ao carregar resultados', 500, e.message); }
 }
 
+/* GET /results/:surveyId/crosstab?rows=<chave>&cols=<chave>
+ *
+ * Chaves aceitas: "q:<id>" (as alternativas de uma pergunta) ou "seg:distrito",
+ * "seg:regional", "seg:departamento", "seg:modalidade".
+ *
+ * É o cruzamento que hoje obriga uma segunda exportação manual: modalidade nas linhas
+ * e a resposta da pergunta nas colunas, com contagem, % da linha e favorabilidade. */
+function getCrosstab(req, res) {
+  try {
+    const db = getDB();
+    const survey = db.prepare('SELECT * FROM surveys WHERE id=? AND tenant_id=?').get(req.params.surveyId, req.user.tenant_id);
+    if (!survey) return notFound(res, 'Pesquisa');
+    if (!canSeeSurvey(req.user, survey)) return err(res, 'Você não tem permissão para ver os resultados desta pesquisa', 403);
+
+    const scope = responseScopeSQL(db, req.user, 'r');
+    const questions = db.prepare('SELECT * FROM questions WHERE survey_id=? ORDER BY order_num').all(survey.id).map(Q.fromRow);
+    const responses = db.prepare(`SELECT r.id, r.distrito_id, r.departamento_id FROM responses r
+                                  WHERE r.survey_id=? AND r.completed_at IS NOT NULL${scope.sql}`).all(survey.id, ...scope.params);
+    if (!responses.length) return ok(res, { rows: [], cols: [], cells: [], empty: true });
+
+    const ph = responses.map(() => '?').join(',');
+    const answers = db.prepare(`SELECT question_id, response_id, value_text, value_num, value_json
+                                FROM answers WHERE response_id IN (${ph})`).all(...responses.map(r => r.id));
+    const byQuestion = {};
+    answers.forEach(a => (byQuestion[a.question_id] = byQuestion[a.question_id] || []).push(a));
+
+    // Nomes da estrutura, para os eixos de segmento.
+    const t = req.user.tenant_id;
+    const distName = {}, distReg = {}, regName = {}, depName = {};
+    db.prepare('SELECT id, name, regional_id FROM distritos WHERE tenant_id=?').all(t)
+      .forEach(d => { distName[d.id] = d.name; distReg[d.id] = d.regional_id; });
+    db.prepare('SELECT id, name FROM regionais WHERE tenant_id=?').all(t).forEach(r => regName[r.id] = r.name);
+    db.prepare('SELECT id, name FROM departamentos WHERE tenant_id=?').all(t).forEach(d => depName[d.id] = d.name);
+
+    /* Um eixo devolve, para cada resposta, a(s) categoria(s) dela e a lista ordenada
+       de categorias possíveis. Uma resposta de múltipla escolha entra em mais de uma. */
+    const buildAxis = (key) => {
+      if (String(key || '').startsWith('q:')) {
+        const q = questions.find(x => x.id === key.slice(2));
+        if (!q) return null;
+        const cfg = q.config || {};
+        const opts = q.options || [];
+        const byResp = {};
+        (byQuestion[q.id] || []).forEach(a => {
+          let labels = [];
+          if (q.type === 'scale' || q.type === 'rating') {
+            const pos = Math.round(a.value_num);
+            if (pos > 0) labels = [opts[pos - 1] || String(pos)];
+          } else if (q.type === 'yesno') {
+            labels = [(a.value_text === 'true' || a.value_text === 'sim' || a.value_text === '1') ? 'Sim' : 'Não'];
+          } else if (q.type === 'matrix') {
+            return; // matriz não serve de eixo: cada linha teria a própria escala
+          } else {
+            labels = answerLabels(q, a);
+          }
+          if (labels.length) byResp[a.response_id] = labels;
+        });
+        let categories = opts.slice();
+        if (q.type === 'yesno') categories = ['Sim', 'Não'];
+        if (q.type === 'rating' && !categories.length) categories = ['1', '2', '3', '4', '5'];
+        // Respostas livres ("Outros") entram depois das alternativas cadastradas.
+        const extras = [...new Set(Object.values(byResp).flat())].filter(l => !categories.includes(l));
+        return { label: q.text, categories: categories.concat(extras.sort()), byResp,
+                 neutralLabel: Number.isInteger(cfg.neutralIndex) ? opts[cfg.neutralIndex] : null };
+      }
+
+      const seg = String(key || '').replace(/^seg:/, '');
+      if (seg === 'distrito' || seg === 'regional' || seg === 'departamento') {
+        const nameOf = r => seg === 'distrito' ? distName[r.distrito_id]
+                          : seg === 'regional' ? regName[distReg[r.distrito_id]]
+                          : depName[r.departamento_id];
+        const byResp = {}; const set = new Set();
+        responses.forEach(r => { const n = nameOf(r); if (n) { byResp[r.id] = [n]; set.add(n); } });
+        return { label: { distrito: 'Distrito', regional: 'Regional', departamento: 'Departamento' }[seg],
+                 categories: [...set].sort(), byResp };
+      }
+      if (seg === 'modalidade') {
+        const q = questions.find(x => x.config && x.config.segmentation);
+        if (!q) return null;
+        const byResp = {};
+        (byQuestion[q.id] || []).forEach(a => { const l = answerLabels(q, a); if (l.length) byResp[a.response_id] = [l[0]]; });
+        const extras = [...new Set(Object.values(byResp).flat())].filter(l => !(q.options || []).includes(l));
+        return { label: q.text, categories: (q.options || []).concat(extras.sort()), byResp };
+      }
+      return null;
+    };
+
+    const rowAxis = buildAxis(req.query.rows);
+    const colAxis = buildAxis(req.query.cols);
+    if (!rowAxis || !colAxis) return badReq(res, 'Escolha uma pergunta ou um segmento para as linhas e para as colunas.');
+
+    // Favorabilidade da célula, quando as COLUNAS são as alternativas de uma pergunta
+    // pontuada: é a leitura que interessa (ex.: favorabilidade por modalidade).
+    const colQ = String(req.query.cols || '').startsWith('q:') ? questions.find(x => x.id === req.query.cols.slice(2)) : null;
+    const favFrom = colQ ? (Number.isInteger((colQ.config || {}).favorableFrom)
+      ? colQ.config.favorableFrom
+      : Q.defaultFavorableFrom(colQ.options, colQ.option_points, (colQ.config || {}).neutralIndex)) : null;
+    const colNeutral = colQ && Number.isInteger((colQ.config || {}).neutralIndex) ? colQ.config.neutralIndex : null;
+
+    const cells = rowAxis.categories.map(rc => colAxis.categories.map(cc => {
+      const n = responses.filter(r =>
+        (rowAxis.byResp[r.id] || []).includes(rc) && (colAxis.byResp[r.id] || []).includes(cc)).length;
+      return { count: n };
+    }));
+
+    // Percentual sobre o total da LINHA — é como o RH lê o cruzamento.
+    const rowTotals = cells.map(row => row.reduce((a, c) => a + c.count, 0));
+    cells.forEach((row, i) => row.forEach(c => { c.pct = rowTotals[i] ? Math.round((c.count / rowTotals[i]) * 100) : 0; }));
+    const colTotals = colAxis.categories.map((_, j) => cells.reduce((a, row) => a + row[j].count, 0));
+
+    // Favorabilidade por linha, ignorando a coluna neutra.
+    const rowFav = rowAxis.categories.map((_, i) => {
+      if (favFrom == null) return null;
+      let fav = 0, base = 0;
+      colAxis.categories.forEach((cc, j) => {
+        const idx = (colQ.options || []).indexOf(cc);
+        if (idx < 0 || idx === colNeutral) return;
+        base += cells[i][j].count;
+        if (idx >= favFrom) fav += cells[i][j].count;
+      });
+      if (!base) return null;
+      const favorablePct = Math.round((fav / base) * 100);
+      return { favorablePct, unfavorablePct: 100 - favorablePct, base, semaforo: semaforo(100 - favorablePct) };
+    });
+
+    // Respostas que não se encaixam num dos eixos (sem distrito, ou que pularam a
+    // pergunta) ficam de fora da matriz: melhor dizer quantas são do que deixar o
+    // total não bater com a soma das linhas.
+    const fora = responses.filter(r =>
+      !(rowAxis.byResp[r.id] || []).length || !(colAxis.byResp[r.id] || []).length).length;
+
+    return ok(res, {
+      rows: rowAxis.categories, cols: colAxis.categories,
+      rowLabel: rowAxis.label, colLabel: colAxis.label,
+      cells, rowTotals, colTotals, rowFav,
+      total: responses.length, classified: responses.length - fora, unclassified: fora,
+      neutralCol: colAxis.neutralLabel || null,
+    });
+  } catch (e) { return err(res, 'Erro ao montar o cruzamento', 500, e.message); }
+}
+
+/* GET /results/:surveyId/crosstab-axes — eixos disponíveis para o cruzamento */
+function getCrosstabAxes(req, res) {
+  try {
+    const db = getDB();
+    const survey = db.prepare('SELECT id, category FROM surveys WHERE id=? AND tenant_id=?').get(req.params.surveyId, req.user.tenant_id);
+    if (!survey) return notFound(res, 'Pesquisa');
+    if (!canSeeSurvey(req.user, survey)) return err(res, 'Você não tem permissão para ver os resultados desta pesquisa', 403);
+
+    const questions = db.prepare('SELECT * FROM questions WHERE survey_id=? ORDER BY order_num').all(survey.id).map(Q.fromRow);
+    // Matriz e texto não servem de eixo; matriz tem uma escala por linha, texto não tem categoria.
+    const usable = questions.filter(q => ['scale', 'rating', 'multiple', 'dropdown', 'yesno'].includes(q.type));
+    const segQ = questions.find(q => q.config && q.config.segmentation);
+    const t = req.user.tenant_id;
+    const has = (table) => db.prepare(`SELECT COUNT(*) c FROM ${table} WHERE tenant_id=?`).get(t).c > 0;
+
+    const segments = [];
+    if (segQ) segments.push({ key: 'seg:modalidade', label: segQ.text, kind: 'segmento' });
+    if (has('distritos'))     segments.push({ key: 'seg:distrito',     label: 'Distrito',     kind: 'segmento' });
+    if (has('regionais'))     segments.push({ key: 'seg:regional',     label: 'Regional',     kind: 'segmento' });
+    if (has('departamentos')) segments.push({ key: 'seg:departamento', label: 'Departamento', kind: 'segmento' });
+
+    return ok(res, {
+      axes: segments.concat(usable.map(q => ({
+        key: 'q:' + q.id, label: `${q.order_num}. ${q.text}`, kind: 'pergunta', type: q.type,
+      }))),
+    });
+  } catch (e) { return err(res, 'Erro ao listar eixos', 500, e.message); }
+}
+
 /* Posições (1-based) escolhidas numa resposta. Unifica escala, estrelas, matriz,
    múltipla e lista suspensa, que é o que permite calcular favorabilidade e peso
    com uma regra só. */
@@ -985,4 +1155,4 @@ function getSegmentQuestions(req, res) {
   } catch (e) { return err(res, 'Erro ao detalhar por pergunta', 500, e.message); }
 }
 
-module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions, getPdf, getInsightsPdf };
+module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions, getPdf, getInsightsPdf, getCrosstab, getCrosstabAxes };

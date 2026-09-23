@@ -39,6 +39,30 @@ function list(req, res) {
   } catch (e) { return err(res, 'Erro ao listar pesquisas', 500, e.message); }
 }
 
+/* Opções do coletor, com PATCH semantics: o que não vier no corpo fica como está.
+   A senha é guardada como hash; mandar "" remove a proteção. */
+function collectorFields(body, cur) {
+  const bcrypt = require('bcryptjs');
+  const out = {
+    access_password_hash: cur.access_password_hash ?? null,
+    thank_you:            cur.thank_you ?? null,
+    allow_edit:           cur.allow_edit ?? 0,
+    randomize_questions:  cur.randomize_questions ?? 0,
+    randomize_options:    cur.randomize_options ?? 0,
+    enforce_quota:        cur.enforce_quota ?? 0,
+  };
+  if (body.accessPassword !== undefined) {
+    const pw = String(body.accessPassword || '');
+    out.access_password_hash = pw ? bcrypt.hashSync(pw, 10) : null;
+  }
+  if (body.thankYou !== undefined)          out.thank_you = String(body.thankYou || '').trim().slice(0, 2000) || null;
+  if (body.allowEdit !== undefined)         out.allow_edit = body.allowEdit ? 1 : 0;
+  if (body.randomizeQuestions !== undefined) out.randomize_questions = body.randomizeQuestions ? 1 : 0;
+  if (body.randomizeOptions !== undefined)   out.randomize_options = body.randomizeOptions ? 1 : 0;
+  if (body.enforceQuota !== undefined)       out.enforce_quota = body.enforceQuota ? 1 : 0;
+  return out;
+}
+
 /* POST /surveys */
 async function create(req, res) {
   try {
@@ -48,13 +72,17 @@ async function create(req, res) {
 
     const db       = getDB();
     const surveyId = uuid();
-    db.prepare(`INSERT INTO surveys (id, tenant_id, created_by_id, name, description, category, target_group, anonymous, deadline, lgpd_basis, public_token, one_per_device, max_responses)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    const col      = collectorFields(req.body, {});
+    db.prepare(`INSERT INTO surveys (id, tenant_id, created_by_id, name, description, category, target_group, anonymous, deadline, lgpd_basis, public_token, one_per_device, max_responses,
+                                     access_password_hash, thank_you, allow_edit, randomize_questions, randomize_options, enforce_quota)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       surveyId, req.user.tenant_id, req.user.id,
       name, description || null, category || null,
       targetGroup || null, anonymous !== false ? 1 : 0,
       deadline || null, lgpdBasis || 'consentimento', uuid(),
-      onePerDevice ? 1 : 0, maxResponses > 0 ? Math.round(maxResponses) : null
+      onePerDevice ? 1 : 0, maxResponses > 0 ? Math.round(maxResponses) : null,
+      col.access_password_hash, col.thank_you, col.allow_edit,
+      col.randomize_questions, col.randomize_options, col.enforce_quota
     );
 
     const qIds = Q.insertQuestions(db, surveyId, questions, uuid);
@@ -143,10 +171,13 @@ function getOne(req, res) {
     const questions = rows.map(r => ({ ...Q.fromRow(r), dimensions: dims[r.id] || [], answerCount: counts[r.id] || 0 }));
     const responseCount = db.prepare('SELECT COUNT(*) c FROM responses WHERE survey_id = ?').get(survey.id).c;
     const versions = db.prepare('SELECT id, number, published_at, note FROM survey_versions WHERE survey_id=? ORDER BY number DESC').all(survey.id);
+    // O hash da senha nunca sai da API: a tela só precisa saber que existe uma.
+    const { access_password_hash, ...safeSurvey } = survey;
+    safeSurvey.hasPassword = !!access_password_hash;
     // Perguntas continuam editáveis com respostas coletadas: só as mudanças que
     // invalidariam o que já foi gravado (trocar o tipo, encurtar a escala, remover a
     // pergunta) são recusadas, uma a uma, pelo sincronizador.
-    return ok(res, { survey, questions, responseCount, versions });
+    return ok(res, { survey: safeSurvey, questions, responseCount, versions });
   } catch (e) { return err(res, 'Erro ao buscar pesquisa', 500, e.message); }
 }
 
@@ -164,7 +195,9 @@ function update(req, res) {
 
     if (Array.isArray(questions) && !questions.length) return badReq(res, 'A pesquisa precisa de ao menos uma pergunta');
 
-    db.prepare(`UPDATE surveys SET name=?, description=?, category=?, target_group=?, anonymous=?, deadline=?, status=?, one_per_device=?, max_responses=? WHERE id=?`).run(
+    const col = collectorFields(req.body, survey);
+    db.prepare(`UPDATE surveys SET name=?, description=?, category=?, target_group=?, anonymous=?, deadline=?, status=?, one_per_device=?, max_responses=?,
+                                   access_password_hash=?, thank_you=?, allow_edit=?, randomize_questions=?, randomize_options=?, enforce_quota=? WHERE id=?`).run(
       name        ?? survey.name,
       description ?? survey.description,
       category    ?? survey.category,
@@ -174,6 +207,8 @@ function update(req, res) {
       status      ?? survey.status,
       onePerDevice === undefined ? survey.one_per_device : (onePerDevice ? 1 : 0),
       maxResponses === undefined ? survey.max_responses : (maxResponses > 0 ? Math.round(maxResponses) : null),
+      col.access_password_hash, col.thank_you, col.allow_edit,
+      col.randomize_questions, col.randomize_options, col.enforce_quota,
       req.params.id
     );
     let sync = null;
