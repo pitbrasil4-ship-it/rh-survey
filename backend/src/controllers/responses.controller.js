@@ -95,12 +95,16 @@ function submitPublic(req, res) {
     const responseId = uuid();
     const ipHash     = hashIP(req.ip || '');
     const campaignId = activeCampaignId(db, survey.id);
+    // A resposta fica presa à versão que estava publicada quando ela foi enviada,
+    // para que uma edição posterior do questionário não reescreva o que foi respondido.
+    const version = db.prepare('SELECT id, number FROM survey_versions WHERE survey_id=? ORDER BY number DESC LIMIT 1').get(survey.id);
 
-    db.prepare(`INSERT INTO responses (id, survey_id, respondent_id, ip_hash, distrito_id, departamento_id, device_id, invitation_id, campaign_id)
-                VALUES (?,?,?,?,?,?,?,?,?)`).run(
+    db.prepare(`INSERT INTO responses (id, survey_id, respondent_id, ip_hash, distrito_id, departamento_id, device_id, invitation_id, campaign_id, version_id, version_number)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
       responseId, survey.id, survey.anonymous ? null : (respondentId || (invitation && invitation.respondent_id) || null),
       ipHash, distritoId || null, departamentoId || null,
-      survey.one_per_device ? device : null, invitation ? invitation.id : null, campaignId
+      survey.one_per_device ? device : null, invitation ? invitation.id : null, campaignId,
+      version ? version.id : null, version ? version.number : null
     );
 
     const stmt = db.prepare('INSERT INTO answers (id, response_id, question_id, value_text, value_num, value_json) VALUES (?,?,?,?,?,?)');

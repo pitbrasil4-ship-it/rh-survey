@@ -123,6 +123,7 @@ export const api = {
   },
   dimensions: {
     list:         ()          => request('GET', '/dimensions'),
+    resolve:      (names)     => request('POST', '/dimensions/resolve', { names }),
     createSet:    (data)      => request('POST', '/dimensions/sets', data),
     updateSet:    (id, data)  => request('PUT', `/dimensions/sets/${id}`, data),
     deleteSet:    (id)        => request('DELETE', `/dimensions/sets/${id}`),

@@ -223,6 +223,56 @@ function initSchema() {
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_responses_device ON responses(survey_id, device_id)"); } catch (e) {}
   // Distrito do respondente (liga o cadastro de Respondentes à Estrutura).
   try { db.exec("ALTER TABLE respondents ADD COLUMN distrito_id TEXT"); } catch (e) {}
+
+  // ── Vínculo pergunta↔dimensão COM VIGÊNCIA ──
+  // A classificação muda a cada ciclo. Guardar a vigência é o que permite reclassificar
+  // de forma prospectiva sem reescrever a série histórica já apurada: cada resposta é
+  // lida com a classificação que valia no dia em que ela foi enviada.
+  try { db.exec(`CREATE TABLE IF NOT EXISTS question_dimension_links (
+    id TEXT PRIMARY KEY, question_id TEXT, dimension_id TEXT,
+    effective_from TEXT,   -- NULL = desde sempre (reclassificação retroativa)
+    effective_to TEXT,     -- NULL = vigente
+    created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_qdl_question ON question_dimension_links(question_id)"); } catch (e) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_qdl_dimension ON question_dimension_links(dimension_id)"); } catch (e) {}
+  // Migra os vínculos sem vigência da tabela antiga e a descarta.
+  try {
+    db.exec(`INSERT INTO question_dimension_links (id, question_id, dimension_id)
+             SELECT lower(hex(randomblob(16))), qd.question_id, qd.dimension_id
+             FROM question_dimensions qd
+             WHERE NOT EXISTS (SELECT 1 FROM question_dimension_links l
+                               WHERE l.question_id = qd.question_id AND l.dimension_id = qd.dimension_id)`);
+    db.exec("DROP TABLE question_dimensions");
+  } catch (e) {}
+
+  // Conjunto de dimensões: código estável ('clima', 'hse') para o editor montar um
+  // campo por taxonomia, e ordem de exibição.
+  try { db.exec("ALTER TABLE dimension_sets ADD COLUMN code TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE dimension_sets ADD COLUMN order_num INTEGER DEFAULT 0"); } catch (e) {}
+
+  // Observação da pergunta (coluna livre da planilha de importação).
+  try { db.exec("ALTER TABLE questions ADD COLUMN notes TEXT"); } catch (e) {}
+
+  // ── Histórico de alterações: quem, quando, o quê ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS question_history (
+    id TEXT PRIMARY KEY, tenant_id TEXT, survey_id TEXT, question_id TEXT,
+    user_id TEXT, user_name TEXT, action TEXT, field TEXT,
+    before_value TEXT, after_value TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_qhist_survey ON question_history(survey_id, created_at)"); } catch (e) {}
+
+  // ── Versionamento: cada publicação vira uma versão numerada e datada ──
+  try { db.exec(`CREATE TABLE IF NOT EXISTS survey_versions (
+    id TEXT PRIMARY KEY, survey_id TEXT, number INTEGER, published_at TEXT,
+    snapshot TEXT, created_by_id TEXT, note TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_sver_survey ON survey_versions(survey_id, number)"); } catch (e) {}
+  // A resposta fica presa à versão que estava no ar quando ela foi enviada.
+  try { db.exec("ALTER TABLE responses ADD COLUMN version_id TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE responses ADD COLUMN version_number INTEGER"); } catch (e) {}
 }
 
 module.exports = { getDB };

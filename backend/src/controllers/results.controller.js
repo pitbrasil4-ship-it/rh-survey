@@ -18,176 +18,342 @@ function getSurveyResults(req, res) {
 
     // Escopo do usuário: um Gestor amarrado a um distrito só enxerga as respostas dele.
     const scope = responseScopeSQL(db, req.user, 'r');
-    const respWhere = `r.survey_id = ? AND r.completed_at IS NOT NULL${scope.sql}`;
 
-    const questions   = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
-    const totalResp   = db.prepare(`SELECT COUNT(*) as cnt FROM responses r WHERE ${respWhere}`).get(survey.id, ...scope.params).cnt;
-    const startedResp = db.prepare(`SELECT COUNT(*) as cnt FROM responses r WHERE r.survey_id = ?${scope.sql}`).get(survey.id, ...scope.params).cnt;
-    let gScoreSum = 0, gScoreN = 0; // acumulador da média geral atingida (pontuação por opção)
+    const questions = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id).map(Q.fromRow);
+    const responses = db.prepare(`SELECT r.id, r.completed_at, r.distrito_id, r.departamento_id, r.version_number
+                                  FROM responses r WHERE r.survey_id = ? AND r.completed_at IS NOT NULL${scope.sql}`)
+                        .all(survey.id, ...scope.params);
+    const startedResp = db.prepare(`SELECT COUNT(*) c FROM responses r WHERE r.survey_id = ?${scope.sql}`).get(survey.id, ...scope.params).c;
 
-    const answersOf = db.prepare(`SELECT a.value_text, a.value_num, a.value_json
-      FROM answers a JOIN responses r ON r.id = a.response_id
-      WHERE a.question_id = ? AND ${respWhere}`);
+    // Respostas indexadas por pergunta, cada uma carregando a data em que foi enviada —
+    // é isso que permite ler cada resposta com a classificação vigente naquele dia.
+    const respMeta = {}; responses.forEach(r => respMeta[r.id] = r);
+    const byQuestion = {};
+    if (responses.length) {
+      const ph = responses.map(() => '?').join(',');
+      db.prepare(`SELECT question_id, response_id, value_text, value_num, value_json
+                  FROM answers WHERE response_id IN (${ph})`).all(...responses.map(r => r.id))
+        .forEach(a => (byQuestion[a.question_id] = byQuestion[a.question_id] || []).push(a));
+    }
 
-    const dimsByQuestion = {};
-    db.prepare(`SELECT qd.question_id, d.id, d.name, ds.name AS set_name
-                FROM question_dimensions qd
-                JOIN dimensions d ON d.id = qd.dimension_id
-                LEFT JOIN dimension_sets ds ON ds.id = d.set_id
-                JOIN questions q ON q.id = qd.question_id
-                WHERE q.survey_id = ?`).all(survey.id)
-      .forEach(r => (dimsByQuestion[r.question_id] = dimsByQuestion[r.question_id] || []).push({ id: r.id, name: r.name, set: r.set_name }));
+    // Vínculos com dimensão, com a vigência de cada um.
+    const links = db.prepare(`SELECT l.question_id, l.dimension_id, l.effective_from, l.effective_to,
+                                     d.name, ds.name AS set_name, ds.code AS set_code
+                              FROM question_dimension_links l
+                              JOIN dimensions d ON d.id = l.dimension_id
+                              LEFT JOIN dimension_sets ds ON ds.id = d.set_id
+                              JOIN questions q ON q.id = l.question_id
+                              WHERE q.survey_id = ?`).all(survey.id);
 
-    const questionResults = questions.map(q => {
-      const answers = answersOf.all(q.id, survey.id, ...scope.params);
-      const cfg     = Q.parseJSON(q.config) || {};
-      const qOpts   = Q.parseJSON(q.options);
-      const pts     = Q.parseJSON(q.option_points);
-      const neutral = Number.isInteger(cfg.neutralIndex) ? cfg.neutralIndex : null;
+    const nowISO = new Date().toISOString();
+    const inWindow = (l, when) => (!l.effective_from || l.effective_from <= when) && (!l.effective_to || l.effective_to > when);
+    const currentDims = {};
+    links.filter(l => inWindow(l, nowISO)).forEach(l =>
+      (currentDims[l.question_id] = currentDims[l.question_id] || []).push({ id: l.dimension_id, name: l.name, set: l.set_name, setCode: l.set_code }));
 
-      let result = {
-        questionId: q.id, type: q.type, text: q.text, responseCount: answers.length,
-        options: qOpts || null, required: q.required !== 0,
-        neutralIndex: neutral, neutralLabel: (neutral != null && qOpts) ? qOpts[neutral] : null,
-        dimensions: dimsByQuestion[q.id] || [],
-      };
+    // Pergunta de segmentação (ex.: modalidade de contratação): define os recortes.
+    const segQ = questions.find(q => q.config && q.config.segmentation);
+    const segmentOf = {};
+    if (segQ) {
+      (byQuestion[segQ.id] || []).forEach(a => {
+        const labels = answerLabels(segQ, a);
+        if (labels.length) segmentOf[a.response_id] = labels[0];
+      });
+    }
 
-      if (q.type === 'nps') {
-        const scores = answers.map(a => a.value_num).filter(v => v !== null);
-        result = { ...result, ...calculateNPS(scores) };
+    // Apuração geral, sobre todas as respostas no escopo.
+    const all = responses.map(r => r.id);
+    const questionResults = questions.map(q => ({
+      ...questionStats(q, byQuestion[q.id] || [], all),
+      dimensions: currentDims[q.id] || [],
+    }));
 
-      } else if (q.type === 'scale' || q.type === 'rating') {
-        const values = answers.map(a => a.value_num).filter(v => v !== null);
-        // A opção neutra ("Não se aplica") sai da média e do denominador.
-        const scored = neutral != null ? values.filter(v => v !== neutral + 1) : values;
-        result.average = calculateAverage(scored);
-        result.neutralCount = values.length - scored.length;
-        // Distribuição rotulada: mostra "Às vezes · 12 (50%)" em vez de só "3 · 50%".
-        result.distribution = labelledDistribution(values, qOpts, q.type === 'rating' ? 5 : (qOpts ? qOpts.length : 5));
-        result.choices = result.distribution;
-
-      } else if (q.type === 'multiple' || q.type === 'dropdown') {
-        const all = answers.flatMap(a => {
-          if (a.value_json) { try { const v = JSON.parse(a.value_json); return Array.isArray(v) ? v : [v]; } catch { return []; } }
-          return a.value_text ? [a.value_text] : [];
-        });
-        const totalR = answers.length || 1;
-        // Mantém a ordem das alternativas cadastradas e acrescenta as respostas "Outros".
-        const known = (qOpts || []).map(label => {
-          const count = all.filter(v => String(v) === label).length;
-          return { value: label, label, count, pct: Math.round((count / totalR) * 100) };
-        });
-        const extras = calculateFrequency(all.map(String).filter(v => !(qOpts || []).includes(v)))
-          .map(f => ({ value: f.value, label: f.value, count: f.count, pct: Math.round((f.count / totalR) * 100), other: true }));
-        result.choices = known.concat(extras);
-        result.frequency = result.choices;
-
-      } else if (q.type === 'yesno') {
-        const values  = answers.map(a => a.value_text);
-        const yes     = values.filter(v => v === 'true' || v === 'sim' || v === '1').length;
-        const no      = values.length - yes;
-        result.yes    = yes;
-        result.no     = no;
-        result.yesPct = values.length ? Math.round((yes / values.length) * 100) : 0;
-        result.choices = [
-          { value: 'Sim', label: 'Sim', count: yes, pct: result.yesPct },
-          { value: 'Não', label: 'Não', count: no,  pct: values.length ? 100 - result.yesPct : 0 },
-        ];
-
-      } else if (q.type === 'matrix') {
-        // Uma média (e uma distribuição) por linha da matriz.
-        const rows = Array.isArray(cfg.rows) ? cfg.rows : [];
-        const byRow = {};
-        answers.forEach(a => {
-          let v = null; try { v = a.value_json ? JSON.parse(a.value_json) : null; } catch {}
-          if (!v || typeof v !== 'object') return;
-          rows.forEach(rowLabel => {
-            const pos = Number(v[rowLabel]);
-            if (pos > 0) (byRow[rowLabel] = byRow[rowLabel] || []).push(pos);
-          });
-        });
-        result.rows = rows.map(rowLabel => {
-          const vals = byRow[rowLabel] || [];
-          const scored = neutral != null ? vals.filter(x => x !== neutral + 1) : vals;
-          return {
-            label: rowLabel, count: vals.length, average: calculateAverage(scored),
-            distribution: labelledDistribution(vals, qOpts, qOpts ? qOpts.length : 5),
-          };
-        });
-        const flat = Object.values(byRow).flat();
-        result.average = calculateAverage(neutral != null ? flat.filter(x => x !== neutral + 1) : flat);
-
-      } else if (q.type === 'form') {
-        // Bloco de campos: devolve as respostas por campo, para leitura/exportação.
-        const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
-        const byField = {};
-        answers.forEach(a => {
-          let v = null; try { v = a.value_json ? JSON.parse(a.value_json) : null; } catch {}
-          if (!v || typeof v !== 'object') return;
-          fields.forEach(f => { const val = String(v[f.label] ?? '').trim(); if (val) (byField[f.label] = byField[f.label] || []).push(val); });
-        });
-        result.fields = fields.map(f => ({ label: f.label, kind: f.kind, count: (byField[f.label] || []).length, responses: (byField[f.label] || []).slice(0, 200) }));
-
-      } else if (q.type === 'text') {
-        result.responses = answers.map(a => a.value_text).filter(Boolean).slice(0, 50);
-      }
-
-      // Pontuação por opção (%) — quando a pergunta tem pesos definidos por alternativa.
-      if (pts && pts.length) {
-        const opts = qOpts || [];
-        let sum = 0, n = 0;
-        const earn = (a) => {
-          if (q.type === 'scale' || q.type === 'rating') {
-            const pos = a.value_num;
-            // A opção neutra não pontua nem entra no denominador.
-            if (pos == null || (neutral != null && pos === neutral + 1)) return null;
-            return pts[pos - 1] != null ? Number(pts[pos - 1]) : null;
-          }
-          if (q.type === 'multiple' || q.type === 'dropdown') {
-            let sel = []; try { sel = JSON.parse(a.value_json || '[]'); } catch {}
-            if (!Array.isArray(sel)) sel = [sel];
-            const vals = sel.map(l => { const idx = opts.indexOf(l); return (idx >= 0 && idx !== neutral && pts[idx] != null) ? Number(pts[idx]) : null; }).filter(v => v != null);
-            return vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : null;
-          }
-          if (q.type === 'matrix') {
-            let v = null; try { v = a.value_json ? JSON.parse(a.value_json) : null; } catch {}
-            if (!v || typeof v !== 'object') return null;
-            const vals = Object.values(v).map(Number)
-              .filter(pos => pos > 0 && !(neutral != null && pos === neutral + 1))
-              .map(pos => (pts[pos - 1] != null ? Number(pts[pos - 1]) : null)).filter(x => x != null);
-            return vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : null;
-          }
-          return null;
-        };
-        answers.forEach(a => { const e = earn(a); if (e != null) { sum += e; n++; } });
-        if (n) result.scorePct = Math.round(sum / n);
-        gScoreSum += sum; gScoreN += n;
-      }
-
-      // Comentários livres (value_text) — aparecem mesmo se a pergunta não for do tipo "texto"
-      // (ex.: campo "Outros" preenchido, ou pergunta sem opções respondida como texto).
-      if (q.type !== 'text' && q.type !== 'form') {
-        const skip = new Set(['true', 'false', 'sim', 'não', 'nao', 'yes', 'no', '1', '0']);
-        const comments = answers.map(a => a.value_text).filter(v => v != null && String(v).trim() !== '' && !skip.has(String(v).trim().toLowerCase()));
-        if (comments.length) result.comments = comments.slice(0, 300);
-      }
-
-      return result;
-    });
-
-    // Overall NPS (first NPS question)
     const npsQ = questionResults.find(q => q.type === 'nps');
+    const overall = rollUp(questionResults);
+
+    // Nota por dimensão, respeitando a vigência de cada vínculo.
+    const dimensions = dimensionResults(links, questions, byQuestion, respMeta, all);
+
+    // Recortes: modalidade (pergunta de segmentação), distrito, regional, departamento.
+    const segments = buildSegments(db, req.user.tenant_id, survey.id, questions, byQuestion, responses, segmentOf, segQ, links, respMeta);
 
     return ok(res, {
-      survey:       { ...survey, totalResponses: totalResp, startedResponses: startedResp },
-      completionRate: startedResp > 0 ? Math.round((totalResp / startedResp) * 100) : 0,
+      survey:       { ...survey, totalResponses: responses.length, startedResponses: startedResp },
+      completionRate: startedResp > 0 ? Math.round((responses.length / startedResp) * 100) : 0,
       overallNPS:   npsQ ? { nps: npsQ.nps, classification: npsQ.classification } : null,
-      overallScore: gScoreN ? Math.round(gScoreSum / gScoreN) : null,
+      overallScore: overall.scorePct,
+      favorability: overall.favorability,
       questions:    questionResults,
-      dimensions:   dimensionSummary(questionResults),
+      dimensions,
+      segmentation: segQ ? { questionId: segQ.id, text: segQ.text, options: segQ.options || [] } : null,
+      segments,
       scoped:       !!scope.sql,
     });
   } catch (e) { return err(res, 'Erro ao carregar resultados', 500, e.message); }
+}
+
+/* Posições (1-based) escolhidas numa resposta. Unifica escala, estrelas, matriz,
+   múltipla e lista suspensa, que é o que permite calcular favorabilidade e peso
+   com uma regra só. */
+function positionsOf(q, a) {
+  if (q.type === 'scale' || q.type === 'rating') return a.value_num != null ? [Math.round(a.value_num)] : [];
+  if (q.type === 'matrix') {
+    let v = null; try { v = a.value_json ? JSON.parse(a.value_json) : null; } catch {}
+    if (!v || typeof v !== 'object') return [];
+    return Object.values(v).map(Number).filter(n => n > 0);
+  }
+  if (q.type === 'multiple' || q.type === 'dropdown') {
+    return answerLabels(q, a).map(l => (q.options || []).indexOf(l) + 1).filter(n => n > 0);
+  }
+  return [];
+}
+
+/* Rótulos marcados numa resposta (inclui o texto digitado em "Outros"). */
+function answerLabels(q, a) {
+  if (a.value_json) {
+    try { const v = JSON.parse(a.value_json); return (Array.isArray(v) ? v : [v]).map(String); } catch { return []; }
+  }
+  return a.value_text ? [String(a.value_text)] : [];
+}
+
+/* Favorabilidade e semáforo. O corte é sobre a DESFAVORABILIDADE, conforme a régua da
+   RGIS: verde abaixo de 20%, amarelo de 20% a 30%, vermelho de 30% para cima. */
+const SEMAFORO = [20, 30];
+function semaforo(unfavPct) {
+  if (unfavPct == null) return null;
+  if (unfavPct < SEMAFORO[0]) return 'verde';
+  if (unfavPct < SEMAFORO[1]) return 'amarelo';
+  return 'vermelho';
+}
+
+/* Apura uma pergunta sobre um subconjunto de respostas. */
+function questionStats(q, answers, responseIds) {
+  const keep = responseIds ? new Set(responseIds) : null;
+  const rows = keep ? answers.filter(a => keep.has(a.response_id)) : answers;
+  const cfg = q.config || {};
+  const opts = q.options || [];
+  const pts = q.option_points;
+  const neutral = Number.isInteger(cfg.neutralIndex) ? cfg.neutralIndex : null;
+  const favFrom = Number.isInteger(cfg.favorableFrom)
+    ? cfg.favorableFrom
+    : Q.defaultFavorableFrom(opts, pts, neutral);
+
+  const result = {
+    questionId: q.id, type: q.type, text: q.text, order_num: q.order_num,
+    responseCount: rows.length, options: opts.length ? opts : null,
+    required: q.required, notes: q.notes || '',
+    neutralIndex: neutral, neutralLabel: neutral != null ? opts[neutral] : null,
+    segmentation: !!cfg.segmentation,
+  };
+
+  if (q.type === 'nps') {
+    const scores = rows.map(a => a.value_num).filter(v => v !== null);
+    Object.assign(result, calculateNPS(scores));
+    return result;
+  }
+
+  if (q.type === 'text') {
+    result.responses = rows.map(a => a.value_text).filter(Boolean).slice(0, 200);
+    return result;
+  }
+
+  if (q.type === 'form') {
+    const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
+    const byField = {};
+    rows.forEach(a => {
+      let v = null; try { v = a.value_json ? JSON.parse(a.value_json) : null; } catch {}
+      if (!v || typeof v !== 'object') return;
+      fields.forEach(f => { const val = String(v[f.label] ?? '').trim(); if (val) (byField[f.label] = byField[f.label] || []).push(val); });
+    });
+    result.fields = fields.map(f => ({ label: f.label, kind: f.kind, count: (byField[f.label] || []).length, responses: (byField[f.label] || []).slice(0, 200) }));
+    return result;
+  }
+
+  if (q.type === 'yesno') {
+    const values = rows.map(a => a.value_text);
+    const yes = values.filter(v => v === 'true' || v === 'sim' || v === '1').length;
+    const no  = values.length - yes;
+    result.yes = yes; result.no = no;
+    result.yesPct = values.length ? Math.round((yes / values.length) * 100) : 0;
+    result.choices = [
+      { value: 'Sim', label: 'Sim', count: yes, pct: result.yesPct },
+      { value: 'Não', label: 'Não', count: no,  pct: values.length ? 100 - result.yesPct : 0 },
+    ];
+    return result;
+  }
+
+  // ── tipos com alternativas: escala, estrelas, múltipla, lista suspensa, matriz ──
+  const positions = [];          // todas as posições marcadas, para distribuição e peso
+  const perRowPositions = {};    // matriz: posições por linha
+  rows.forEach(a => {
+    positions.push(...positionsOf(q, a));
+    if (q.type === 'matrix') {
+      let v = null; try { v = a.value_json ? JSON.parse(a.value_json) : null; } catch {}
+      if (v && typeof v === 'object') Object.entries(v).forEach(([row, pos]) => {
+        const n = Number(pos); if (n > 0) (perRowPositions[row] = perRowPositions[row] || []).push(n);
+      });
+    }
+  });
+
+  const scored = positions.filter(p => neutral == null || p !== neutral + 1);
+  result.neutralCount = positions.length - scored.length;
+
+  // Peso médio atingido (%), ignorando a opção neutra.
+  if (pts && pts.length && scored.length) {
+    const sum = scored.reduce((acc, p) => acc + (Number(pts[p - 1]) || 0), 0);
+    result.scorePct = Math.round(sum / scored.length);
+  }
+
+  // Favorabilidade: só quando a pergunta tem corte definido.
+  if (favFrom != null && scored.length) {
+    const fav = scored.filter(p => p - 1 >= favFrom).length;
+    const unf = scored.length - fav;
+    result.favorability = {
+      favorable: fav, unfavorable: unf, base: scored.length,
+      favorablePct: Math.round((fav / scored.length) * 100),
+      unfavorablePct: Math.round((unf / scored.length) * 100),
+      neutralOut: result.neutralCount,
+    };
+    result.favorability.semaforo = semaforo(result.favorability.unfavorablePct);
+    result.favorableFrom = favFrom;
+    result.favorableLabels = opts.filter((_, i) => i >= favFrom && i !== neutral);
+  }
+
+  if (q.type === 'multiple' || q.type === 'dropdown') {
+    const all = rows.flatMap(a => answerLabels(q, a));
+    const totalR = rows.length || 1;
+    const known = opts.map((label, i) => {
+      const count = all.filter(v => v === label).length;
+      return { value: label, label, count, pct: Math.round((count / totalR) * 100), neutral: i === neutral };
+    });
+    const extras = calculateFrequency(all.filter(v => !opts.includes(v)))
+      .map(f => ({ value: f.value, label: f.value, count: f.count, pct: Math.round((f.count / totalR) * 100), other: true }));
+    result.choices = known.concat(extras);
+    result.frequency = result.choices;
+
+  } else if (q.type === 'matrix') {
+    const rowLabels = Array.isArray(cfg.rows) ? cfg.rows : [];
+    result.rows = rowLabels.map(label => {
+      const vals = perRowPositions[label] || [];
+      const sc = vals.filter(p => neutral == null || p !== neutral + 1);
+      const r = { label, count: vals.length, average: calculateAverage(sc), distribution: labelledDistribution(vals, opts, opts.length) };
+      if (favFrom != null && sc.length) {
+        const fav = sc.filter(p => p - 1 >= favFrom).length;
+        r.favorablePct = Math.round((fav / sc.length) * 100);
+        r.unfavorablePct = 100 - r.favorablePct;
+        r.semaforo = semaforo(r.unfavorablePct);
+      }
+      return r;
+    });
+    result.average = calculateAverage(scored);
+    result.distribution = labelledDistribution(positions, opts, opts.length);
+    result.choices = result.distribution;
+
+  } else {
+    result.average = calculateAverage(scored);
+    result.distribution = labelledDistribution(positions, opts, q.type === 'rating' ? 5 : opts.length);
+    result.choices = result.distribution;
+  }
+
+  // Comentários livres (campo "Outros" ou texto solto numa pergunta de alternativa).
+  const skip = new Set(['true', 'false', 'sim', 'não', 'nao', 'yes', 'no', '1', '0']);
+  const comments = rows.map(a => a.value_text)
+    .filter(v => v != null && String(v).trim() !== '' && !skip.has(String(v).trim().toLowerCase()));
+  if (comments.length) result.comments = comments.slice(0, 300);
+
+  return result;
+}
+
+/* Consolida um conjunto de perguntas: média dos pesos e média das favorabilidades.
+   A RGIS calcula a dimensão como média das PERGUNTAS, não como média das respostas. */
+function rollUp(list) {
+  const scored = list.filter(q => typeof q.scorePct === 'number');
+  const fav    = list.filter(q => q.favorability && q.favorability.base > 0);
+  const out = { scorePct: null, favorability: null, questions: list.length };
+  if (scored.length) out.scorePct = Math.round(scored.reduce((a, q) => a + q.scorePct, 0) / scored.length);
+  if (fav.length) {
+    const f = Math.round(fav.reduce((a, q) => a + q.favorability.favorablePct, 0) / fav.length);
+    out.favorability = { favorablePct: f, unfavorablePct: 100 - f, questions: fav.length, semaforo: semaforo(100 - f) };
+  }
+  return out;
+}
+
+/* Nota por dimensão. Cada vínculo é lido apenas nas respostas em que ele estava
+   vigente — reclassificar de forma prospectiva não reescreve o que já foi apurado. */
+function dimensionResults(links, questions, byQuestion, respMeta, responseIds) {
+  const qById = {}; questions.forEach(q => qById[q.id] = q);
+  const acc = {};
+  const keep = new Set(responseIds);
+
+  links.forEach(l => {
+    const q = qById[l.question_id];
+    if (!q) return;
+    // Respostas em que este vínculo valia, pela data de envio.
+    const ids = (byQuestion[q.id] || [])
+      .filter(a => keep.has(a.response_id))
+      .filter(a => {
+        const when = (respMeta[a.response_id] || {}).completed_at || '';
+        return (!l.effective_from || l.effective_from <= when) && (!l.effective_to || l.effective_to > when);
+      })
+      .map(a => a.response_id);
+    if (!ids.length) return;
+
+    const stats = questionStats(q, byQuestion[q.id] || [], ids);
+    const e = acc[l.dimension_id] = acc[l.dimension_id] || {
+      id: l.dimension_id, name: l.name, set: l.set_name, setCode: l.set_code, items: [],
+    };
+    e.items.push(stats);
+  });
+
+  return Object.values(acc).map(e => {
+    const r = rollUp(e.items);
+    return {
+      id: e.id, name: e.name, set: e.set, setCode: e.setCode,
+      questions: e.items.length,
+      responses: e.items.reduce((a, q) => a + q.responseCount, 0),
+      scorePct: r.scorePct,
+      average: (() => { const v = e.items.filter(q => typeof q.average === 'number' && q.average > 0); return v.length ? parseFloat((v.reduce((a, q) => a + q.average, 0) / v.length).toFixed(2)) : null; })(),
+      favorability: r.favorability,
+    };
+  }).sort((a, b) => (a.set || '').localeCompare(b.set || '') || a.name.localeCompare(b.name));
+}
+
+/* Recortes obrigatórios: modalidade (pergunta de segmentação), distrito, regional e
+   departamento. Cada recorte traz favorabilidade, semáforo e nota por dimensão. */
+function buildSegments(db, tenantId, surveyId, questions, byQuestion, responses, segmentOf, segQ, links, respMeta) {
+  const distName = {}, distReg = {}, regName = {}, depName = {};
+  db.prepare('SELECT id, name, regional_id FROM distritos WHERE tenant_id=?').all(tenantId)
+    .forEach(d => { distName[d.id] = d.name; distReg[d.id] = d.regional_id; });
+  db.prepare('SELECT id, name FROM regionais WHERE tenant_id=?').all(tenantId).forEach(r => regName[r.id] = r.name);
+  db.prepare('SELECT id, name FROM departamentos WHERE tenant_id=?').all(tenantId).forEach(d => depName[d.id] = d.name);
+
+  const group = (keyOf) => {
+    const g = {};
+    responses.forEach(r => { const k = keyOf(r); if (k) (g[k] = g[k] || []).push(r.id); });
+    return g;
+  };
+
+  const summarize = (label, ids) => {
+    const list = questions.map(q => questionStats(q, byQuestion[q.id] || [], ids));
+    const r = rollUp(list);
+    return {
+      label, responses: ids.length,
+      scorePct: r.scorePct, favorability: r.favorability,
+      dimensions: dimensionResults(links, questions, byQuestion, respMeta, ids),
+    };
+  };
+
+  const build = (groups) => Object.entries(groups)
+    .map(([label, ids]) => summarize(label, ids))
+    .sort((a, b) => b.responses - a.responses);
+
+  return {
+    modalidade: segQ ? build(group(r => segmentOf[r.id])) : [],
+    modalidadeLabel: segQ ? segQ.text : null,
+    distrito:  build(group(r => distName[r.distrito_id])),
+    regional:  build(group(r => regName[distReg[r.distrito_id]])),
+    departamento: build(group(r => depName[r.departamento_id])),
+  };
 }
 
 /* Distribuição já rotulada: cada posição vira { value, label, count, pct }.
@@ -203,25 +369,6 @@ function labelledDistribution(values, options, size) {
     out.push({ value: String(i), label, count, pct: total ? Math.round((count / total) * 100) : 0 });
   }
   return out;
-}
-
-/* Consolida a nota por dimensão (média das perguntas vinculadas a cada dimensão). */
-function dimensionSummary(questionResults) {
-  const acc = {};
-  questionResults.forEach(q => {
-    (q.dimensions || []).forEach(d => {
-      const e = acc[d.id] = acc[d.id] || { id: d.id, name: d.name, set: d.set, questions: 0, scoreSum: 0, scoreN: 0, avgSum: 0, avgN: 0, responses: 0 };
-      e.questions++;
-      e.responses += q.responseCount || 0;
-      if (typeof q.scorePct === 'number') { e.scoreSum += q.scorePct; e.scoreN++; }
-      if (typeof q.average === 'number' && q.average > 0) { e.avgSum += q.average; e.avgN++; }
-    });
-  });
-  return Object.values(acc).map(e => ({
-    id: e.id, name: e.name, set: e.set, questions: e.questions, responses: e.responses,
-    scorePct: e.scoreN ? Math.round(e.scoreSum / e.scoreN) : null,
-    average:  e.avgN ? parseFloat((e.avgSum / e.avgN).toFixed(2)) : null,
-  })).sort((a, b) => (a.set || '').localeCompare(b.set || '') || a.name.localeCompare(b.name));
 }
 
 /* GET /results/dashboard  — aggregate across all surveys */
@@ -373,10 +520,14 @@ async function getInsights(req, res) {
     const started   = db.prepare(`SELECT COUNT(*) c FROM responses r WHERE r.survey_id=?${scope.sql}`).get(survey.id, ...scope.params).c;
 
     const dimsByQuestion = {};
-    db.prepare(`SELECT qd.question_id, d.name, ds.name AS set_name FROM question_dimensions qd
-                JOIN dimensions d ON d.id = qd.dimension_id
+    const nowIso = new Date().toISOString();
+    db.prepare(`SELECT l.question_id, d.name, ds.name AS set_name FROM question_dimension_links l
+                JOIN dimensions d ON d.id = l.dimension_id
                 LEFT JOIN dimension_sets ds ON ds.id = d.set_id
-                JOIN questions q ON q.id = qd.question_id WHERE q.survey_id = ?`).all(survey.id)
+                JOIN questions q ON q.id = l.question_id
+                WHERE q.survey_id = ?
+                  AND (l.effective_from IS NULL OR l.effective_from <= ?)
+                  AND (l.effective_to   IS NULL OR l.effective_to   >  ?)`).all(survey.id, nowIso, nowIso)
       .forEach(r => (dimsByQuestion[r.question_id] = dimsByQuestion[r.question_id] || []).push(r.set_name ? `${r.set_name} › ${r.name}` : r.name));
 
     const answersOf = db.prepare(`SELECT a.value_text, a.value_num FROM answers a

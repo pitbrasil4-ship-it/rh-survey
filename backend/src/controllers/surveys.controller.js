@@ -128,14 +128,25 @@ function getOne(req, res) {
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ? AND tenant_id = ?').get(req.params.id, req.user.tenant_id);
     if (!survey) return notFound(res, 'Pesquisa');
     const rows = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
+    const now  = new Date().toISOString();
     const dims = {};
-    db.prepare(`SELECT qd.question_id, qd.dimension_id FROM question_dimensions qd
-                JOIN questions q ON q.id = qd.question_id WHERE q.survey_id = ?`).all(survey.id)
+    db.prepare(`SELECT l.question_id, l.dimension_id FROM question_dimension_links l
+                JOIN questions q ON q.id = l.question_id
+                WHERE q.survey_id = ?
+                  AND (l.effective_from IS NULL OR l.effective_from <= ?)
+                  AND (l.effective_to   IS NULL OR l.effective_to   >  ?)`).all(survey.id, now, now)
       .forEach(r => (dims[r.question_id] = dims[r.question_id] || []).push(r.dimension_id));
-    const questions = rows.map(r => ({ ...Q.fromRow(r), dimensions: dims[r.id] || [] }));
+    const counts = {};
+    db.prepare(`SELECT a.question_id, COUNT(*) c FROM answers a
+                JOIN questions q ON q.id = a.question_id WHERE q.survey_id = ? GROUP BY a.question_id`).all(survey.id)
+      .forEach(r => counts[r.question_id] = r.c);
+    const questions = rows.map(r => ({ ...Q.fromRow(r), dimensions: dims[r.id] || [], answerCount: counts[r.id] || 0 }));
     const responseCount = db.prepare('SELECT COUNT(*) c FROM responses WHERE survey_id = ?').get(survey.id).c;
-    // Com respostas já coletadas as perguntas ficam travadas — editar apagaria a apuração.
-    return ok(res, { survey, questions, responseCount, questionsLocked: responseCount > 0 });
+    const versions = db.prepare('SELECT id, number, published_at, note FROM survey_versions WHERE survey_id=? ORDER BY number DESC').all(survey.id);
+    // Perguntas continuam editáveis com respostas coletadas: só as mudanças que
+    // invalidariam o que já foi gravado (trocar o tipo, encurtar a escala, remover a
+    // pergunta) são recusadas, uma a uma, pelo sincronizador.
+    return ok(res, { survey, questions, responseCount, versions });
   } catch (e) { return err(res, 'Erro ao buscar pesquisa', 500, e.message); }
 }
 
@@ -151,12 +162,7 @@ function update(req, res) {
     const { name, description, category, targetGroup, anonymous, deadline, status,
             questions, onePerDevice, maxResponses } = req.body;
 
-    // Trocar as perguntas de uma pesquisa que já tem resposta invalidaria a apuração.
-    if (Array.isArray(questions)) {
-      const respCount = db.prepare('SELECT COUNT(*) c FROM responses WHERE survey_id = ?').get(survey.id).c;
-      if (respCount > 0) return badReq(res, 'Esta pesquisa já tem respostas: as perguntas não podem ser alteradas. Use Duplicar para criar uma nova versão.');
-      if (!questions.length) return badReq(res, 'A pesquisa precisa de ao menos uma pergunta');
-    }
+    if (Array.isArray(questions) && !questions.length) return badReq(res, 'A pesquisa precisa de ao menos uma pergunta');
 
     db.prepare(`UPDATE surveys SET name=?, description=?, category=?, target_group=?, anonymous=?, deadline=?, status=?, one_per_device=?, max_responses=? WHERE id=?`).run(
       name        ?? survey.name,
@@ -170,8 +176,20 @@ function update(req, res) {
       maxResponses === undefined ? survey.max_responses : (maxResponses > 0 ? Math.round(maxResponses) : null),
       req.params.id
     );
-    if (Array.isArray(questions)) Q.replaceQuestions(db, survey.id, questions, uuid);
-    return ok(res, { id: req.params.id }, 'Pesquisa atualizada');
+    let sync = null;
+    if (Array.isArray(questions)) {
+      // `retroactive` decide se a reclassificação vale para as respostas já coletadas
+      // ou só daqui em diante. Sem escolha explícita, a série histórica é preservada.
+      sync = Q.syncQuestions(db, survey.id, questions, {
+        tenantId: req.user.tenant_id, surveyId: survey.id,
+        userId: req.user.id, userName: req.user.name, log: true,
+        retroactive: req.body.retroactive === true,
+      }, uuid);
+    }
+    const msg = sync && sync.blocked.length
+      ? `Pesquisa atualizada, mas ${sync.blocked.length} pergunta(s) não puderam ser alteradas por já terem respostas.`
+      : 'Pesquisa atualizada';
+    return ok(res, { id: req.params.id, sync }, msg);
   } catch (e) { return err(res, 'Erro ao atualizar pesquisa', 500, e.message); }
 }
 
@@ -197,12 +215,11 @@ function duplicate(req, res) {
 
       const rows = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
       const ins  = db.prepare(Q.INSERT_SQL);
-      const link = db.prepare('INSERT OR IGNORE INTO question_dimensions (question_id, dimension_id) VALUES (?,?)');
-      const getDims = db.prepare('SELECT dimension_id FROM question_dimensions WHERE question_id = ?');
       rows.forEach((r, i) => {
         const qid = uuid();
         ins.run(...Q.insertParams(qid, newId, { ...r, order_num: i + 1 }));
-        getDims.all(r.id).forEach(d => link.run(qid, d.dimension_id));
+        // A cópia nasce com a classificação vigente hoje, sem herdar o histórico de vigências.
+        Q.setDimensions(db, qid, Q.dimensionsAt(db, r.id), { retroactive: true }, uuid);
       });
       db.exec('COMMIT');
     } catch (e) { try { db.exec('ROLLBACK'); } catch {} throw e; }
@@ -213,14 +230,118 @@ function duplicate(req, res) {
   } catch (e) { return err(res, 'Erro ao duplicar pesquisa', 500, e.message); }
 }
 
-/* POST /surveys/:id/publish */
+/* GET /surveys/:id/export — perguntas no MESMO formato da planilha de importação,
+   para o RH revisar fora do sistema e reimportar sem conversão manual.
+   Uma coluna de dimensão por taxonomia cadastrada (Dimensão_Clima, Dimensão_HSE, …). */
+function setShortName(set) {
+  if (set.code === 'hse') return 'HSE';
+  if (set.code === 'clima') return 'Clima';
+  return set.name;
+}
+
+function exportQuestions(req, res) {
+  try {
+    const db = getDB(); const t = req.user.tenant_id;
+    const survey = db.prepare('SELECT * FROM surveys WHERE id=? AND tenant_id=?').get(req.params.id, t);
+    if (!survey) return notFound(res, 'Pesquisa');
+
+    const sets = db.prepare('SELECT id, name, code FROM dimension_sets WHERE tenant_id=? ORDER BY order_num, name').all(t);
+    const dimInfo = {};
+    db.prepare('SELECT id, name, set_id FROM dimensions WHERE tenant_id=?').all(t).forEach(d => dimInfo[d.id] = d);
+
+    const rows = db.prepare('SELECT * FROM questions WHERE survey_id=? ORDER BY order_num').all(survey.id);
+    const TYPE_LABEL = { nps:'NPS', scale:'escala', rating:'estrelas', multiple:'múltipla',
+                         dropdown:'lista suspensa', matrix:'matriz', form:'formulário', text:'texto', yesno:'sim/não' };
+
+    const header = ['Nº', 'ID', 'Pergunta', 'Pergunta (EN)', 'Pergunta (ES)', 'Tipo', 'Opções', 'Pesos',
+                    ...sets.map(x => 'Dimensão_' + setShortName(x)),
+                    'Obrigatória', 'Observação'];
+
+    const out = rows.map(r => {
+      const q = Q.fromRow(r);
+      const cfg = q.config || {};
+      const opts = q.options || [];
+      // Rótulo da opção neutra sai na coluna Opções; o peso dela sai como "(sem peso)".
+      const pesos = q.option_points
+        ? opts.map((_, i) => (i === cfg.neutralIndex ? '(sem peso)' : String(q.option_points[i] ?? 0)))
+        : [];
+      const mine = Q.dimensionsAt(db, r.id).map(id => dimInfo[id]).filter(Boolean);
+      return [
+        r.order_num, q.external_id || '', q.text, q.text_en || '', q.text_es || '',
+        TYPE_LABEL[q.type] || q.type,
+        opts.join(';'),
+        pesos.join(';'),
+        ...sets.map(st => mine.filter(d => d.set_id === st.id).map(d => d.name).join(' | ')),
+        q.required ? 'Sim' : 'Não',
+        q.notes || '',
+      ];
+    });
+
+    return ok(res, { survey: { id: survey.id, name: survey.name }, header, rows: out });
+  } catch (e) { return err(res, 'Erro ao exportar perguntas', 500, e.message); }
+}
+
+/* POST /surveys/:id/publish — publica e congela uma versão numerada do questionário.
+   A resposta enviada a partir daqui fica presa a esta versão, o que permite comparar
+   edições e auditar o que o respondente de fato viu. */
 function publish(req, res) {
   try {
     const db = getDB();
-    db.prepare("UPDATE surveys SET status='ativo', published_at=datetime('now') WHERE id=? AND tenant_id=?").run(req.params.id, req.user.tenant_id);
-    const survey = db.prepare('SELECT public_token FROM surveys WHERE id=?').get(req.params.id);
-    return ok(res, { publicLink: `/public/survey/${survey?.public_token}` }, 'Pesquisa publicada');
+    const survey = db.prepare("SELECT * FROM surveys WHERE id=? AND tenant_id=? AND status != 'excluido'").get(req.params.id, req.user.tenant_id);
+    if (!survey) return notFound(res, 'Pesquisa');
+    db.prepare("UPDATE surveys SET status='ativo', published_at=datetime('now') WHERE id=?").run(survey.id);
+    const version = createVersion(db, survey.id, req.user.id, req.body.note);
+    const updated = db.prepare('SELECT public_token FROM surveys WHERE id=?').get(survey.id);
+    return ok(res, { publicLink: `/public/survey/${updated?.public_token}`, version },
+      `Pesquisa publicada — versão ${version.number}`);
   } catch (e) { return err(res, 'Erro ao publicar pesquisa', 500, e.message); }
+}
+
+/* Congela o questionário atual como uma nova versão. */
+function createVersion(db, surveyId, userId, note) {
+  const rows = db.prepare('SELECT * FROM questions WHERE survey_id=? ORDER BY order_num').all(surveyId);
+  const snapshot = rows.map(r => ({ ...Q.fromRow(r), dimensions: Q.dimensionsAt(db, r.id) }));
+  const next = (db.prepare('SELECT COALESCE(MAX(number),0) n FROM survey_versions WHERE survey_id=?').get(surveyId).n) + 1;
+  const id = uuid();
+  db.prepare(`INSERT INTO survey_versions (id, survey_id, number, published_at, snapshot, created_by_id, note)
+              VALUES (?,?,?,datetime('now'),?,?,?)`)
+    .run(id, surveyId, next, JSON.stringify(snapshot), userId || null, String(note || '').trim() || null);
+  return { id, number: next, questionCount: snapshot.length };
+}
+
+/* GET /surveys/:id/versions — versões publicadas, da mais recente para a mais antiga */
+function versions(req, res) {
+  try {
+    const db = getDB();
+    const survey = db.prepare('SELECT id FROM surveys WHERE id=? AND tenant_id=?').get(req.params.id, req.user.tenant_id);
+    if (!survey) return notFound(res, 'Pesquisa');
+    const rows = db.prepare(`SELECT v.id, v.number, v.published_at, v.note, u.name AS published_by,
+                                    (SELECT COUNT(*) FROM responses r WHERE r.version_id = v.id) AS response_count
+                             FROM survey_versions v LEFT JOIN users u ON u.id = v.created_by_id
+                             WHERE v.survey_id=? ORDER BY v.number DESC`).all(survey.id);
+    return ok(res, { versions: rows });
+  } catch (e) { return err(res, 'Erro ao listar versões', 500, e.message); }
+}
+
+/* GET /surveys/:id/history — quem mudou o quê, e quando */
+function history(req, res) {
+  try {
+    const db = getDB();
+    const survey = db.prepare('SELECT id FROM surveys WHERE id=? AND tenant_id=?').get(req.params.id, req.user.tenant_id);
+    if (!survey) return notFound(res, 'Pesquisa');
+    const rows = db.prepare(`SELECT h.*, q.order_num, q.text AS question_text
+                             FROM question_history h LEFT JOIN questions q ON q.id = h.question_id
+                             WHERE h.survey_id=? ORDER BY h.created_at DESC LIMIT 500`).all(survey.id);
+    // Traduz os ids de dimensão para nome, senão o histórico fica ilegível.
+    const dimNames = {};
+    db.prepare('SELECT id, name FROM dimensions WHERE tenant_id=?').all(req.user.tenant_id).forEach(d => dimNames[d.id] = d.name);
+    const pretty = v => String(v || '').split(',').map(x => dimNames[x.trim()] || x.trim()).filter(Boolean).join(', ');
+    return ok(res, {
+      history: rows.map(h => h.field === 'Dimensões'
+        ? { ...h, before_value: pretty(h.before_value) || '—', after_value: pretty(h.after_value) || '—' }
+        : h),
+    });
+  } catch (e) { return err(res, 'Erro ao carregar histórico', 500, e.message); }
 }
 
 /* DELETE /surveys/:id */
@@ -337,4 +458,4 @@ function segmentLinks(req, res) {
   } catch (e) { return err(res, 'Erro ao gerar links', 500, e.message); }
 }
 
-module.exports = { list, create, getOne, update, duplicate, publish, remove, generateAI, translateExisting, setDeadline, listSegmentLinks, segmentLinks, bulkCreate };
+module.exports = { list, create, getOne, update, duplicate, publish, remove, generateAI, translateExisting, setDeadline, listSegmentLinks, segmentLinks, bulkCreate, versions, history, exportQuestions };

@@ -94,46 +94,91 @@ function parseRequired(raw) {
   return undefined;
 }
 
-/* Modelo de planilha com todas as colunas aceitas na importação. */
-function downloadImportTemplate() {
-  downloadCSV("modelo-importacao-perguntas.csv", [
-    ["ID", "Pergunta", "Pergunta (EN)", "Pergunta (ES)", "Tipo", "Opções", "Pesos", "Obrigatória", "Dimensões"],
-    ["Q01", "Meu gestor me mantém informado.", "My manager keeps me informed.", "Mi gerente me mantiene informado.",
-     "Escala Likert", "Nunca;Quase nunca;Às vezes;Quase sempre;Sempre", "0;25;50;75;100", "Sim", "Liderança;Suporte do Gestor"],
-    ["Q02", "O que mais contribui para o seu bem-estar?", "", "", "Múltipla Escolha", "Equipe;Autonomia;Reconhecimento", "", "Não", "Reconhecimento"],
-    ["Q03", "Qual o seu turno?", "", "", "Lista Suspensa", "Manhã;Tarde;Noite", "", "Sim", ""],
-    ["Q04", "Avalie os aspectos abaixo.", "", "", "Matriz", "Ruim;Regular;Bom;Excelente", "0;33;66;100", "Sim", "Condições de Trabalho"],
-    ["Q05", "Deixe seus comentários.", "", "", "Texto Aberto", "", "", "Não", ""],
-  ]);
+/* Lê a coluna "Pesos" e devolve { points, neutralIndex }.
+ *
+ * Aceita os dois jeitos que o RH usa na planilha:
+ *   • posição na escala — "1;2;3;4"        → vira 0;33;67;100
+ *   • percentual direto — "0;33;67;100"    → usado como está
+ * Um token vazio ou "(sem peso)" marca a alternativa NEUTRA ("Não se Aplica"),
+ * que fica fora da base de cálculo. */
+function parseWeights(raw, optionCount) {
+  const toks = (raw == null ? "" : String(raw)).split(/[;|]/).map(x => x.trim());
+  if (!toks.length || toks.every(x => x === "")) return { points: null, neutralIndex: null };
+
+  let neutralIndex = null;
+  const nums = toks.map((x, i) => {
+    const bare = x.toLowerCase().replace(/[()％%\s]/g, "");
+    if (!bare || bare === "sempeso" || bare === "-" || bare === "—" || bare === "na" || bare === "n/a") {
+      if (neutralIndex === null) neutralIndex = i;
+      return null;
+    }
+    const n = parseFloat(x.replace(",", ".").replace(/[^\d.-]/g, ""));
+    return isNaN(n) ? null : n;
+  });
+
+  const scored = nums.filter(n => n !== null);
+  if (!scored.length) return { points: null, neutralIndex };
+
+  // Posições (1..n) viram percentuais distribuídos uniformemente.
+  const isRank = scored.every(n => Number.isInteger(n) && n >= 1 && n <= Math.max(optionCount, scored.length))
+    && new Set(scored).size === scored.length
+    && Math.max(...scored) <= Math.max(optionCount, scored.length);
+  const maxRank = Math.max(...scored);
+  const points = nums.map(n => {
+    if (n === null) return 0;                         // neutra não pontua
+    if (!isRank) return Math.max(0, Math.min(100, Math.round(n)));
+    return maxRank > 1 ? Math.round(((n - 1) / (maxRank - 1)) * 100) : 100;
+  });
+  return { points, neutralIndex };
+}
+
+/* Encontra a linha de cabeçalho: a planilha do RH traz título e subtítulo antes dela. */
+function findHeaderRow(rows) {
+  const norm = s => (s == null ? "" : String(s)).trim().toLowerCase();
+  for (let i = 0; i < Math.min(rows.length, 12); i++) {
+    const cells = (rows[i] || []).map(norm);
+    const hasQ = cells.some(h => h.includes("pergunta") || h.includes("question") || h.includes("texto"));
+    const hasT = cells.some(h => h.includes("tipo") || h.includes("type"));
+    if (hasQ && hasT) return i;
+  }
+  return 0;
 }
 
 function rowsToQuestions(rows, delim) {
-  if (!rows || rows.length === 0) return { questions: [], skipped: 0, unknown: 0 };
+  if (!rows || rows.length === 0) return { questions: [], skipped: 0, unknown: 0, dimensionNames: [] };
   const norm = s => (s == null ? "" : String(s)).trim().toLowerCase();
-  const header = rows[0].map(norm);
+  const hIdx = findHeaderRow(rows);
+  const header = (rows[hIdx] || []).map(norm);
   const looksHeader = header.some(h => h.includes("pergunta") || h.includes("tipo") || h.startsWith("op") || h.includes("texto") || h.includes("question"));
   const isOpt = h => (h.includes("opç") || h.includes("opc") || h.startsWith("op") || h.includes("alternativa") || h.includes("escolha")) && !h.includes("peso");
   const isEn  = h => h.includes("(en)") || h.includes("english") || h.includes("inglês") || h.includes("ingles") || h.includes(" en)") || h.endsWith(" en");
   const isEs  = h => h.includes("(es)") || h.includes("español") || h.includes("espanol") || h.includes("espanhol") || h.includes("spanish") || h.includes("pregunta") || h.includes(" es)") || h.endsWith(" es");
+
   let pIdx = 0, tIdx = 1, oIdx = 2, enIdx = -1, esIdx = -1, oEnIdx = -1, oEsIdx = -1, start = 0;
-  // Colunas ampliadas: identificador, pesos por alternativa, obrigatoriedade e dimensões.
-  let idIdx = -1, wIdx = -1, reqIdx = -1, dimIdx = -1, catIdx = -1;
+  let idIdx = -1, wIdx = -1, reqIdx = -1, obsIdx = -1, segIdx = -1, hasTypeCol = false;
+  // Uma coluna de dimensão POR TAXONOMIA: Dimensão_Clima, Dimensão_HSE, … São campos
+  // independentes, não uma lista única — a mesma pergunta entra nas duas classificações.
+  const dimCols = [];
   if (looksHeader) {
-    start = 1;
+    start = hIdx + 1;
     const fi = pred => header.findIndex(pred);
     oEnIdx = fi(h => isOpt(h) && isEn(h));
     oEsIdx = fi(h => isOpt(h) && isEs(h));
     enIdx  = fi(h => isEn(h) && !isOpt(h));
     esIdx  = fi(h => isEs(h) && !isOpt(h));
     pIdx = fi(h => (h.includes("pergunta") || h.includes("texto") || h.includes("question")) && !isEn(h) && !isEs(h)); if (pIdx < 0) pIdx = 0;
-    tIdx = fi(h => h.includes("tipo") || h.includes("type")); if (tIdx < 0) tIdx = 1;
+    tIdx = fi(h => h.includes("tipo") || h.includes("type")); hasTypeCol = tIdx >= 0; if (tIdx < 0) tIdx = 1;
     oIdx = fi(h => isOpt(h) && !isEn(h) && !isEs(h)); if (oIdx < 0) oIdx = 2;
     idIdx  = fi(h => h === "id" || h.includes("identific") || h === "código" || h === "codigo");
     wIdx   = fi(h => h.includes("peso") || h.includes("pontua") || h.includes("weight"));
     reqIdx = fi(h => h.includes("obrigat") || h.includes("required"));
-    dimIdx = fi(h => h.includes("dimens"));
-    catIdx = fi(h => h.includes("categoria") || h.includes("categor"));
+    obsIdx = fi(h => h.includes("observ") || h.includes("nota") || h.includes("coment"));
+    segIdx = fi(h => h.includes("segmenta"));
+    header.forEach((h, i) => { if (h.includes("dimens") || h.includes("categoria")) dimCols.push(i); });
+  } else {
+    start = hIdx;
   }
+
   const splitOpts = raw => {
     const s = raw == null ? "" : String(raw);
     if (!s.trim()) return null;
@@ -141,43 +186,64 @@ function rowsToQuestions(rows, delim) {
     const a = s.split(sep).map(o => o.trim()).filter(Boolean);
     return a.length ? a : null;
   };
+  // Dimensões vêm separadas por "|" (uma pergunta pode ter duas no HSE).
+  const splitDims = raw => String(raw == null ? "" : raw)
+    .split(/[|;]/).map(x => x.trim()).filter(x => x && x !== "—" && x !== "-");
+
   const out = []; let skipped = 0, unknown = 0;
+  const allDimNames = new Set();
   for (let r = start; r < rows.length; r++) {
     const cols = rows[r] || [];
     const text = (cols[pIdx] == null ? "" : String(cols[pIdx])).trim();
     if (!text) { skipped++; continue; }
+    // Rodapé e notas soltas no fim da planilha não são perguntas: numa planilha que
+    // tem coluna Tipo, toda pergunta de verdade traz o tipo ou ao menos as opções.
+    if (hasTypeCol && !String(cols[tIdx] || "").trim() && !splitOpts(cols[oIdx])) { skipped++; continue; }
+
     const text_en = (enIdx >= 0 && cols[enIdx] != null) ? String(cols[enIdx]).trim() : "";
     const text_es = (esIdx >= 0 && cols[esIdx] != null) ? String(cols[esIdx]).trim() : "";
     const mapped = mapTipoToType(cols[tIdx]);
     if (mapped.unknown) unknown++;
-    let options, options_en, options_es, option_points;
+
+    let options, options_en, options_es, option_points, config;
     if (hasOptionList(mapped.type)) {
       const sc = extractOptionPoints(splitOpts(cols[oIdx]));
       options = sc.options; option_points = sc.points;
-      // Coluna "Pesos" dedicada tem prioridade sobre o formato "Rótulo:%" nas opções.
       if (options && wIdx >= 0) {
-        const w = splitOpts(cols[wIdx]);
-        if (w && w.length === options.length) option_points = w.map(x => Math.max(0, Math.min(100, parseInt(x, 10) || 0)));
+        const w = parseWeights(cols[wIdx], options.length);
+        if (w.points && w.points.length === options.length) option_points = w.points;
+        if (w.neutralIndex != null && w.neutralIndex < options.length) config = { ...(config || {}), neutralIndex: w.neutralIndex };
       }
       const oe = oEnIdx >= 0 ? splitOpts(cols[oEnIdx]) : null;
       const os = oEsIdx >= 0 ? splitOpts(cols[oEsIdx]) : null;
       if (options && oe && oe.length === options.length) options_en = oe;
       if (options && os && os.length === options.length) options_es = os;
     }
-    const external_id = idIdx >= 0 && cols[idIdx] != null ? String(cols[idIdx]).trim() : "";
+
+    // Identificador: coluna própria ou, na falta dela, o prefixo "Q12." do próprio texto —
+    // é o que liga a mesma pergunta entre as edições (2025 × 2026).
+    let external_id = idIdx >= 0 && cols[idIdx] != null ? String(cols[idIdx]).trim() : "";
+    if (!external_id) { const m = text.match(/^([A-Za-z]{1,3}\s?\d{1,3})\s*[.)\-–]/); if (m) external_id = m[1].replace(/\s+/g, ""); }
     const required = reqIdx >= 0 ? parseRequired(cols[reqIdx]) : undefined;
-    // Dimensões vêm por nome na planilha; o builder resolve para os ids cadastrados.
-    const dimensionNames = dimIdx >= 0 ? (splitOpts(cols[dimIdx]) || []) : [];
-    const categoryNames  = catIdx >= 0 ? (splitOpts(cols[catIdx]) || []) : [];
+    const notes = obsIdx >= 0 && cols[obsIdx] != null ? String(cols[obsIdx]).trim() : "";
+    // Pergunta de segmentação: coluna própria ou, na falta dela, a observação do RH.
+    const segFlag = segIdx >= 0 ? parseRequired(cols[segIdx]) : undefined;
+    if (segFlag === true || /segmenta/i.test(notes)) config = { ...(config || {}), segmentation: true };
+
+    const dimensionNames = [];
+    dimCols.forEach(ci => splitDims(cols[ci]).forEach(n => { dimensionNames.push(n); allDimNames.add(n); }));
+
     out.push({ id: Date.now() + r, text, type: mapped.type,
       ...(text_en ? { text_en } : {}), ...(text_es ? { text_es } : {}),
       ...(options ? { options } : {}), ...(options_en ? { options_en } : {}), ...(options_es ? { options_es } : {}),
       ...(option_points ? { option_points } : {}),
+      ...(config ? { config } : {}),
       ...(external_id ? { external_id } : {}),
+      ...(notes ? { notes } : {}),
       ...(required === undefined ? {} : { required }),
-      ...(dimensionNames.length || categoryNames.length ? { dimensionNames: [...dimensionNames, ...categoryNames] } : {}) });
+      ...(dimensionNames.length ? { dimensionNames } : {}) });
   }
-  return { questions: out, skipped, unknown };
+  return { questions: out, skipped, unknown, dimensionNames: [...allDimNames] };
 }
 
 // ─── MOCK DATA ─────────────────────────────────────────────────────────────────
@@ -1541,21 +1607,37 @@ function SurveyBuilder({ onBack, initial, editId }) {
   /* eslint-disable-next-line */
   }, [editId]);
 
-  // Dimensões que vieram por NOME (planilha) viram vínculo assim que o cadastro carrega.
+  // Dimensões que vieram por NOME (planilha) viram vínculo. A resolução é feita no
+  // servidor, que tolera acento, caixa e nome curto ("Segurança" → "Segurança no
+  // Trabalho"); o que não casar é listado para o RH conferir em vez de sumir calado.
+  const [dimUnmatched, setDimUnmatched] = useState([]);
   useEffect(() => {
-    if (!dimensionSets.length) return;
-    const byName = {};
-    dimensionSets.forEach(s => (s.dimensions || []).forEach(d => { byName[d.name.trim().toLowerCase()] = d.id; }));
-    setQuestions(prev => {
-      if (!prev.some(q => q.dimensionNames && q.dimensionNames.length)) return prev;
-      return prev.map(q => {
+    const pending = questions.filter(q => q.dimensionNames && q.dimensionNames.length);
+    if (!pending.length) return;
+    const names = [...new Set(pending.flatMap(q => q.dimensionNames))];
+    let alive = true;
+    (async () => {
+      let map = {};
+      let unmatched = [];
+      try {
+        const r = await api.dimensions.resolve(names);
+        unmatched = r.unmatched || [];
+        // O servidor devolve os ids na ordem dos nomes que casaram.
+        const matched = names.filter(n => !unmatched.includes(n));
+        matched.forEach((n, i) => { map[n] = (r.ids || [])[i]; });
+      } catch { return; }
+      if (!alive) return;
+      setDimUnmatched(unmatched);
+      setQuestions(prev => prev.map(q => {
         if (!q.dimensionNames || !q.dimensionNames.length) return q;
-        const ids = q.dimensionNames.map(n => byName[String(n).trim().toLowerCase()]).filter(Boolean);
+        const ids = q.dimensionNames.map(n => map[n]).filter(Boolean);
         const { dimensionNames, ...rest } = q;
         return { ...rest, dimensions: [...new Set([...(q.dimensions || []), ...ids])] };
-      });
-    });
-  }, [dimensionSets]);
+      }));
+    })();
+    return () => { alive = false; };
+  /* eslint-disable-next-line */
+  }, [questions.length, dimensionSets.length]);
 
   const patchQuestion = (id, patch) => setQuestions(p => p.map(q => q.id === id ? { ...q, ...patch } : q));
   const moveQuestion  = (id, dir) => setQuestions(p => {
