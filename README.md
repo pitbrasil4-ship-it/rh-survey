@@ -372,6 +372,33 @@ texto aberto) aparece sem valor em vez de contar como queda.
 
 ---
 
+## 💬 Comentários abertos, com revisão humana
+
+Em Resultados, o painel **Comentários abertos** classifica cada comentário por **tema**
+(12 temas, dos quais um é *Assédio e conduta*) e por **sentimento**, e marca com ⚠ o que
+pede olho humano — assédio, acidente, ameaça, denúncia.
+
+A classificação automática é palavra-chave e léxico: acerta o grosso e erra em ironia,
+negação e gíria. Por isso ela **não é um veredito**:
+
+- Cada comentário mostra de onde veio a sua classificação — `automático` ou `revisado` —
+  e quem revisou.
+- Quem responde pelo relatório (Admin ou Gestor) corrige tema e sentimento ali mesmo,
+  sinaliza para acompanhamento e deixa uma observação.
+- **Os totais do topo passam a contar a versão revisada**, e usam a automática só no que
+  ninguém tocou ainda. O contador diz exatamente quantos já foram revisados.
+- Desfazer a revisão devolve o comentário à classificação automática.
+
+A revisão **nunca reescreve o comentário**: fica gravada ao lado, então o texto original
+continua intocado e dá para reclassificar de novo depois.
+
+Dois tratamentos que evitam o erro mais caro: a **negação antes de um termo positivo**
+inverte o sinal ("não gosto" não é elogio), e os termos de alerta contam como negativos
+— sem isso, um relato grave escrito em tom seco sairia como "neutro" só por não trazer
+palavra de queixa.
+
+---
+
 ## 📤 Exportações
 
 | Formato | Onde | O que sai |
@@ -447,6 +474,8 @@ rodando  no ar
 | GET    | /api/v1/library/compare | ✅ | Comparação entre duas edições (`a`/`b`), pergunta a pergunta |
 | GET    | /api/v1/results/trend | ✅ | Tendência entre edições (`surveys=id1,id2,…`) |
 | GET    | /api/v1/results/:surveyId/files/:fileId | ✅ | Baixa um anexo enviado numa resposta |
+| GET    | /api/v1/comments/:surveyId | ✅ | Comentários abertos com tema, sentimento e revisão |
+| PUT    | /api/v1/comments/:surveyId/:answerId | ✅ Admin/Gestor | Grava (ou remove) a revisão humana de um comentário |
 
 ---
 

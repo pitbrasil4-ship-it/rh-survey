@@ -303,6 +303,18 @@ function initSchema() {
     FOREIGN KEY(response_id) REFERENCES responses(id) ON DELETE CASCADE
   )`); } catch (e) {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_rfiles_response ON response_files(response_id)"); } catch (e) {}
+
+  /* Revisão humana da classificação dos comentários abertos.
+   * Fica AO LADO da resposta, nunca por cima: o texto original continua intocado, e
+   * remover a revisão devolve o comentário à classificação automática. */
+  try { db.exec(`CREATE TABLE IF NOT EXISTS comment_reviews (
+    id TEXT PRIMARY KEY, tenant_id TEXT, survey_id TEXT NOT NULL,
+    answer_id TEXT NOT NULL UNIQUE,
+    tema TEXT, sentimento TEXT, flagged INTEGER DEFAULT 0, note TEXT,
+    reviewed_by_id TEXT, reviewed_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY(answer_id) REFERENCES answers(id) ON DELETE CASCADE
+  )`); } catch (e) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_creviews_survey ON comment_reviews(survey_id)"); } catch (e) {}
 }
 
 module.exports = { getDB };

@@ -15,4 +15,5 @@ router.use('/dimensions',  require('./dimensions.routes'));
 router.use('/invitations', require('./invitations.routes'));
 router.use('/campaigns',   require('./campaigns.routes'));
 router.use('/library',     require('./library.routes'));
+router.use('/comments',    require('./comments.routes'));
 module.exports = router;

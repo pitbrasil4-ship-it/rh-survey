@@ -124,6 +124,10 @@ export const api = {
     listSegmentLinks: (id) => request('GET',  `/surveys/${id}/segment-links`),
     bulk:             (payload) => request('POST', '/surveys/bulk', payload),
   },
+  comments: {
+    list:   (surveyId) => request('GET', `/comments/${encodeURIComponent(surveyId)}`),
+    review: (surveyId, answerId, data) => request('PUT', `/comments/${encodeURIComponent(surveyId)}/${encodeURIComponent(answerId)}`, data),
+  },
   library: {
     questions: (params = {}) => {
       const qs = new URLSearchParams();

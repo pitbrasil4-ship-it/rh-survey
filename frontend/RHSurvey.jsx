@@ -4195,6 +4195,240 @@ function idPrefix(externalId, text) {
   return (t.startsWith(id + ".") || t.startsWith(id + " ") || t.startsWith(id + ")")) ? null : externalId;
 }
 
+/* Papel do usuário logado, como o login gravou. Revisar comentário é decisão de quem
+   responde pelo relatório — o backend cobra o mesmo, este teste só evita oferecer na
+   tela um botão que seria recusado. */
+function podeRevisar() {
+  try { return ["admin", "manager"].includes(JSON.parse(localStorage.getItem("rh_user") || "{}").role); }
+  catch { return false; }
+}
+
+/* Comentários abertos com revisão humana.
+ *
+ * A classificação automática é palavra-chave e léxico: erra em ironia, negação e gíria.
+ * Por isso cada comentário mostra de onde veio a sua classificação e pode ser corrigido
+ * aqui mesmo — e os totais do topo passam a contar a versão revisada. Sem isso, o
+ * relatório de clima repetiria um palpite de máquina com cara de dado apurado. */
+function CommentsPanel({ surveyId, canReview }) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(null);
+  const [tema, setTema] = useState("");
+  const [sent, setSent] = useState("");
+  const [soPendentes, setSoPendentes] = useState(false);
+  const [soSinalizados, setSoSinalizados] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [aberto, setAberto] = useState(null);
+
+  const carregar = () => {
+    if (!surveyId) return;
+    setLoading(true); setError("");
+    api.comments.list(surveyId)
+      .then(setData)
+      .catch(e => { setError((e && e.message) || t('cm_error')); setData(null); })
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { if (open) carregar(); /* eslint-disable-next-line */ }, [surveyId, open]);
+
+  const SENT = {
+    positivo: { label: t('cm_positive'), cls: "bg-green-50 text-green-700", dot: "#16A34A" },
+    neutro:   { label: t('cm_neutral'),  cls: "bg-slate-100 text-slate-600", dot: "#94A3B8" },
+    negativo: { label: t('cm_negative'), cls: "bg-red-50 text-red-600",     dot: "#DC2626" },
+  };
+
+  const norm = v => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const lista = (data?.comments || []).filter(c => {
+    if (tema && c.theme !== tema) return false;
+    if (sent && c.sentiment !== sent) return false;
+    if (soPendentes && c.source === "revisado") return false;
+    if (soSinalizados && !(c.review ? c.review.flagged : c.auto.alert)) return false;
+    if (busca.trim() && !norm(c.text).includes(norm(busca))) return false;
+    return true;
+  });
+
+  const salvar = async (c, patch) => {
+    setSaving(c.id);
+    try {
+      const atual = c.review || {};
+      const body = {
+        theme: patch.theme !== undefined ? patch.theme : (atual.theme || ""),
+        sentiment: patch.sentiment !== undefined ? patch.sentiment : (atual.sentiment || ""),
+        flagged: patch.flagged !== undefined ? patch.flagged : !!atual.flagged,
+        note: patch.note !== undefined ? patch.note : (atual.note || ""),
+      };
+      await api.comments.review(surveyId, c.id, body);
+      carregar();
+    } catch (e) { setError((e && e.message) || t('cm_save_error')); }
+    setSaving(null);
+  };
+
+  const exportCsv = () => {
+    if (!data) return;
+    downloadCSV("comentarios.csv", [
+      [t('rep_question'), t('cm_comment'), t('cm_theme'), t('cm_sentiment'), t('cm_source'),
+       t('cm_flagged'), t('cm_note'), t('rd_seg_distrito'), t('rd_seg_departamento')],
+      ...lista.map(c => [c.question, c.text, c.theme, SENT[c.sentiment]?.label || c.sentiment,
+        c.source, (c.review ? c.review.flagged : c.auto.alert) ? t('common_yes') : "",
+        c.review?.note || "", c.distrito || "", c.departamento || ""]),
+    ]);
+  };
+
+  if (!surveyId) return null;
+
+  return (
+    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 w-full text-left">
+        <ChevronDown size={15} className={`text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        <MessageSquare size={15} style={{ color:"#5B21B6" }} />
+        <span className="text-sm font-semibold text-slate-800 flex-1">{t('cm_title')}</span>
+        {data && <span className="text-xs text-slate-400">{t('cm_n', { n: data.total })}</span>}
+      </button>
+      {!open && <p className="text-xs text-slate-400 mt-1 pl-7">{t('cm_sub')}</p>}
+
+      {open && (<>
+        <p className="text-xs text-slate-400 mt-1 mb-3 pl-7">{t('cm_sub')}</p>
+        {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-xs mb-3">{error}</div>}
+        {loading && <div className="flex items-center justify-center py-8 text-slate-400 text-sm gap-2"><Loader2 size={16} className="animate-spin" />{t('sl_loading')}</div>}
+
+        {data && !loading && (data.total === 0 ? (
+          <p className="text-sm text-slate-400 py-6 text-center">{t('cm_empty')}</p>
+        ) : (<>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+            <div className="border border-slate-100 rounded-xl p-3">
+              <p className="text-xs text-slate-500">{t('cm_reviewed')}</p>
+              <p className="text-lg font-bold text-slate-800">{data.reviewed}<span className="text-sm font-normal text-slate-400"> / {data.total}</span></p>
+              <p className="text-[11px] text-slate-400">{t('cm_rest_auto')}</p>
+            </div>
+            <div className="border border-slate-100 rounded-xl p-3">
+              <p className="text-xs text-slate-500">{t('cm_flagged')}</p>
+              <p className="text-lg font-bold" style={{ color: data.flagged ? "#DC2626" : "#1E293B" }}>{data.flagged}</p>
+              <p className="text-[11px] text-slate-400">{t('cm_flagged_hint')}</p>
+            </div>
+            <div className="border border-slate-100 rounded-xl p-3">
+              <p className="text-xs text-slate-500">{t('cm_sentiment')}</p>
+              <div className="flex h-3 rounded-full overflow-hidden bg-slate-100 mt-1.5">
+                {["positivo", "neutro", "negativo"].map(k => {
+                  const it = data.sentiments.find(x => x.key === k);
+                  return <div key={k} style={{ width: `${it?.pct || 0}%`, background: SENT[k].dot }} title={`${SENT[k].label}: ${it?.count || 0}`} />;
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                {data.sentiments.map(x => `${SENT[x.key]?.label || x.key} ${x.pct}%`).join(" · ")}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {data.themes.map(th => (
+              <button key={th.key} onClick={() => setTema(tema === th.key ? "" : th.key)}
+                className={`px-2.5 py-1 rounded-lg text-xs border transition-all ${tema === th.key
+                  ? "border-purple-400 bg-purple-50 text-purple-700 font-semibold"
+                  : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                {th.key} <span className="text-slate-400">{th.count}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={busca} onChange={e => setBusca(e.target.value)} placeholder={t('cm_search')}
+                className="w-full border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs focus:outline-none focus:border-purple-400" />
+            </div>
+            <select value={sent} onChange={e => setSent(e.target.value)}
+              className="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none">
+              <option value="">{t('cm_all_sentiments')}</option>
+              {["positivo", "neutro", "negativo"].map(k => <option key={k} value={k}>{SENT[k].label}</option>)}
+            </select>
+            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={soPendentes} onChange={() => setSoPendentes(v => !v)} className="accent-purple-600" />
+              {t('cm_only_pending')}
+            </label>
+            <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={soSinalizados} onChange={() => setSoSinalizados(v => !v)} className="accent-purple-600" />
+              {t('cm_only_flagged')}
+            </label>
+            <button onClick={exportCsv} className="px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-600 hover:bg-slate-50 flex items-center gap-1.5">
+              <Download size={12} />{t('common_export_csv')}
+            </button>
+          </div>
+
+          {!lista.length ? (
+            <p className="text-sm text-slate-400 py-6 text-center">{t('cm_no_match')}</p>
+          ) : (
+            <div className="space-y-2 max-h-[620px] overflow-y-auto pr-1">
+              {lista.map(c => {
+                const sinalizado = c.review ? c.review.flagged : c.auto.alert;
+                const editando = aberto === c.id;
+                return (
+                  <div key={c.id} className={`border rounded-xl p-3 ${sinalizado ? "border-red-200 bg-red-50/30" : "border-slate-100"}`}>
+                    <p className="text-sm text-slate-700 leading-relaxed">{c.text}</p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{c.theme}</span>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${SENT[c.sentiment]?.cls || ""}`}>{SENT[c.sentiment]?.label || c.sentiment}</span>
+                      <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${c.source === "revisado" ? "bg-purple-50 text-purple-600" : "bg-slate-50 text-slate-400"}`}
+                        title={c.source === "revisado" ? t('cm_by', { name: c.review?.by || "—" }) : t('cm_auto_hint')}>
+                        {c.source === "revisado" ? t('cm_source_reviewed') : t('cm_source_auto')}
+                      </span>
+                      {sinalizado && <span className="text-[11px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">⚠ {t('cm_flagged')}</span>}
+                      {c.distrito && <span className="text-[11px] text-slate-400">{c.distrito}</span>}
+                      {c.modalidade && <span className="text-[11px] text-slate-400">· {c.modalidade}</span>}
+                      {canReview && (
+                        <button onClick={() => setAberto(editando ? null : c.id)}
+                          className="ml-auto text-xs font-medium text-purple-600 hover:bg-purple-50 rounded-md px-2 py-1">
+                          {editando ? t('common_close') : t('cm_review')}
+                        </button>
+                      )}
+                    </div>
+                    {c.review?.note && !editando && (
+                      <p className="text-xs text-slate-500 mt-1.5 border-l-2 border-purple-200 pl-2">{c.review.note}</p>
+                    )}
+                    {editando && canReview && (
+                      <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select value={c.review?.theme || ""} onChange={e => salvar(c, { theme: e.target.value })}
+                            className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none">
+                            <option value="">{t('cm_keep_auto', { v: c.auto.themes[0] })}</option>
+                            {(data.themeOptions || []).map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                          {["positivo", "neutro", "negativo"].map(k => (
+                            <button key={k} onClick={() => salvar(c, { sentiment: c.review?.sentiment === k ? "" : k })}
+                              className={`px-2 py-1 rounded-md text-xs border ${c.review?.sentiment === k
+                                ? "border-purple-400 bg-purple-50 text-purple-700 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                              {SENT[k].label}
+                            </button>
+                          ))}
+                          <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                            <input type="checkbox" checked={c.review ? c.review.flagged : false}
+                              onChange={() => salvar(c, { flagged: !(c.review && c.review.flagged) })} className="accent-red-500" />
+                            {t('cm_flag_it')}
+                          </label>
+                          {saving === c.id && <Loader2 size={13} className="animate-spin text-slate-400" />}
+                        </div>
+                        <input defaultValue={c.review?.note || ""} placeholder={t('cm_note_ph')}
+                          onBlur={e => { if (e.target.value !== (c.review?.note || "")) salvar(c, { note: e.target.value }); }}
+                          className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-purple-400" />
+                        {c.review && (
+                          <button onClick={() => salvar(c, { theme: "", sentiment: "", flagged: false, note: "" })}
+                            className="text-xs text-slate-400 hover:text-red-500">{t('cm_undo_review')}</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="text-xs text-slate-400 mt-2">{t('cm_note_foot')}</p>
+        </>))}
+      </>)}
+    </div>
+  );
+}
+
 /* Tendência entre edições: a mesma pesquisa aplicada em anos diferentes, lado a lado.
    A dimensão casa pelo nome e a pergunta pelo ID externo (Q1…Q30) — é o que sobrevive a
    uma reformulação de texto. O que só existiu numa edição não some: vem marcado, para
@@ -4780,6 +5014,7 @@ function ResultsDashboard() {
           <DimensionResults dimensions={result?.dimensions} />
           <SegmentResults segments={result?.segments} segmentation={result?.segmentation} />
           <CrosstabPanel surveyId={selectedId} />
+          <CommentsPanel surveyId={selectedId} canReview={podeRevisar()} />
           <TrendPanel surveys={surveys} currentId={selectedId} />
           <ComparePanel surveys={surveys} currentId={selectedId} />
           {questions.map((q,i) => (
