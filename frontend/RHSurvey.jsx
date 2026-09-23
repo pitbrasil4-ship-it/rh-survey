@@ -85,6 +85,29 @@ function extractOptionPoints(labels) {
   return { options: opts.length ? opts : null, points: any ? pts : null };
 }
 
+/* Modelo de planilha no mesmo formato usado pelo RH, com todas as colunas aceitas. */
+function downloadImportTemplate() {
+  const ESCALA = "Discordo Totalmente;Discordo;De acordo;Totalmente de acordo";
+  downloadCSV("modelo-importacao-perguntas.csv", [
+    ["Nº", "Pergunta", "Pergunta (EN)", "Pergunta (ES)", "Tipo", "Opções", "Pesos",
+     "Dimensão_Clima", "Dimensão_HSE", "Obrigatória", "Observação"],
+    [1, "Q1. Informe em qual modalidade de contratação você está enquadrado:", "", "",
+     "múltipla", "Mensalista;Intermitente", "", "", "", "Sim",
+     "Pergunta de segmentação — não entra em nenhuma dimensão e abre os recortes."],
+    [2, "Q2. Minha jornada de trabalho me permite equilibrar vida profissional e pessoal.",
+     "My working hours let me balance work and personal life.", "",
+     "escala", ESCALA, "1;2;3;4", "Equilíbrio Vida Pessoal e Profissional", "Demandas", "Sim", ""],
+    [3, "Q3. Meu gestor distribui as tarefas às pessoas certas.", "", "",
+     "escala", ESCALA, "1;2;3;4", "Liderança", "Demandas | Suporte do Gestor", "Sim",
+     "Duas dimensões do HSE na mesma pergunta — separe com \u201c|\u201d."],
+    [4, "Q4. Existe o sentimento de que todos estamos no mesmo barco.", "", "",
+     "escala", ESCALA + ";Não se Aplica", "1;2;3;4;(sem peso)", "Valores RGIS", "Suporte entre Pares", "Sim",
+     "\u201c(sem peso)\u201d marca a opção neutra, que sai da base de cálculo."],
+    [5, "Q5. Comentários / Opiniões / Ideias", "", "", "texto", "", "", "", "", "Não",
+     "Campo aberto — não entra em nenhuma dimensão."],
+  ]);
+}
+
 /* Lê a coluna "Obrigatória" da planilha (sim/não, 1/0, true/false). */
 function parseRequired(raw) {
   const v = (raw == null ? "" : String(raw)).trim().toLowerCase();
@@ -1012,7 +1035,7 @@ function SurveyList({ onCreateNew, onView, onEdit }) {
                       <button onClick={() => onView && onView(s)} title={t('sl_view_results')}
                         className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><Eye size={14} /></button>
                       <button onClick={() => onEdit && onEdit(s.id)}
-                        title={s.responses > 0 ? t('sl_edit_locked') : t('sl_edit_survey')}
+                        title={s.responses > 0 ? t('sl_edit_live') : t('sl_edit_survey')}
                         className="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"><Edit size={14} /></button>
                       <button onClick={() => handleDuplicate(s)} disabled={duplicating===s.id} title={t('sl_duplicate_survey')}
                         className="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors disabled:opacity-40">
@@ -1306,6 +1329,87 @@ function FormFieldsEditor({ q, onChange }) {
   );
 }
 
+/* Favorabilidade e segmentação.
+ *
+ * A régua da RGIS é: Favorável = "De acordo" + "Totalmente de acordo"; Desfavorável =
+ * "Discordo" + "Discordo Totalmente"; e o semáforo corta sobre a DESFAVORABILIDADE.
+ * Numa escala de 4 pontos o corte cai sozinho na metade de cima; numa de 3 pontos
+ * (Avaliação de Performance) a RGIS não classifica, então fica desligado. Sempre
+ * ajustável aqui, porque quem decide a régua é o RH. */
+function FavorabilityEditor({ q, onChange }) {
+  const { t } = useLang();
+  const cfg = q.config || {};
+  const opts = q.options || [];
+  const neutral = Number.isInteger(cfg.neutralIndex) ? cfg.neutralIndex : null;
+  const scored = opts.map((_, i) => i).filter(i => i !== neutral);
+  const auto = autoFavorableFrom(opts, q.option_points, neutral);
+  const value = Number.isInteger(cfg.favorableFrom) ? cfg.favorableFrom : auto;
+  const on = Number.isInteger(value);
+
+  const setFrom = (idx) => {
+    const next = { ...cfg };
+    if (idx == null) next.favorableFrom = undefined; else next.favorableFrom = idx;
+    onChange({ config: next });
+  };
+
+  return (
+    <div className="mt-3 border border-slate-200 rounded-xl p-3 bg-white">
+      <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
+        <input type="checkbox" checked={on} className="accent-purple-600"
+          onChange={() => setFrom(on ? null : (auto != null ? auto : Math.ceil(scored.length / 2)))} />
+        {t('qe_favorability')}
+      </label>
+      {!on ? (
+        <p className="text-xs text-slate-400 mt-1">{t('qe_favorability_off')}</p>
+      ) : (
+        <>
+          <p className="text-xs text-slate-400 mt-1 mb-2">{t('qe_favorability_hint')}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {opts.map((label, i) => {
+              if (i === neutral) return (
+                <span key={i} className="px-2 py-1 rounded-md text-xs border border-amber-200 bg-amber-50 text-amber-600">
+                  {label} · {t('qe_neutral')}
+                </span>
+              );
+              const fav = i >= value;
+              return (
+                <button key={i} type="button" onClick={() => setFrom(i)} title={t('qe_favorable_from_here')}
+                  className={`px-2 py-1 rounded-md text-xs border ${fav ? "border-green-400 bg-green-50 text-green-700 font-semibold" : "border-red-200 bg-red-50 text-red-600"}`}>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            {t('qe_favorability_legend', {
+              fav: opts.filter((_, i) => i >= value && i !== neutral).join(", ") || "—",
+              unf: opts.filter((_, i) => i < value && i !== neutral).join(", ") || "—",
+            })}
+          </p>
+        </>
+      )}
+
+      <label className="inline-flex items-start gap-1.5 text-xs text-slate-600 cursor-pointer mt-3 pt-3 border-t border-slate-100 w-full">
+        <input type="checkbox" checked={!!cfg.segmentation} className="accent-purple-600 mt-0.5"
+          onChange={() => onChange({ config: { ...cfg, segmentation: !cfg.segmentation } })} />
+        <span>
+          <span className="font-semibold">{t('qe_segmentation')}</span>
+          <span className="block text-slate-400">{t('qe_segmentation_hint')}</span>
+        </span>
+      </label>
+    </div>
+  );
+}
+
+/* Mesma regra padrão do servidor, para a tela mostrar o que será apurado. */
+function autoFavorableFrom(options, points, neutralIndex) {
+  if (!Array.isArray(options) || !Array.isArray(points)) return null;
+  const scored = options.map((_, i) => i).filter(i => i !== neutralIndex);
+  if (scored.length < 4) return null;
+  const idx = scored.find(i => Number(points[i]) >= 50);
+  return idx === undefined ? null : idx;
+}
+
 /* Lógica condicional: exibir a pergunta só se X for marcada, e encerrar em Y. */
 function LogicEditor({ q, previous, onChange }) {
   const { t } = useLang();
@@ -1409,6 +1513,8 @@ function QuestionCard({ q, index, total, previous, dimensionSets, expanded, onTo
             {Number.isInteger(cfg.neutralIndex) && <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full">{t('qe_neutral')}</span>}
             {q.logic && (q.logic.showIf || q.logic.endIf) && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{t('qe_has_logic')}</span>}
             {dims.length > 0 && <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full">{dims.length} {t('qe_dimensions').toLowerCase()}</span>}
+            {cfg.segmentation && <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">{t('qe_segmentation_short')}</span>}
+            {q.answerCount > 0 && <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full" title={t('qe_answered_hint')}>{t('qe_answered_n', { n: q.answerCount })}</span>}
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
@@ -1461,32 +1567,47 @@ function QuestionCard({ q, index, total, previous, dimensionSets, expanded, onTo
           )}
 
           {hasOptionList(q.type) && <OptionEditor q={q} onChange={onChange} />}
+          {hasOptionList(q.type) && <FavorabilityEditor q={q} onChange={onChange} />}
           {q.type === "matrix" && <MatrixRowsEditor q={q} onChange={onChange} />}
           {q.type === "form"   && <FormFieldsEditor q={q} onChange={onChange} />}
           <LogicEditor q={q} previous={previous} onChange={onChange} />
 
-          {dimensionSets.length > 0 && (
-            <div className="mt-3 border border-slate-200 rounded-xl p-3 bg-white">
-              <span className="text-xs font-semibold text-slate-600">{t('qe_dimensions')}</span>
-              <p className="text-xs text-slate-400 mb-2">{t('qe_dimensions_hint')}</p>
-              {dimensionSets.map(set => (
-                <div key={set.id} className="mb-2">
-                  <div className="text-xs font-medium text-slate-500 mb-1">{set.name}</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(set.dimensions || []).map(d => {
-                      const on = dims.includes(d.id);
-                      return (
-                        <button key={d.id} type="button" onClick={() => toggleDim(d.id)}
-                          className={`px-2 py-1 rounded-md text-xs border ${on ? "border-green-400 bg-green-50 text-green-700 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-                          {d.name}
-                        </button>
-                      );
-                    })}
-                  </div>
+          {dimensionSets.map(set => {
+            const picked = (set.dimensions || []).filter(d => dims.includes(d.id));
+            return (
+              <div key={set.id} className="mt-3 border border-slate-200 rounded-xl p-3 bg-white">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="text-xs font-semibold text-slate-600">{t('qe_dimension_of', { set: set.name })}</span>
+                  {picked.length > 0 && <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full">{picked.length}</span>}
                 </div>
-              ))}
-            </div>
-          )}
+                <div className="flex flex-wrap gap-1.5">
+                  {(set.dimensions || []).map(d => {
+                    const on = dims.includes(d.id);
+                    return (
+                      <button key={d.id} type="button" onClick={() => toggleDim(d.id)}
+                        className={`px-2 py-1 rounded-md text-xs border ${on ? "border-green-400 bg-green-50 text-green-700 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                        {d.name}
+                      </button>
+                    );
+                  })}
+                  {!(set.dimensions || []).length && <span className="text-xs text-slate-400">{t('dim_set_empty')}</span>}
+                </div>
+                {/* Avisa, não bloqueia: quem decide a regra é o RH. */}
+                {picked.length > 1 && (
+                  <p className="text-xs text-amber-600 mt-2 flex items-start gap-1">
+                    <AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />
+                    {t('qe_multi_dim_warning', { set: set.name, n: picked.length })}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+
+          <div className="mt-3 border border-slate-200 rounded-xl p-3 bg-white">
+            <span className="text-xs font-semibold text-slate-600">{t('qe_notes')}</span>
+            <input value={q.notes || ""} onChange={e => onChange({ notes: e.target.value })} placeholder={t('qe_notes_ph')}
+              className="w-full mt-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-600 focus:outline-none focus:border-purple-400" />
+          </div>
         </div>
       )}
     </div>
@@ -1514,6 +1635,103 @@ function retypeQuestion(q, type) {
   return patch;
 }
 
+/* Histórico e versões de uma pesquisa.
+ *
+ * "Quem, quando, o quê" em pergunta, alternativa, peso e classificação — e a lista de
+ * versões publicadas, cada uma com quantas respostas foram colhidas sob ela. É o que
+ * permite auditar uma reclassificação sem ter de confiar na memória de quem mexeu. */
+function HistoryModal({ surveyId, onClose }) {
+  const { t } = useLang();
+  const [tab, setTab] = useState("history");
+  const [history, setHistory] = useState(null);
+  const [versions, setVersions] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [h, v] = await Promise.all([api.surveys.history(surveyId), api.surveys.versions(surveyId)]);
+        if (!alive) return;
+        setHistory(h.history || []); setVersions(v.versions || []);
+      } catch (e) { if (alive) setError((e && e.message) || t('sl_load_error')); }
+    })();
+    return () => { alive = false; };
+  }, [surveyId]);
+
+  const fmt = (d) => { try { return new Date(String(d).replace(" ", "T") + "Z").toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }); } catch { return d; } };
+  const loading = history === null && versions === null && !error;
+
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3" style={{ background:"rgba(15,23,42,0.45)" }}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-5 max-h-[90vh] flex flex-col">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background:GRAD }}><Activity size={17} /></div>
+          <h3 className="font-semibold text-slate-800 text-sm flex-1">{t('hist_title')}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={17} /></button>
+        </div>
+
+        <div className="flex gap-2 mb-3">
+          {[["history", t('hist_tab_changes')], ["versions", t('hist_tab_versions')]].map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium ${tab === id ? "text-white" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+              style={tab === id ? { background: GRAD } : {}}>{label}</button>
+          ))}
+        </div>
+
+        {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm">{error}</div>}
+        {loading && <div className="flex items-center justify-center py-10 text-slate-400 text-sm gap-2"><Loader2 size={16} className="animate-spin" />{t('sl_loading')}</div>}
+
+        <div className="overflow-y-auto flex-1">
+          {tab === "history" && history && (
+            history.length === 0
+              ? <p className="text-sm text-slate-400 py-8 text-center">{t('hist_empty')}</p>
+              : <div className="space-y-2">
+                  {history.map(h => (
+                    <div key={h.id} className="border border-slate-100 rounded-xl p-3">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="text-xs font-semibold text-slate-700">{h.action}</span>
+                        {h.field && <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{h.field}</span>}
+                        <span className="text-xs text-slate-400 ml-auto">{fmt(h.created_at)} · {h.user_name || "—"}</span>
+                      </div>
+                      {h.question_text && <p className="text-xs text-slate-500 mb-1">{h.order_num ? `${h.order_num}. ` : ""}{String(h.question_text).slice(0, 90)}</p>}
+                      {(h.before_value || h.after_value) && (
+                        <div className="text-xs text-slate-600 bg-slate-50 rounded-lg px-2 py-1.5 break-words">
+                          <span className="text-red-600 line-through opacity-70">{String(h.before_value || "—").slice(0, 120)}</span>
+                          <span className="mx-1.5 text-slate-400">→</span>
+                          <span className="text-green-700">{String(h.after_value || "—").slice(0, 120)}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+          )}
+
+          {tab === "versions" && versions && (
+            versions.length === 0
+              ? <p className="text-sm text-slate-400 py-8 text-center">{t('hist_no_versions')}</p>
+              : <div className="space-y-2">
+                  {versions.map(v => (
+                    <div key={v.id} className="flex flex-wrap items-center gap-2 border border-slate-100 rounded-xl p-3">
+                      <span className="text-sm font-bold text-white px-2 py-0.5 rounded-lg" style={{ background: GRAD }}>v{v.number}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-slate-600">{fmt(v.published_at)}{v.published_by ? ` · ${v.published_by}` : ""}</div>
+                        {v.note && <div className="text-xs text-slate-400 truncate">{v.note}</div>}
+                      </div>
+                      <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full whitespace-nowrap">
+                        {t('hist_version_responses', { n: v.response_count })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+          )}
+        </div>
+        <p className="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-100">{t('hist_footer')}</p>
+      </div>
+    </div>
+  );
+}
+
 // ─── SURVEY BUILDER ────────────────────────────────────────────────────────────
 /* Normaliza uma pergunta vinda de template, IA, planilha ou do backend para o
    formato do editor — e já cria a lista de alternativas quando o tipo pede uma. */
@@ -1521,8 +1739,12 @@ function toEditorQuestion(q, i) {
   const type = QUESTION_TYPES.some(t => t.id === q.type) ? q.type : "text";
   const out = {
     id: q.id != null && typeof q.id === "number" ? q.id : Date.now() + i * 7 + Math.floor(Math.random() * 5),
+    // Id do servidor: é o que permite atualizar a pergunta no lugar, preservando as
+    // respostas já gravadas, em vez de recriá-la.
     serverId: typeof q.id === "string" ? q.id : undefined,
     order_num: q.order_num,
+    notes: q.notes || "",
+    answerCount: q.answerCount || 0,
     text: q.text || "", text_en: q.text_en || "", text_es: q.text_es || "", type,
     required: q.required === false ? false : true,
     external_id: q.external_id || "",
@@ -1556,7 +1778,12 @@ function SurveyBuilder({ onBack, initial, editId }) {
   const [onePerDevice, setOnePerDevice]   = useState(!!initial?.one_per_device);
   const [maxResponses, setMaxResponses]   = useState(initial?.max_responses ? String(initial.max_responses) : "");
   const [loadingEdit, setLoadingEdit]     = useState(!!editId);
-  const [locked,      setLocked]          = useState(false);
+  const [responseCount, setResponseCount] = useState(0);
+  // Classificação como estava ao abrir: serve para detectar reclassificação e só então
+  // perguntar se ela vale para as respostas já coletadas.
+  const [origDims, setOrigDims]           = useState({});
+  const [askRetro, setAskRetro]           = useState(null);   // { publishNow }
+  const [blocked,  setBlocked]            = useState([]);
   const [aiContext, setAiContext]  = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiQs,      setAiQs]      = useState([]);
@@ -1596,8 +1823,11 @@ function SurveyBuilder({ onBack, initial, editId }) {
         setDeadline(sv.deadline ? String(sv.deadline).slice(0, 10) : "");
         setOnePerDevice(!!sv.one_per_device);
         setMaxResponses(sv.max_responses ? String(sv.max_responses) : "");
-        setQuestions((d.questions || []).map(toEditorQuestion));
-        setLocked(!!d.questionsLocked);
+        const qs = (d.questions || []).map(toEditorQuestion);
+        setQuestions(qs);
+        setResponseCount(d.responseCount || 0);
+        const orig = {}; qs.forEach(q => { if (q.serverId) orig[q.serverId] = [...(q.dimensions || [])].sort().join(","); });
+        setOrigDims(orig);
       } catch (e) {
         if (alive) setError((e && e.message) || t('sb_save_error'));
       }
@@ -1651,6 +1881,21 @@ function SurveyBuilder({ onBack, initial, editId }) {
       ? { ...q, logic: { ...q.logic, showIf: null } } : q);
   });
 
+  /* Baixa as perguntas no MESMO formato da planilha de importação — é assim que o RH
+     revisa fora do sistema e reimporta sem conversão manual. */
+  const [exporting, setExporting] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const exportSheet = async () => {
+    if (!editId || exporting) return;
+    setExporting(true);
+    try {
+      const d = await api.surveys.export(editId);
+      const nome = String(d.survey?.name || surveyName || "pesquisa").replace(/[^\w\s-]/g, "").trim().slice(0, 50);
+      downloadCSV(`${nome} — perguntas e dimensões.csv`, [d.header, ...d.rows]);
+    } catch (e) { setError((e && e.message) || t('sb_export_err')); }
+    setExporting(false);
+  };
+
   /* Converte as perguntas do editor para o formato da API (lógica por ordem). */
   const serializeQuestions = () => questions.map((q, i) => {
     const logic = {};
@@ -1661,7 +1906,9 @@ function SurveyBuilder({ onBack, initial, editId }) {
     }
     if (q.logic && q.logic.endIf && (q.logic.endIf.options || []).length) logic.endIf = { options: q.logic.endIf.options };
     return {
+      ...(q.serverId ? { id: q.serverId } : {}),
       type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "",
+      notes: q.notes || "",
       options: hasOptionList(q.type) ? (q.options || []) : null,
       options_en: q.options_en || null, options_es: q.options_es || null,
       option_points: q.option_points || null,
@@ -1673,12 +1920,22 @@ function SurveyBuilder({ onBack, initial, editId }) {
     };
   });
 
-  const handleSubmit = async (publishNow) => {
-    setError(null);
+  /* Alguma pergunta já respondida mudou de dimensão? */
+  const reclassified = () => questions.some(q =>
+    q.serverId && origDims[q.serverId] !== undefined &&
+    origDims[q.serverId] !== [...(q.dimensions || [])].sort().join(","));
+
+  const handleSubmit = async (publishNow, retroactive) => {
+    setError(null); setBlocked([]);
     if (!surveyName.trim())     { setError(t('sb_name_required')); return; }
     if (questions.length === 0) { setError(t('sb_min_one_q')); return; }
     if (questions.some(q => !String(q.text || "").trim())) { setError(t('sb_empty_q')); return; }
     if (publishNow && !lgpdOk)  { setError(t('sb_confirm_lgpd')); return; }
+    // Escolher por omissão corromperia a série histórica em silêncio: pergunta antes.
+    if (retroactive === undefined && editId && responseCount > 0 && reclassified()) {
+      setAskRetro({ publishNow }); return;
+    }
+    setAskRetro(null);
     setSaving(true);
     try {
       const payload = {
@@ -1693,9 +1950,14 @@ function SurveyBuilder({ onBack, initial, editId }) {
       };
       let id = editId;
       if (editId) {
-        // Com respostas registradas o backend recusa trocar as perguntas — por isso só
-        // mandamos a lista quando a pesquisa ainda está destravada.
-        await api.surveys.update(editId, locked ? payload : { ...payload, questions: serializeQuestions() });
+        const r = await api.surveys.update(editId, {
+          ...payload, questions: serializeQuestions(), retroactive: retroactive === true,
+        });
+        // O que o servidor recusou por já ter resposta fica na tela, em vez de sumir.
+        if (r && r.sync && r.sync.blocked && r.sync.blocked.length) {
+          setBlocked(r.sync.blocked); setSaving(false);
+          return;
+        }
       } else {
         const result = await api.surveys.create({ ...payload, questions: serializeQuestions() });
         id = result && result.survey && result.survey.id;
@@ -1815,7 +2077,21 @@ function SurveyBuilder({ onBack, initial, editId }) {
           <h1 className="text-2xl font-bold text-slate-800">{editId ? t('sb_edit_title') : t('new_survey')}</h1>
           <p className="text-sm text-slate-500 mt-0.5">{editId ? t('sb_edit_subtitle') : t('sb_subtitle')}</p>
         </div>
-        <div className="ml-auto flex gap-3">
+        <div className="ml-auto flex flex-wrap gap-3">
+          {editId && (
+            <button onClick={() => setShowHistory(true)}
+              className="px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 flex items-center gap-2"
+              title={t('hist_hint')}>
+              <Activity size={14} />{t('hist_btn')}
+            </button>
+          )}
+          {editId && (
+            <button onClick={exportSheet} disabled={exporting}
+              className="px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2"
+              title={t('sb_export_hint')}>
+              {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}{t('sb_export')}
+            </button>
+          )}
           <button onClick={() => handleSubmit(false)} disabled={saving}
             className="px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2">
             {saving ? <><Loader2 size={14} className="animate-spin" />{t('common_saving')}</> : (editId ? t('sb_save_changes') : t('sb_save_draft'))}
@@ -1835,6 +2111,37 @@ function SurveyBuilder({ onBack, initial, editId }) {
       {loadingEdit && (
         <div className="mb-5 bg-slate-50 border border-slate-200 text-slate-500 rounded-xl px-4 py-3 flex items-center gap-2 text-sm">
           <Loader2 size={15} className="animate-spin" />{t('sb_loading_survey')}
+        </div>
+      )}
+      {dimUnmatched.length > 0 && (
+        <div className="mb-5 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl px-4 py-3 text-sm">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">{t('sb_dim_unmatched', { n: dimUnmatched.length })}</p>
+              <p className="text-xs mt-1">{dimUnmatched.join(" · ")}</p>
+              <p className="text-xs mt-1 opacity-80">{t('sb_dim_unmatched_hint')}</p>
+            </div>
+          </div>
+        </div>
+      )}
+      {blocked.length > 0 && (
+        <div className="mb-5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="font-medium">{t('sb_blocked_title', { n: blocked.length })}</p>
+              <ul className="text-xs mt-1.5 space-y-1">
+                {blocked.map((b, i) => (
+                  <li key={i}>
+                    <strong>{t('sb_blocked_' + b.reason, { n: b.minOptions || 0 })}</strong> — {String(b.text).slice(0, 80)}
+                    <span className="opacity-70"> ({t('sb_blocked_responses', { n: b.responses })})</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs mt-2 opacity-80">{t('sb_blocked_hint')}</p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1921,6 +2228,35 @@ function SurveyBuilder({ onBack, initial, editId }) {
           </button>
         ))}
       </div>
+
+      {showHistory && editId && <HistoryModal surveyId={editId} onClose={() => setShowHistory(false)} />}
+
+      {askRetro && (
+        <div onClick={() => setAskRetro(null)} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3" style={{ background:"rgba(15,23,42,0.45)" }}>
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background:GRAD }}><Layers size={17} /></div>
+              <h3 className="font-semibold text-slate-800 text-sm">{t('sb_retro_title')}</h3>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">{t('sb_retro_intro', { n: responseCount })}</p>
+
+            <button onClick={() => handleSubmit(askRetro.publishNow, true)}
+              className="w-full text-left border border-slate-200 rounded-xl p-3 hover:border-purple-300 hover:bg-purple-50 transition-colors mb-2">
+              <div className="text-sm font-semibold text-slate-800">{t('sb_retro_yes')}</div>
+              <div className="text-xs text-slate-500 mt-0.5">{t('sb_retro_yes_desc')}</div>
+            </button>
+            <button onClick={() => handleSubmit(askRetro.publishNow, false)}
+              className="w-full text-left border border-slate-200 rounded-xl p-3 hover:border-purple-300 hover:bg-purple-50 transition-colors">
+              <div className="text-sm font-semibold text-slate-800">{t('sb_retro_no')}</div>
+              <div className="text-xs text-slate-500 mt-0.5">{t('sb_retro_no_desc')}</div>
+            </button>
+
+            <button onClick={() => setAskRetro(null)} className="mt-4 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50">
+              {t('sl_deadline_cancel')}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-5" style={{ gridTemplateColumns:"2fr 3fr" }}>
         {/* LEFT */}
@@ -2027,7 +2363,11 @@ function SurveyBuilder({ onBack, initial, editId }) {
                   <li><strong>{t('sb_col_weights')}</strong>{t('sb_col_weights_desc')}</li>
                   <li><strong>{t('sb_col_required')}</strong>{t('sb_col_required_desc')}</li>
                   <li><strong>{t('sb_col_dims')}</strong>{t('sb_col_dims_desc')}</li>
+                  <li><strong>{t('sb_col_obs')}</strong>{t('sb_col_obs_desc')}</li>
                 </ul>
+                <p className="text-xs text-slate-500 mb-3 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-2">
+                  {t('sb_import_weights_hint')}
+                </p>
                 <button onClick={downloadImportTemplate} className="text-xs font-semibold flex items-center gap-1 hover:opacity-80 mb-2" style={{ color:"#5B21B6" }}>
                   <Download size={12} />{t('sb_download_template')}
                 </button>
@@ -2045,9 +2385,9 @@ function SurveyBuilder({ onBack, initial, editId }) {
               {questions.length===1 ? t('sb_q_count_one') : t('sb_q_count_many',{n:questions.length})}
             </span>
           </div>
-          {locked && (
-            <div className="mx-5 mt-4 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl px-3 py-2 text-xs flex items-start gap-2">
-              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />{t('sb_locked_hint')}
+          {responseCount > 0 && (
+            <div className="mx-5 mt-4 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl px-3 py-2 text-xs flex items-start gap-2">
+              <Info size={13} className="flex-shrink-0 mt-0.5" />{t('sb_live_edit_hint', { n: responseCount })}
             </div>
           )}
           <div className="flex-1 p-5 space-y-2 overflow-y-auto" style={{ minHeight:300 }}>
@@ -2843,6 +3183,50 @@ function LabelledBar({ label, count, pct, color, neutral, wide }) {
   );
 }
 
+/* Semáforo da RGIS: o corte é sobre a DESFAVORABILIDADE, não sobre a favorabilidade.
+   Verde abaixo de 20%, amarelo de 20% a 30%, vermelho de 30% para cima. */
+const SEM_STYLE = {
+  verde:    { bg: "bg-green-100",  text: "text-green-700",  dot: "#16A34A" },
+  amarelo:  { bg: "bg-amber-100",  text: "text-amber-700",  dot: "#F59E0B" },
+  vermelho: { bg: "bg-red-100",    text: "text-red-700",    dot: "#DC2626" },
+};
+
+function SemaforoChip({ value, unfavorablePct, compact }) {
+  const { t } = useLang();
+  if (!value) return null;
+  const st = SEM_STYLE[value] || SEM_STYLE.verde;
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${st.bg} ${st.text}`}
+      title={t('qr_semaforo_hint')}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: st.dot }} />
+      {compact ? `${unfavorablePct}%` : t('qr_sem_' + value)}
+    </span>
+  );
+}
+
+/* Barra de favorabilidade: verde à esquerda, vermelho à direita, com a base usada. */
+function FavorabilityBar({ fav, showLegend }) {
+  const { t } = useLang();
+  if (!fav) return null;
+  return (
+    <div>
+      <div className="flex h-3 rounded-full overflow-hidden bg-slate-100" title={t('qr_fav_bar_title', { f: fav.favorablePct, d: fav.unfavorablePct })}>
+        <div style={{ width: `${fav.favorablePct}%`, background: "#16A34A" }} />
+        <div style={{ width: `${fav.unfavorablePct}%`, background: "#DC2626" }} />
+      </div>
+      {showLegend && (
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-1.5 text-xs">
+          <span className="text-green-700 font-semibold">{fav.favorablePct}% {t('qr_favorable')}</span>
+          <span className="text-slate-400">
+            {t('qr_base_n', { n: fav.base })}{fav.neutralOut ? ` · ${t('qr_neutral_out', { n: fav.neutralOut })}` : ""}
+          </span>
+          <span className="text-red-700 font-semibold">{fav.unfavorablePct}% {t('qr_unfavorable')}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* Chips das dimensões (taxonomias) às quais a pergunta pertence. */
 function DimensionChips({ dimensions }) {
   if (!dimensions || !dimensions.length) return null;
@@ -2897,10 +3281,12 @@ function QuestionResult({ q }) {
         <div className="flex items-start justify-between mb-4">
           <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {q.favorability && <SemaforoChip value={q.favorability.semaforo} unfavorablePct={q.favorability.unfavorablePct} />}
             <ScoreBadge pct={q.scorePct} />
             <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
           </div>
         </div>
+        {q.favorability && <div className="mb-4"><FavorabilityBar fav={q.favorability} showLegend /></div>}
         <div className="flex items-center gap-5">
           <div className="text-center">
             <div className="text-3xl font-bold" style={{ color:"#5B21B6" }}>{q.average ?? "—"}</div>
@@ -2936,9 +3322,12 @@ function QuestionResult({ q }) {
           <div className="space-y-4">
             {rows.map((r,i) => (
               <div key={i}>
-                <div className="flex items-center justify-between mb-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
                   <span className="text-xs font-semibold text-slate-600">{r.label}</span>
-                  <span className="text-xs text-slate-400">{t('qr_average')} {r.average ?? "—"} · {r.count} {t('qr_answers_short')}</span>
+                  <span className="flex items-center gap-2">
+                    {r.semaforo && <SemaforoChip value={r.semaforo} unfavorablePct={r.unfavorablePct} compact />}
+                    <span className="text-xs text-slate-400">{t('qr_average')} {r.average ?? "—"} · {r.count} {t('qr_answers_short')}</span>
+                  </span>
                 </div>
                 <div className="space-y-1">
                   {(r.distribution || []).map((d,x) => (
@@ -3003,10 +3392,12 @@ function QuestionResult({ q }) {
         <div className="flex items-start justify-between mb-4">
           <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {q.favorability && <SemaforoChip value={q.favorability.semaforo} unfavorablePct={q.favorability.unfavorablePct} />}
             <ScoreBadge pct={q.scorePct} />
             <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
           </div>
         </div>
+        {q.favorability && <div className="mb-4"><FavorabilityBar fav={q.favorability} showLegend /></div>}
         <div className="space-y-1.5">
           {freq.length === 0 ? (q.comments && q.comments.length ? <CommentsBlock items={q.comments} /> : <span className="text-xs text-slate-400">{t('qr_no_answers')}</span>) : freq.map((d,i) => (
             <LabelledBar key={i} label={(d.label || d.value) + (d.other ? ` (${t('qr_other')})` : "")}
@@ -3037,13 +3428,14 @@ function QuestionResult({ q }) {
   return null;
 }
 
-/* Nota consolidada por dimensão — a leitura que o RH pede ("como está Liderança?"),
-   em vez de percorrer pergunta a pergunta. Uma pergunta pode entrar em mais de uma. */
+/* Nota por dimensão, separada por taxonomia: o corte do Clima e o corte do HSE saem
+   da MESMA coleta — são dois relatórios, não duas pesquisas. */
 function DimensionResults({ dimensions }) {
   const { t } = useLang();
   if (!dimensions || !dimensions.length) return null;
   const bySet = {};
   dimensions.forEach(d => (bySet[d.set || "—"] = bySet[d.set || "—"] || []).push(d));
+
   return (
     <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
       <div className="flex items-center gap-2 mb-1">
@@ -3052,28 +3444,125 @@ function DimensionResults({ dimensions }) {
       </div>
       <p className="text-xs text-slate-400 mb-4">{t('rd_by_dimension_sub')}</p>
       {Object.entries(bySet).map(([setName, dims]) => (
-        <div key={setName} className="mb-4 last:mb-0">
-          <div className="text-xs font-medium text-slate-500 mb-2">{setName}</div>
-          <div className="space-y-1.5">
+        <div key={setName} className="mb-5 last:mb-0">
+          <div className="text-xs font-semibold text-slate-500 mb-2 pb-1 border-b border-slate-100">{setName}</div>
+          <div className="space-y-2.5">
             {dims.map(d => (
-              <div key={d.id} className="flex items-center gap-3">
-                <span className="text-xs text-slate-600 flex-1 min-w-0 truncate">{d.name}</span>
-                <span className="text-xs text-slate-400 whitespace-nowrap">{d.questions === 1 ? t('rd_dim_one_q') : t('rd_dim_n_q', { n: d.questions })}</span>
-                {d.scorePct != null ? (
-                  <>
-                    <div className="w-28 h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width:`${d.scorePct}%`, background:GRAD }} />
+              <div key={d.id}>
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="text-xs font-medium text-slate-700 flex-1 min-w-0 truncate">{d.name}</span>
+                  <span className="text-xs text-slate-400 whitespace-nowrap">{d.questions === 1 ? t('rd_dim_one_q') : t('rd_dim_n_q', { n: d.questions })}</span>
+                  {d.favorability
+                    ? <SemaforoChip value={d.favorability.semaforo} unfavorablePct={d.favorability.unfavorablePct} />
+                    : <span className="text-xs font-semibold text-slate-600 tabular-nums">{d.scorePct != null ? `${d.scorePct}%` : (d.average ?? "—")}</span>}
+                </div>
+                {d.favorability
+                  ? <div className="flex items-center gap-2">
+                      <span className="text-xs text-green-700 font-semibold w-9 text-right tabular-nums">{d.favorability.favorablePct}%</span>
+                      <div className="flex-1"><FavorabilityBar fav={d.favorability} /></div>
+                      <span className="text-xs text-red-700 font-semibold w-9 tabular-nums">{d.favorability.unfavorablePct}%</span>
                     </div>
-                    <span className="text-xs font-semibold text-slate-700 w-12 text-right tabular-nums">{d.scorePct}%</span>
-                  </>
-                ) : (
-                  <span className="text-xs font-semibold text-slate-700 w-12 text-right tabular-nums">{d.average != null ? d.average : "—"}</span>
-                )}
+                  : <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width:`${d.scorePct || 0}%`, background:GRAD }} />
+                    </div>}
               </div>
             ))}
           </div>
         </div>
       ))}
+      <p className="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-50">{t('rd_semaforo_legend')}</p>
+    </div>
+  );
+}
+
+/* Recortes obrigatórios: modalidade de contratação, distrito, regional e departamento.
+   É o cruzamento que hoje obriga uma segunda exportação manual. */
+function SegmentResults({ segments, segmentation }) {
+  const { t } = useLang();
+  const [tab, setTab] = useState(null);
+  if (!segments) return null;
+
+  const tabs = [
+    { id: "modalidade",   label: segmentation ? t('rd_seg_modalidade') : null, rows: segments.modalidade },
+    { id: "distrito",     label: t('rd_seg_distrito'),     rows: segments.distrito },
+    { id: "regional",     label: t('rd_seg_regional'),     rows: segments.regional },
+    { id: "departamento", label: t('rd_seg_departamento'), rows: segments.departamento },
+  ].filter(x => x.label && (x.rows || []).length);
+  if (!tabs.length) return null;
+  const active = tabs.find(x => x.id === tab) || tabs[0];
+
+  return (
+    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+      <div className="flex items-center gap-2 mb-1">
+        <BarChart2 size={15} style={{ color:"#5B21B6" }} />
+        <h4 className="text-sm font-semibold text-slate-800">{t('rd_segments')}</h4>
+      </div>
+      <p className="text-xs text-slate-400 mb-3">{t('rd_segments_sub')}</p>
+
+      <div className="flex flex-wrap gap-2 mb-4">
+        {tabs.map(x => (
+          <button key={x.id} onClick={() => setTab(x.id)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${active.id === x.id ? "text-white" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+            style={active.id === x.id ? { background: GRAD } : {}}>
+            {x.label}
+          </button>
+        ))}
+      </div>
+      {active.id === "modalidade" && segmentation && (
+        <p className="text-xs text-slate-400 mb-2 -mt-2">{segmentation.text}</p>
+      )}
+
+      <div className="space-y-3">
+        {active.rows.map((sgm, i) => (
+          <div key={i} className="border border-slate-100 rounded-xl p-3">
+            <div className="flex flex-wrap items-center gap-2 mb-1.5">
+              <span className="text-sm font-semibold text-slate-700 flex-1 min-w-0 truncate">{sgm.label}</span>
+              <span className="text-xs text-slate-400 whitespace-nowrap">{t('rd_seg_n', { n: sgm.responses })}</span>
+              {sgm.favorability
+                ? <SemaforoChip value={sgm.favorability.semaforo} unfavorablePct={sgm.favorability.unfavorablePct} />
+                : <span className="text-xs text-slate-400">{sgm.scorePct != null ? `${sgm.scorePct}%` : "—"}</span>}
+            </div>
+            {sgm.favorability && <FavorabilityBar fav={sgm.favorability} showLegend />}
+            {(sgm.dimensions || []).length > 0 && <SegmentDimensions dimensions={sgm.dimensions} />}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* As dimensões dentro de um recorte, recolhidas por padrão para não afogar a tela. */
+function SegmentDimensions({ dimensions }) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  const critical = dimensions.filter(d => d.favorability && d.favorability.semaforo === "vermelho");
+  return (
+    <div className="mt-2 pt-2 border-t border-slate-50">
+      <button onClick={() => setOpen(o => !o)} className="text-xs font-medium text-slate-500 flex items-center gap-1 hover:text-slate-700">
+        <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        {t('rd_seg_dimensions', { n: dimensions.length })}
+        {critical.length > 0 && !open && (
+          <span className="ml-1 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-semibold">
+            {t('rd_seg_critical', { n: critical.length })}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1">
+          {dimensions.map(d => (
+            <div key={d.id} className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 flex-1 min-w-0 truncate" title={d.set || ""}>{d.name}</span>
+              {d.favorability ? (
+                <>
+                  <span className="text-xs text-green-700 w-9 text-right tabular-nums">{d.favorability.favorablePct}%</span>
+                  <div className="w-20"><FavorabilityBar fav={d.favorability} /></div>
+                  <SemaforoChip value={d.favorability.semaforo} unfavorablePct={d.favorability.unfavorablePct} compact />
+                </>
+              ) : <span className="text-xs text-slate-400">{d.scorePct != null ? `${d.scorePct}%` : "—"}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -3280,7 +3769,11 @@ function ResultsDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <KpiCard title={t('rd_responses')} value={String(totalR)} subtitle={t('kpi_completed_evals')} icon={MessageSquare} colorClass="bg-purple-500" />
         <KpiCard title={t('rd_completion_rate')} value={`${compRate}%`} subtitle={t('rd_started_vs_completed')} icon={CheckCircle} colorClass="bg-emerald-500" />
-        {result?.overallScore != null
+        {result?.favorability
+          ? <KpiCard title={t('rd_favorability')} value={`${result.favorability.favorablePct}%`}
+              subtitle={t('rd_favorability_sub', { d: result.favorability.unfavorablePct })} icon={TrendingUp}
+              colorClass={result.favorability.semaforo === "verde" ? "bg-green-500" : result.favorability.semaforo === "amarelo" ? "bg-amber-500" : "bg-red-500"} />
+          : result?.overallScore != null
           ? <KpiCard title={t('rd_overall_score')} value={`${result.overallScore}%`} subtitle={t('rd_overall_score_sub')} icon={TrendingUp} colorClass="bg-blue-500" />
           : <KpiCard title={t('rd_nps_score')} value={nps ? String(nps.nps) : "—"} subtitle={nps ? nps.classification : t('rd_no_nps_q')} icon={TrendingUp} colorClass="bg-blue-500" />}
         <KpiCard title={t('rd_anonymity')} value={anon?t('status_ativo'):t('rd_inactive')} subtitle={t('rd_lgpd_protection')} icon={Shield} colorClass={anon?"bg-green-500":"bg-slate-400"} />
@@ -3293,6 +3786,7 @@ function ResultsDashboard() {
       ) : (
         <div className="space-y-4">
           <DimensionResults dimensions={result?.dimensions} />
+          <SegmentResults segments={result?.segments} segmentation={result?.segmentation} />
           {questions.map((q,i) => (
             <div key={q.questionId || i}>
               <QuestionResult q={q} />
