@@ -238,6 +238,48 @@ encurtar a escala abaixo do que já foi respondido, ou remover pergunta respondi
 
 ---
 
+## 🔗 Coletor: senha, cotas, variáveis no link e randomização
+
+O coletor é a forma como a pesquisa chega ao respondente. As opções ficam no
+editor da pesquisa, no painel **Opções do coletor**:
+
+| Opção | O que faz |
+|---|---|
+| **Senha de acesso** | O formulário só abre com a senha. Ela é guardada em hash e nunca volta para a tela: o editor mostra apenas “senha definida”, com a opção de remover. A senha é revalidada no envio, para que não baste chamar a API direto. |
+| **Página de agradecimento** | Substitui o texto final padrão. |
+| **Permitir corrigir a resposta** | Quem já respondeu reabre o formulário com o que enviou e ajusta. A correção regrava a mesma resposta — não entra como resposta nova na apuração. Pelo link nominal a pessoa é reconhecida pelo convite; pelo link geral, pelo próprio navegador (a pesquisa continua anônima: o identificador é aleatório e fica no dispositivo). |
+| **Cota por distrito** | O distrito para de receber respostas ao atingir a meta cadastrada na Estrutura. Quem abre o link depois disso vê a tela de cota atingida, com o número já recebido. |
+| **Embaralhar alternativas** | Só nas perguntas de escolha sem peso e sem alternativa neutra — escala pontuada e “Não se aplica” nunca são embaralhadas. |
+| **Embaralhar perguntas** | Desligado automaticamente quando o questionário tem lógica condicional, que depende da ordem. A ordem é sorteada por respondente e **se mantém se a pessoa recarregar a página**. |
+
+### Variáveis no link
+
+O link pode já trazer a classificação do respondente:
+
+```
+https://<app>/r/<token>?distrito=SP+Capital&modalidade=Mensalista
+```
+
+Aceita `distrito`, `regional`, `departamento` e `modalidade`, por id ou por nome
+(sem diferenciar acento ou caixa). Com isso a resposta nasce classificada e a
+pergunta de segmentação **some do formulário**, já respondida pelo link. O que não
+casar com o cadastro é descartado e registrado — nada entra classificado por
+engano. O que foi reconhecido aparece como selo no topo do formulário, para o
+respondente conferir.
+
+---
+
+## 🔀 Cruzamento
+
+Em Resultados, o painel **Cruzamento** monta a matriz entre dois eixos quaisquer —
+pergunta × pergunta ou pergunta × segmento (modalidade, distrito, regional,
+departamento). Os percentuais são sobre o total da linha, a coluna neutra vem
+destacada, cada linha traz favorabilidade e semáforo, e a matriz exporta em CSV.
+Respostas sem classificação no eixo escolhido ficam de fora e são informadas no
+rodapé, em vez de sumirem da conta.
+
+---
+
 ## 🔄 Fluxo de deploy automático
 
 ```
@@ -288,6 +330,10 @@ rodando  no ar
 | POST   | /api/v1/invitations/survey/:id | ✅ | Criar e disparar convites pelo servidor |
 | POST   | /api/v1/invitations/survey/:id/remind | ✅ | Lembrar quem não respondeu |
 | GET    | /api/v1/invitations/survey/:id/adherence | ✅ | Adesão por distrito durante a coleta |
+| GET    | /api/v1/results/:surveyId/crosstab-axes | ✅ | Eixos disponíveis para o cruzamento |
+| GET    | /api/v1/results/:surveyId/crosstab | ✅ | Matriz de cruzamento (`rows`/`cols`: `q:<id>` ou `seg:<recorte>`) |
+| GET    | /api/v1/surveys/:id/versions · /history | ✅ | Versões publicadas e histórico de alterações |
+| GET    | /api/v1/surveys/:id/export-questions | ✅ | Questionário no formato da planilha |
 
 ---
 

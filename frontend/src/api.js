@@ -162,6 +162,9 @@ export const api = {
     insights:  (surveyId, lang) => request('POST', '/results/insights', { surveyId, lang }),
     segments:  (surveyId) => request('GET', `/results/segments?surveyId=${encodeURIComponent(surveyId)}`),
     segmentQuestions: (surveyId) => request('GET', `/results/segment-questions?surveyId=${encodeURIComponent(surveyId)}`),
+    crosstabAxes: (surveyId) => request('GET', `/results/${encodeURIComponent(surveyId)}/crosstab-axes`),
+    crosstab: (surveyId, rows, cols) =>
+      request('GET', `/results/${encodeURIComponent(surveyId)}/crosstab?rows=${encodeURIComponent(rows)}&cols=${encodeURIComponent(cols)}`),
     pdf: async (surveyId, lang) => {
       const q = lang ? `?lang=${encodeURIComponent(lang)}` : '';
       const path = `/results/${encodeURIComponent(surveyId)}/pdf${q}`;

@@ -100,6 +100,22 @@ function applyRandomization(survey, questions, seed) {
   return list;
 }
 
+/* Resposta anterior deste respondente, quando a pesquisa permite corrigir o envio.
+ * Pelo convite quando o link é nominal; pelo dispositivo quando é o link geral — numa
+ * pesquisa anônima o dispositivo é o único identificador que sobra de quem já respondeu.
+ * Sem isso, "permitir corrigir a resposta" só valeria para quem recebeu convite. */
+function previousResponse(db, survey, invitation, device) {
+  if (!survey.allow_edit) return null;
+  if (invitation) {
+    if (!invitation.responded_at) return null;
+    return db.prepare(`SELECT id FROM responses WHERE invitation_id=? AND completed_at IS NOT NULL
+                       ORDER BY completed_at DESC LIMIT 1`).get(invitation.id) || null;
+  }
+  if (!device) return null;
+  return db.prepare(`SELECT id FROM responses WHERE survey_id=? AND device_id=? AND completed_at IS NOT NULL
+                     ORDER BY completed_at DESC LIMIT 1`).get(survey.id, device) || null;
+}
+
 /* GET /public/survey/:token  — get survey by public token (no auth) */
 function getPublic(req, res) {
   try {
@@ -128,9 +144,8 @@ function getPublic(req, res) {
     if (quota) return ok(res, { closed: true, quotaReached: quota, survey: shortSurvey }, 'Cota deste distrito atingida');
 
     // Convite já respondido: só reabre quando a pesquisa permite editar a resposta.
-    const previous = invitation && invitation.responded_at
-      ? db.prepare('SELECT id FROM responses WHERE invitation_id=? AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 1').get(invitation.id)
-      : null;
+    const device = String(req.query.device || '').trim().slice(0, 64) || null;
+    const previous = previousResponse(db, survey, invitation, device);
     if (invitation && invitation.responded_at && !survey.allow_edit)
       return ok(res, { alreadyAnswered: true, survey: shortSurvey }, 'Este convite já foi respondido');
 
@@ -156,7 +171,7 @@ function getPublic(req, res) {
 
     // Respostas anteriores, quando a pesquisa permite corrigir o que foi enviado.
     let answers = null;
-    if (previous && survey.allow_edit) {
+    if (previous) {
       answers = {};
       db.prepare('SELECT question_id, value_text, value_num, value_json FROM answers WHERE response_id=?').all(previous.id)
         .forEach(a => {
@@ -208,9 +223,8 @@ function submitPublic(req, res) {
     const finalDepto    = departamentoId || linkVars.departamentoId;
 
     // Correção de uma resposta já enviada, quando a pesquisa permite.
-    const previous = (survey.allow_edit && invitation && invitation.responded_at)
-      ? db.prepare('SELECT id FROM responses WHERE invitation_id=? AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 1').get(invitation.id)
-      : null;
+    const device = String(deviceId || '').trim().slice(0, 64) || null;
+    const previous = previousResponse(db, survey, invitation, device);
 
     if (!previous) {
       if (reachedLimit(db, survey)) return badReq(res, 'Esta pesquisa já atingiu o limite de respostas definido.');
@@ -220,7 +234,6 @@ function submitPublic(req, res) {
         return badReq(res, 'Este convite já foi respondido. Cada link aceita uma única resposta.');
     }
 
-    const device = String(deviceId || '').trim().slice(0, 64) || null;
     if (!previous && survey.one_per_device && device) {
       const dup = db.prepare('SELECT 1 FROM responses WHERE survey_id=? AND device_id=? AND completed_at IS NOT NULL').get(survey.id, device);
       if (dup) return badReq(res, 'Já registramos uma resposta deste dispositivo para esta pesquisa.');
@@ -242,7 +255,7 @@ function submitPublic(req, res) {
                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         responseId, survey.id, survey.anonymous ? null : (respondentId || (invitation && invitation.respondent_id) || null),
         hashIP(req.ip || ''), finalDistrito || null, finalDepto || null,
-        survey.one_per_device ? device : null, invitation ? invitation.id : null, campaignId,
+        (survey.one_per_device || survey.allow_edit) ? device : null, invitation ? invitation.id : null, campaignId,
         version ? version.id : null, version ? version.number : null,
         Object.keys(linkVars.resolved).length ? JSON.stringify(linkVars.resolved) : null
       );

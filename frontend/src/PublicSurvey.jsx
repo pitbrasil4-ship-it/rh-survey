@@ -29,10 +29,29 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const RED = '#DC2626';
 const RED_DARK = '#B91C1C';
 
-async function pub(method, token, body) {
-  const res = await fetch(`${API_URL}/api/v1/public/survey/${encodeURIComponent(token)}`, {
+/* Variáveis que vieram no link (distrito, regional, departamento, modalidade).
+   São repassadas ao servidor, que as resolve de novo contra o cadastro. */
+function linkVarsFromURL() {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    const out = {};
+    ['distrito', 'regional', 'departamento', 'modalidade'].forEach(k => {
+      const v = q.get(k); if (v) out[k] = v;
+    });
+    return out;
+  } catch { return {}; }
+}
+
+async function pub(method, token, body, password) {
+  const qs = new URLSearchParams(linkVarsFromURL());
+  if (password) qs.set('password', password);
+  // Na abertura o dispositivo vai junto: é por ele que o servidor reencontra uma
+  // resposta anterior para corrigir, quando a pesquisa permite.
+  if (method === 'GET') { const d = deviceId(); if (d) qs.set('device', d); }
+  const suffix = method === 'GET' && qs.toString() ? `?${qs}` : '';
+  const res = await fetch(`${API_URL}/api/v1/public/survey/${encodeURIComponent(token)}${suffix}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(password ? { 'X-Survey-Password': password } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   let json = null;
@@ -245,8 +264,9 @@ function FormInput({ fields, value, onChange, tr, showErrors }) {
   );
 }
 
-/* Identificador do dispositivo — usado só para barrar resposta repetida quando a
-   pesquisa liga esse controle. Fica no próprio navegador e não identifica a pessoa. */
+/* Identificador do dispositivo — usado para barrar resposta repetida e, quando a
+   pesquisa permite corrigir o envio, para reencontrar a resposta anterior de quem
+   respondeu pelo link geral. Fica no próprio navegador e não identifica a pessoa. */
 function deviceId() {
   try {
     let id = localStorage.getItem('rh_device');
@@ -310,30 +330,56 @@ export default function PublicSurvey({ token }) {
   const [onePerDevice, setOnePerDevice] = useState(false);
   const [invited, setInvited] = useState(null);
   const [limitReached, setLimitReached] = useState(false);
+  const [quota, setQuota] = useState(null);          // cota do distrito atingida
+  const [password, setPassword] = useState("");      // senha do coletor
+  const [pwInput, setPwInput] = useState("");
+  const [pwWrong, setPwWrong] = useState(false);
+  const [thankYou, setThankYou] = useState("");      // página final personalizada
+  const [allowEdit, setAllowEdit] = useState(false); // pesquisa aceita corrigir o envio
+  const [editing, setEditing] = useState(null);      // resposta anterior, para corrigir
+  const [prefill, setPrefill] = useState(null);      // resposta vinda do link
+  const [linkInfo, setLinkInfo] = useState(null);
   const [lang, setLang] = useState(initialLang);
   const tr = (k, v) => t(lang, k, v);
   const changeLang = (l) => { setLang(l); storeLang(l); };
 
+  const load = async (pw) => {
+    try {
+      const data = await pub('GET', token, null, pw);
+      if (data.passwordRequired) {
+        setSurvey(data.survey); setPwWrong(!!data.wrongPassword); setState('password');
+        return;
+      }
+      if (data.closed) {
+        setSurvey(data.survey); setLimitReached(!!data.limitReached);
+        setQuota(data.quotaReached || null); setState('closed');
+        return;
+      }
+      if (data.alreadyAnswered) { setSurvey(data.survey); setState('answered'); return; }
+      setSurvey(data.survey);
+      setQuestions(data.questions || []);
+      setOnePerDevice(!!data.onePerDevice);
+      setAllowEdit(!!data.allowEdit);
+      setInvited(data.invited || null);
+      setThankYou(data.thankYou || "");
+      setPrefill(data.prefill || null);
+      setLinkInfo(data.linkVars || null);
+      setEditing(data.editing || null);
+      // Corrigir uma resposta já enviada: o formulário abre com o que foi respondido.
+      if (data.editing && data.editing.answers) setAnswers(data.editing.answers);
+      if (pw) setPassword(pw);
+      setState('ready');
+    } catch (e) {
+      setState(e.status === 404 ? 'notfound' : 'error');
+      setErrMsg(e.message || '');
+    }
+  };
+
   useEffect(() => {
     let alive = true;
-    (async () => {
-      try {
-        const data = await pub('GET', token);
-        if (!alive) return;
-        if (data.closed) { setSurvey(data.survey); setLimitReached(!!data.limitReached); setState('closed'); return; }
-        if (data.alreadyAnswered) { setSurvey(data.survey); setState('answered'); return; }
-        setSurvey(data.survey);
-        setQuestions(data.questions || []);
-        setOnePerDevice(!!data.onePerDevice);
-        setInvited(data.invited || null);
-        setState('ready');
-      } catch (e) {
-        if (!alive) return;
-        setState(e.status === 404 ? 'notfound' : 'error');
-        setErrMsg(e.message || '');
-      }
-    })();
+    (async () => { if (alive) await load(); })();
     return () => { alive = false; };
+  /* eslint-disable-next-line */
   }, [token]);
 
   const setAns = (qid, value) => setAnswers(prev => ({ ...prev, [qid]: value }));
@@ -391,10 +437,18 @@ export default function PublicSurvey({ token }) {
     const payload = visible
       .map(q => ({ questionId: q.id, value: finalValue(q) }))
       .filter(a => filled(a.value));
+    // A resposta que veio no link (ex.: modalidade) vai junto, mesmo sem aparecer na tela.
+    if (prefill) payload.unshift({ questionId: prefill.questionId, value: prefill.value });
     if (payload.length === 0) { setErrMsg(tr('at_least_one')); return; }
     setSubmitting(true);
     try {
-      await pub('POST', token, { answers: payload, deviceId: onePerDevice ? deviceId() : undefined });
+      const r = await pub('POST', token, {
+        answers: payload,
+        deviceId: (onePerDevice || allowEdit) ? deviceId() : undefined,
+        linkVars: linkVarsFromURL(),
+        ...(password ? { password } : {}),
+      });
+      if (r && r.thankYou) setThankYou(r.thankYou);
       setState('done');
     } catch (e) {
       setErrMsg(e.message || tr('submit_error'));
@@ -420,13 +474,35 @@ export default function PublicSurvey({ token }) {
       <button onClick={() => window.location.reload()} style={{ padding:'10px 18px', background:RED, color:'white', border:'none', borderRadius:10, cursor:'pointer', fontWeight:700, fontSize:14 }}>{tr('reload')}</button>
     </Card></Shell>;
   }
+  if (state === 'password') {
+    const nm = (lang !== 'pt' && survey && survey['name_'+lang]) ? survey['name_'+lang] : (survey && survey.name);
+    return <Shell>
+      <div style={{ marginBottom:16 }}><Logo /></div>
+      <LangPicker lang={lang} setLang={changeLang} />
+      <Card>
+        <div style={{ width:56, height:56, borderRadius:'50%', background:'#F1F5F9', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', fontSize:26 }}>🔒</div>
+        <h2 style={{ color:'#0F172A', fontSize:19, margin:'0 0 6px', textAlign:'center' }}>{tr('pw_title')}</h2>
+        {nm ? <p style={{ color:'#334155', fontSize:14, fontWeight:600, margin:'0 0 14px', textAlign:'center' }}>{nm}</p> : null}
+        <input type="password" value={pwInput} onChange={e => { setPwInput(e.target.value); setPwWrong(false); }}
+          onKeyDown={e => { if (e.key === 'Enter' && pwInput) load(pwInput); }}
+          placeholder={tr('pw_placeholder')} autoFocus
+          style={{ width:'100%', boxSizing:'border-box', border:`1px solid ${pwWrong ? '#FCA5A5' : '#E2E8F0'}`, borderRadius:10, padding:'12px 14px', fontSize:15, fontFamily:'inherit' }} />
+        {pwWrong ? <p style={{ color:RED_DARK, fontSize:13, margin:'8px 0 0' }}>{tr('pw_wrong')}</p> : null}
+        <button onClick={() => load(pwInput)} disabled={!pwInput}
+          style={{ width:'100%', marginTop:14, padding:'12px', background: pwInput ? RED : '#FCA5A5', color:'white', border:'none', borderRadius:10, cursor: pwInput ? 'pointer' : 'default', fontWeight:700, fontSize:14 }}>
+          {tr('pw_submit')}
+        </button>
+      </Card>
+    </Shell>;
+  }
+
   if (state === 'done') {
     return <Shell>
       <div style={{ marginBottom:16 }}><Logo /></div>
       <Card style={{ textAlign:'center' }}>
         <div style={{ width:64, height:64, borderRadius:'50%', background:'#DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', fontSize:30 }}>✓</div>
-        <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>{tr('done_title')}</h2>
-        <p style={{ color:'#64748B', fontSize:14, margin:0 }}>{tr('done_body')}</p>
+        <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>{editing ? tr('done_updated_title') : tr('done_title')}</h2>
+        <p style={{ color:'#64748B', fontSize:14, margin:0, whiteSpace:'pre-line' }}>{thankYou || tr('done_body')}</p>
         {survey && survey.anonymous ? <p style={{ color:'#16A34A', fontSize:12, marginTop:12, fontWeight:600 }}>{tr('anon_note')}</p> : null}
       </Card>
     </Shell>;
@@ -453,7 +529,10 @@ export default function PublicSurvey({ token }) {
         <div style={{ width:64, height:64, borderRadius:'50%', background:'#FEE2E2', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', fontSize:30 }}>🔒</div>
         <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>{tr('survey_closed_title')}</h2>
         {nm ? <p style={{ color:'#334155', fontSize:14, fontWeight:600, margin:'0 0 6px' }}>{nm}</p> : null}
-        <p style={{ color:'#64748B', fontSize:14, margin:0 }}>{limitReached ? tr('limit_reached_body') : tr('survey_closed_body')}</p>
+        <p style={{ color:'#64748B', fontSize:14, margin:0 }}>
+          {quota ? tr('quota_reached_body', { distrito: quota.distrito, meta: quota.meta })
+            : limitReached ? tr('limit_reached_body') : tr('survey_closed_body')}
+        </p>
       </Card>
     </Shell>;
   }
@@ -463,6 +542,11 @@ export default function PublicSurvey({ token }) {
     <Shell>
       <div style={{ marginBottom:16 }}><Logo /></div>
       <LangPicker lang={lang} setLang={changeLang} />
+      {editing ? (
+        <Card style={{ marginBottom:14, background:'#EFF6FF', borderColor:'#BFDBFE' }}>
+          <p style={{ margin:0, fontSize:13, color:'#1D4ED8' }}>✎ {tr('editing_notice')}</p>
+        </Card>
+      ) : null}
       <Card style={{ marginBottom:16, borderTop:`3px solid ${RED}` }}>
         <h1 style={{ color:'#0F172A', fontSize:22, margin:'0 0 6px' }}>{(lang !== 'pt' && survey['name_'+lang]) ? survey['name_'+lang] : survey.name}</h1>
         {survey.description ? <p style={{ color:'#64748B', fontSize:14, margin:'0 0 10px' }}>{(lang !== 'pt' && survey['description_'+lang]) ? survey['description_'+lang] : survey.description}</p> : null}
@@ -471,6 +555,8 @@ export default function PublicSurvey({ token }) {
           <span style={{ background:'#F0FDF4', color:'#16A34A', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{tr('lgpd_badge')}</span>
           <span style={{ background:'#F1F5F9', color:'#64748B', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{visible.length} {visible.length!==1 ? tr('q_many') : tr('q_one')}</span>
           {invited && invited.name ? <span style={{ background:'#FEF2F2', color:RED_DARK, padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{tr('invited_as', { name: invited.name })}</span> : null}
+          {linkInfo ? <span style={{ background:'#F8FAFC', color:'#64748B', padding:'3px 10px', borderRadius:99, fontWeight:600 }}
+            title={tr('linkvars_hint')}>{Object.values(linkInfo).join(' · ')}</span> : null}
         </div>
       </Card>
 
@@ -535,7 +621,7 @@ export default function PublicSurvey({ token }) {
         <span style={{ fontSize:13, color:'#64748B' }}>{tr('answered_of', { a: answeredCount, b: visible.length })}</span>
         <button onClick={submit} disabled={submitting}
           style={{ padding:'12px 24px', background: submitting ? '#FCA5A5' : RED, color:'white', border:'none', borderRadius:10, cursor: submitting ? 'default' : 'pointer', fontWeight:700, fontSize:14 }}>
-          {submitting ? tr('sending') : tr('submit_answers')}
+          {submitting ? tr('sending') : (editing ? tr('submit_update') : tr('submit_answers'))}
         </button>
       </Card>
 

@@ -1777,6 +1777,12 @@ function SurveyBuilder({ onBack, initial, editId }) {
   const [dimensionSets, setDimensionSets] = useState([]);
   const [onePerDevice, setOnePerDevice]   = useState(!!initial?.one_per_device);
   const [maxResponses, setMaxResponses]   = useState(initial?.max_responses ? String(initial.max_responses) : "");
+  // Opções do coletor: senha, página final, edição da resposta, randomização e cota.
+  const [collector, setCollector] = useState({
+    accessPassword: null, hasPassword: false, thankYou: "",
+    allowEdit: false, randomizeQuestions: false, randomizeOptions: false, enforceQuota: false,
+  });
+  const [showCollector, setShowCollector] = useState(false);
   const [loadingEdit, setLoadingEdit]     = useState(!!editId);
   const [responseCount, setResponseCount] = useState(0);
   // Classificação como estava ao abrir: serve para detectar reclassificação e só então
@@ -1823,6 +1829,11 @@ function SurveyBuilder({ onBack, initial, editId }) {
         setDeadline(sv.deadline ? String(sv.deadline).slice(0, 10) : "");
         setOnePerDevice(!!sv.one_per_device);
         setMaxResponses(sv.max_responses ? String(sv.max_responses) : "");
+        setCollector({
+          accessPassword: null, hasPassword: !!sv.hasPassword, thankYou: sv.thank_you || "",
+          allowEdit: !!sv.allow_edit, randomizeQuestions: !!sv.randomize_questions,
+          randomizeOptions: !!sv.randomize_options, enforceQuota: !!sv.enforce_quota,
+        });
         const qs = (d.questions || []).map(toEditorQuestion);
         setQuestions(qs);
         setResponseCount(d.responseCount || 0);
@@ -1949,6 +1960,13 @@ function SurveyBuilder({ onBack, initial, editId }) {
         deadline: deadline ? deadline + "T23:59:59-03:00" : null,
         onePerDevice,
         maxResponses: maxResponses ? parseInt(maxResponses, 10) : null,
+        thankYou: collector.thankYou,
+        allowEdit: collector.allowEdit,
+        randomizeQuestions: collector.randomizeQuestions,
+        randomizeOptions: collector.randomizeOptions,
+        enforceQuota: collector.enforceQuota,
+        // Só manda a senha quando ela foi mexida: null deixa a que está como está.
+        ...(collector.accessPassword === null ? {} : { accessPassword: collector.accessPassword }),
         lgpdBasis: "consentimento",
       };
       let id = editId;
@@ -2190,6 +2208,79 @@ function SurveyBuilder({ onBack, initial, editId }) {
               <div className="text-[11px] text-slate-500">{t('sb_one_per_device_hint')}</div>
             </div>
           </div>
+        </div>
+
+        {/* Opções do coletor */}
+        <div className="border border-slate-200 rounded-xl mb-4 overflow-hidden">
+          <button type="button" onClick={() => setShowCollector(o => !o)}
+            className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-50 text-left">
+            <ChevronDown size={14} className={`text-slate-400 transition-transform ${showCollector ? "rotate-180" : ""}`} />
+            <Lock size={13} className="text-slate-500" />
+            <span className="text-sm font-semibold text-slate-700 flex-1">{t('cl_title')}</span>
+            <span className="text-xs text-slate-400">{[
+              collector.hasPassword || collector.accessPassword ? t('cl_password_on') : null,
+              collector.allowEdit ? t('cl_allow_edit_short') : null,
+              collector.enforceQuota ? t('cl_quota_short') : null,
+              (collector.randomizeQuestions || collector.randomizeOptions) ? t('cl_random_short') : null,
+            ].filter(Boolean).join(" · ") || t('cl_none')}</span>
+          </button>
+          {showCollector && (
+            <div className="px-4 pb-4 pt-1 border-t border-slate-100 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1">{t('cl_password')}</label>
+                  {collector.hasPassword && collector.accessPassword === null ? (
+                    <div className="flex items-center gap-2">
+                      <span className="flex-1 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">{t('cl_password_set')}</span>
+                      <button type="button" onClick={() => setCollector(c => ({ ...c, accessPassword: "" }))}
+                        className="text-xs font-medium text-red-600 border border-red-200 rounded-lg px-2.5 py-2 hover:bg-red-50">{t('cl_password_remove')}</button>
+                    </div>
+                  ) : (
+                    <input type="text" value={collector.accessPassword || ""} placeholder={t('cl_password_ph')}
+                      onChange={e => setCollector(c => ({ ...c, accessPassword: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-purple-400" />
+                  )}
+                  <p className="text-[11px] text-slate-400 mt-1">{t('cl_password_hint')}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1">{t('cl_thankyou')}</label>
+                  <input value={collector.thankYou} onChange={e => setCollector(c => ({ ...c, thankYou: e.target.value }))}
+                    placeholder={t('cl_thankyou_ph')}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-purple-400" />
+                  <p className="text-[11px] text-slate-400 mt-1">{t('cl_thankyou_hint')}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  ["allowEdit",          t('cl_allow_edit'),   t('cl_allow_edit_hint')],
+                  ["enforceQuota",       t('cl_quota'),        t('cl_quota_hint')],
+                  ["randomizeOptions",   t('cl_rand_options'), t('cl_rand_options_hint')],
+                  ["randomizeQuestions", t('cl_rand_questions'), t('cl_rand_questions_hint')],
+                ].map(([key, label, hint]) => (
+                  <label key={key} className="flex items-start gap-2.5 cursor-pointer">
+                    <input type="checkbox" checked={!!collector[key]} className="accent-purple-600 mt-0.5"
+                      onChange={() => setCollector(c => ({ ...c, [key]: !c[key] }))} />
+                    <span>
+                      <span className="text-xs font-medium text-slate-700">{label}</span>
+                      <span className="block text-[11px] text-slate-500">{hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {collector.randomizeQuestions && questions.some(q => q.logic && (q.logic.showIf || q.logic.endIf)) && (
+                <p className="text-xs text-amber-600 flex items-start gap-1">
+                  <AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />{t('cl_rand_logic_warning')}
+                </p>
+              )}
+              <div className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                <p className="text-xs font-medium text-slate-600 mb-1">{t('cl_linkvars')}</p>
+                <p className="text-[11px] text-slate-500 leading-relaxed">{t('cl_linkvars_hint')}</p>
+                <code className="block text-[11px] text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1.5 mt-1.5 break-all">
+                  {(typeof window !== "undefined" ? window.location.origin : "")}/r/&lt;token&gt;?distrito=SP+Capital&amp;modalidade=Mensalista
+                </code>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* LGPD Panel */}
@@ -3478,6 +3569,179 @@ function DimensionResults({ dimensions }) {
   );
 }
 
+/* Cruzamento (crosstab).
+ *
+ * Pergunta ou segmento nas linhas e nas colunas. É o relatório que hoje obriga uma
+ * segunda exportação manual: modalidade × resposta, distrito × modalidade, e por aí. */
+function CrosstabPanel({ surveyId }) {
+  const { t } = useLang();
+  const [axes, setAxes]   = useState([]);
+  const [rows, setRows]   = useState("");
+  const [cols, setCols]   = useState("");
+  const [data, setData]   = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [open, setOpen]   = useState(false);
+
+  useEffect(() => {
+    if (!surveyId || !open) return;
+    let alive = true;
+    api.results.crosstabAxes(surveyId).then(d => {
+      if (!alive) return;
+      const list = d.axes || [];
+      setAxes(list);
+      // Abre já no cruzamento mais pedido: o segmento nas linhas, a 1ª pergunta nas colunas.
+      const seg = list.find(a => a.kind === "segmento");
+      const q   = list.find(a => a.kind === "pergunta" && a.type !== "multiple");
+      if (seg && q) { setRows(seg.key); setCols(q.key); }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [surveyId, open]);
+
+  useEffect(() => {
+    if (!rows || !cols || !open) return;
+    let alive = true;
+    setLoading(true); setError("");
+    api.results.crosstab(surveyId, rows, cols)
+      .then(d => { if (alive) setData(d); })
+      .catch(e => { if (alive) { setError((e && e.message) || t('ct_error')); setData(null); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [surveyId, rows, cols, open]);
+
+  const exportCsv = () => {
+    if (!data) return;
+    const head = [data.rowLabel || "", ...data.cols, t('ct_total'), t('qr_favorable')];
+    const body = data.rows.map((r, i) => [
+      r,
+      ...data.cells[i].map(c => `${c.count} (${c.pct}%)`),
+      data.rowTotals[i],
+      data.rowFav && data.rowFav[i] ? `${data.rowFav[i].favorablePct}%` : "",
+    ]);
+    body.push([t('ct_total'), ...data.colTotals, data.classified, ""]);
+    downloadCSV("cruzamento.csv", [head, ...body]);
+  };
+
+  if (!surveyId) return null;
+  const swap = () => { const r = rows; setRows(cols); setCols(r); };
+
+  return (
+    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 w-full text-left">
+        <ChevronDown size={15} className={`text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        <BarChart2 size={15} style={{ color:"#5B21B6" }} />
+        <span className="text-sm font-semibold text-slate-800 flex-1">{t('ct_title')}</span>
+      </button>
+      {!open && <p className="text-xs text-slate-400 mt-1 pl-7">{t('ct_sub')}</p>}
+
+      {open && (
+        <>
+          <p className="text-xs text-slate-400 mt-1 mb-3 pl-7">{t('ct_sub')}</p>
+          <div className="flex flex-wrap items-end gap-2 mb-4">
+            <div className="flex-1 min-w-[200px]">
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('ct_rows')}</label>
+              <select value={rows} onChange={e => setRows(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:border-purple-400">
+                <option value="">{t('ct_pick')}</option>
+                <optgroup label={t('ct_segments')}>
+                  {axes.filter(a => a.kind === "segmento").map(a => <option key={a.key} value={a.key}>{a.label.slice(0, 70)}</option>)}
+                </optgroup>
+                <optgroup label={t('ct_questions')}>
+                  {axes.filter(a => a.kind === "pergunta").map(a => <option key={a.key} value={a.key}>{a.label.slice(0, 70)}</option>)}
+                </optgroup>
+              </select>
+            </div>
+            <button onClick={swap} title={t('ct_swap')}
+              className="px-2.5 py-2 border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-50 text-xs">⇄</button>
+            <div className="flex-1 min-w-[200px]">
+              <label className="text-xs font-medium text-slate-600 block mb-1">{t('ct_cols')}</label>
+              <select value={cols} onChange={e => setCols(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:border-purple-400">
+                <option value="">{t('ct_pick')}</option>
+                <optgroup label={t('ct_segments')}>
+                  {axes.filter(a => a.kind === "segmento").map(a => <option key={a.key} value={a.key}>{a.label.slice(0, 70)}</option>)}
+                </optgroup>
+                <optgroup label={t('ct_questions')}>
+                  {axes.filter(a => a.kind === "pergunta").map(a => <option key={a.key} value={a.key}>{a.label.slice(0, 70)}</option>)}
+                </optgroup>
+              </select>
+            </div>
+            {data && !loading && (
+              <button onClick={exportCsv} className="px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-600 hover:bg-slate-50 flex items-center gap-1.5">
+                <Download size={12} />{t('common_export_csv')}
+              </button>
+            )}
+          </div>
+
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-xs">{error}</div>}
+          {loading && <div className="flex items-center justify-center py-8 text-slate-400 text-sm gap-2"><Loader2 size={16} className="animate-spin" />{t('sl_loading')}</div>}
+
+          {data && !loading && (data.empty || !data.rows.length ? (
+            <p className="text-sm text-slate-400 py-6 text-center">{t('ct_empty')}</p>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50">
+                      <th className="text-left font-semibold text-slate-500 px-3 py-2 border-b border-slate-200 sticky left-0 bg-slate-50">
+                        {String(data.rowLabel || "").slice(0, 40)}
+                      </th>
+                      {data.cols.map((c, j) => (
+                        <th key={j} className={`text-center font-semibold px-3 py-2 border-b border-slate-200 ${c === data.neutralCol ? "text-amber-600" : "text-slate-500"}`}>
+                          {c}
+                        </th>
+                      ))}
+                      <th className="text-center font-semibold text-slate-500 px-3 py-2 border-b border-slate-200">{t('ct_total')}</th>
+                      {data.rowFav && data.rowFav.some(Boolean) && (
+                        <th className="text-center font-semibold text-slate-500 px-3 py-2 border-b border-slate-200">{t('qr_favorable')}</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.rows.map((r, i) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        <td className="px-3 py-2 border-b border-slate-100 font-medium text-slate-700 sticky left-0 bg-white">{r}</td>
+                        {data.cells[i].map((c, j) => (
+                          <td key={j} className="px-3 py-2 border-b border-slate-100 text-center tabular-nums">
+                            <span className="font-semibold text-slate-700">{c.count}</span>
+                            <span className="text-slate-400"> ({c.pct}%)</span>
+                          </td>
+                        ))}
+                        <td className="px-3 py-2 border-b border-slate-100 text-center font-semibold text-slate-600 tabular-nums">{data.rowTotals[i]}</td>
+                        {data.rowFav && data.rowFav.some(Boolean) && (
+                          <td className="px-3 py-2 border-b border-slate-100 text-center">
+                            {data.rowFav[i] ? (
+                              <div className="flex items-center justify-center gap-1.5">
+                                <span className="font-semibold tabular-nums" style={{ color: "#16A34A" }}>{data.rowFav[i].favorablePct}%</span>
+                                <SemaforoChip value={data.rowFav[i].semaforo} unfavorablePct={data.rowFav[i].unfavorablePct} />
+                              </div>
+                            ) : <span className="text-slate-300">—</span>}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                    <tr className="bg-slate-50 font-semibold text-slate-600">
+                      <td className="px-3 py-2 sticky left-0 bg-slate-50">{t('ct_total')}</td>
+                      {data.colTotals.map((c, j) => <td key={j} className="px-3 py-2 text-center tabular-nums">{c}</td>)}
+                      <td className="px-3 py-2 text-center tabular-nums">{data.classified}</td>
+                      {data.rowFav && data.rowFav.some(Boolean) && <td />}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-slate-400 mt-2">
+                {t('ct_pct_note')}
+                {data.unclassified > 0 && ` · ${t('ct_unclassified', { n: data.unclassified })}`}
+              </p>
+            </>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 /* Recortes obrigatórios: modalidade de contratação, distrito, regional e departamento.
    É o cruzamento que hoje obriga uma segunda exportação manual. */
 function SegmentResults({ segments, segmentation }) {
@@ -3790,6 +4054,7 @@ function ResultsDashboard() {
         <div className="space-y-4">
           <DimensionResults dimensions={result?.dimensions} />
           <SegmentResults segments={result?.segments} segmentation={result?.segmentation} />
+          <CrosstabPanel surveyId={selectedId} />
           {questions.map((q,i) => (
             <div key={q.questionId || i}>
               <QuestionResult q={q} />
