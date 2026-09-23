@@ -380,7 +380,7 @@ const SURVEY_TEMPLATES = [
     { text:"Meu gestor e equipe me deram o apoio necessário.", type:"scale", options:["Discordo totalmente","Discordo","Neutro","Concordo","Concordo totalmente"] },
     { text:"O que poderia tornar a integração de novos colaboradores melhor?", type:"text" },
   ] },
-  { id:6, name:"Pesquisa Pulso Semanal", category:"Pulso", tags:["Ágil","Semanal"], questions:[
+  { id:7, name:"Pesquisa Pulso Semanal", category:"Pulso", tags:["Ágil","Semanal"], questions:[
     { text:"Como você se sentiu em relação ao trabalho nesta semana?", type:"scale", options:["Muito mal","Mal","Neutro","Bem","Muito bem"] },
     { text:"Você teve clareza das prioridades nesta semana?", type:"yesno" },
     { text:"Algo está te bloqueando ou preocupando? (opcional)", type:"text" },
