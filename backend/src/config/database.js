@@ -315,6 +315,16 @@ function initSchema() {
     FOREIGN KEY(answer_id) REFERENCES answers(id) ON DELETE CASCADE
   )`); } catch (e) {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_creviews_survey ON comment_reviews(survey_id)"); } catch (e) {}
+
+  /* Visões nomeadas: um recorte salvo com nome, para não remontar a mesma leitura toda
+   * semana. Guarda o RECORTE, nunca o resultado — reabrir recalcula sobre os dados de
+   * hoje, que é a diferença entre uma visão e um print. */
+  try { db.exec(`CREATE TABLE IF NOT EXISTS saved_views (
+    id TEXT PRIMARY KEY, tenant_id TEXT, user_id TEXT, survey_id TEXT,
+    name TEXT NOT NULL, kind TEXT DEFAULT 'resultados', filters TEXT,
+    shared INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_views_tenant ON saved_views(tenant_id, user_id)"); } catch (e) {}
 }
 
 module.exports = { getDB };

@@ -372,6 +372,24 @@ texto aberto) aparece sem valor em vez de contar como queda.
 
 ---
 
+## 🔖 Visões salvas
+
+A mesma leitura é refeita toda semana — "Intermitentes do Sudeste", "modalidade × Q2",
+"só os comentários sinalizados". Em Resultados, **Salvar esta visão** guarda a combinação
+inteira com um nome: a aba de recorte, os eixos do cruzamento e os filtros dos
+comentários. Um clique no nome remonta tudo.
+
+A visão guarda o **recorte**, nunca o resultado: reabrir recalcula sobre os dados de
+hoje. É a diferença entre uma visão e um print — e é o que faz ela continuar certa
+depois que novas respostas entram.
+
+**Compartilhar** deixa a visão visível para a equipe, mas **não empresta permissão
+nenhuma**: quem abrir continua vendo só o que o próprio escopo permite, e uma visão de
+pesquisa que a pessoa não pode ver nem aparece na lista dela. Alterar e remover são só
+de quem criou.
+
+---
+
 ## 💬 Comentários abertos, com revisão humana
 
 Em Resultados, o painel **Comentários abertos** classifica cada comentário por **tema**
@@ -476,6 +494,9 @@ rodando  no ar
 | GET    | /api/v1/results/:surveyId/files/:fileId | ✅ | Baixa um anexo enviado numa resposta |
 | GET    | /api/v1/comments/:surveyId | ✅ | Comentários abertos com tema, sentimento e revisão |
 | PUT    | /api/v1/comments/:surveyId/:answerId | ✅ Admin/Gestor | Grava (ou remove) a revisão humana de um comentário |
+| GET    | /api/v1/views | ✅ | Visões salvas (as minhas + as compartilhadas do tenant) |
+| POST   | /api/v1/views | ✅ | Salvar o recorte atual como visão nomeada |
+| PUT · DELETE | /api/v1/views/:id | ✅ dono | Regravar/renomear/compartilhar · remover |
 
 ---
 

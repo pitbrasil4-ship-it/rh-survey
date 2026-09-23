@@ -124,6 +124,16 @@ export const api = {
     listSegmentLinks: (id) => request('GET',  `/surveys/${id}/segment-links`),
     bulk:             (payload) => request('POST', '/surveys/bulk', payload),
   },
+  views: {
+    list:   (params = {}) => {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });
+      return request('GET', `/views${qs.toString() ? '?' + qs : ''}`);
+    },
+    create: (data)     => request('POST', '/views', data),
+    update: (id, data) => request('PUT', `/views/${id}`, data),
+    remove: (id)       => request('DELETE', `/views/${id}`),
+  },
   comments: {
     list:   (surveyId) => request('GET', `/comments/${encodeURIComponent(surveyId)}`),
     review: (surveyId, answerId, data) => request('PUT', `/comments/${encodeURIComponent(surveyId)}/${encodeURIComponent(answerId)}`, data),

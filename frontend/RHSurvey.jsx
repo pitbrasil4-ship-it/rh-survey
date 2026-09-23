@@ -9,7 +9,7 @@ import {
   UserCheck, Building2, MessageSquare, ChevronRight, Shield, Lock, AlertTriangle,
   FileText, Key, Activity, EyeOff, Database, RefreshCw, Info,
   FileCheck, Zap, MessageCircle, BarChart2, Star, LogOut, Menu, Copy, ListChecks, Layers, Megaphone, MailCheck,
-  GitCompare, Library, Presentation
+  GitCompare, Library, Presentation, Bookmark
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -4017,7 +4017,7 @@ function DimensionResults({ dimensions }) {
  *
  * Pergunta ou segmento nas linhas e nas colunas. É o relatório que hoje obriga uma
  * segunda exportação manual: modalidade × resposta, distrito × modalidade, e por aí. */
-function CrosstabPanel({ surveyId }) {
+function CrosstabPanel({ surveyId, preset, presetKey, onState }) {
   const { t } = useLang();
   const [axes, setAxes]   = useState([]);
   const [rows, setRows]   = useState("");
@@ -4037,10 +4037,23 @@ function CrosstabPanel({ surveyId }) {
       // Abre já no cruzamento mais pedido: o segmento nas linhas, a 1ª pergunta nas colunas.
       const seg = list.find(a => a.kind === "segmento");
       const q   = list.find(a => a.kind === "pergunta" && a.type !== "multiple");
-      if (seg && q) { setRows(seg.key); setCols(q.key); }
+      // Uma visão salva já definiu os eixos: o padrão não pode passar por cima dela.
+      setRows(r => r || (preset && preset.rows) || (seg ? seg.key : ""));
+      setCols(c => c || (preset && preset.cols) || (q ? q.key : ""));
     }).catch(() => {});
     return () => { alive = false; };
   }, [surveyId, open]);
+
+  // Visão salva: abre o painel já no cruzamento que foi gravado.
+  useEffect(() => {
+    if (!preset) return;
+    setOpen(true);
+    if (preset.rows) setRows(preset.rows);
+    if (preset.cols) setCols(preset.cols);
+  /* eslint-disable-next-line */
+  }, [presetKey]);
+
+  useEffect(() => { if (onState) onState({ rows, cols, open }); /* eslint-disable-next-line */ }, [rows, cols, open]);
 
   useEffect(() => {
     if (!rows || !cols || !open) return;
@@ -4203,13 +4216,114 @@ function podeRevisar() {
   catch { return false; }
 }
 
+/* Visões nomeadas: a mesma leitura é refeita toda semana ("Intermitentes do Sudeste",
+   "modalidade × Q2", "só os comentários sinalizados"), e hoje isso é remontado do zero
+   a cada vez. A visão guarda o RECORTE, nunca o resultado: reabrir recalcula sobre os
+   dados de hoje — é a diferença entre uma visão e um print. */
+function SavedViews({ surveyId, current, onApply }) {
+  const { t } = useLang();
+  const [views, setViews] = useState([]);
+  const [nome, setNome] = useState("");
+  const [abrindoNovo, setAbrindoNovo] = useState(false);
+  const [compartilhar, setCompartilhar] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  const carregar = () => {
+    if (!surveyId) return;
+    api.views.list({ surveyId })
+      .then(d => setViews(d.views || []))
+      .catch(() => setViews([]));
+  };
+  useEffect(carregar, [surveyId]);
+
+  const salvar = async () => {
+    const n = nome.trim();
+    if (!n) return;
+    setSalvando(true); setErro("");
+    try {
+      await api.views.create({ name: n, kind: "resultados", surveyId, filters: current(), shared: compartilhar });
+      setNome(""); setAbrindoNovo(false); setCompartilhar(false);
+      carregar();
+    } catch (e) { setErro((e && e.message) || t('vw_save_error')); }
+    setSalvando(false);
+  };
+
+  const remover = async (v) => {
+    if (!window.confirm(t('vw_confirm_delete', { name: v.name }))) return;
+    try { await api.views.remove(v.id); carregar(); }
+    catch (e) { setErro((e && e.message) || t('vw_delete_error')); }
+  };
+
+  const regravar = async (v) => {
+    if (!window.confirm(t('vw_confirm_update', { name: v.name }))) return;
+    try { await api.views.update(v.id, { filters: current() }); carregar(); }
+    catch (e) { setErro((e && e.message) || t('vw_save_error')); }
+  };
+
+  if (!surveyId) return null;
+
+  return (
+    <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <Bookmark size={15} style={{ color:"#5B21B6" }} />
+        <span className="text-sm font-semibold text-slate-800">{t('vw_title')}</span>
+        <span className="text-xs text-slate-400 hidden sm:inline">{t('vw_sub')}</span>
+        <button onClick={() => setAbrindoNovo(v => !v)}
+          className="ml-auto text-xs font-medium text-purple-600 hover:bg-purple-50 rounded-lg px-2.5 py-1.5">
+          + {t('vw_save_current')}
+        </button>
+      </div>
+
+      {abrindoNovo && (
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <input value={nome} onChange={e => setNome(e.target.value)} placeholder={t('vw_name_ph')} autoFocus
+            onKeyDown={e => { if (e.key === "Enter") salvar(); }}
+            className="flex-1 min-w-[200px] border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-purple-400" />
+          <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer" title={t('vw_share_hint')}>
+            <input type="checkbox" checked={compartilhar} onChange={() => setCompartilhar(v => !v)} className="accent-purple-600" />
+            {t('vw_share')}
+          </label>
+          <button onClick={salvar} disabled={!nome.trim() || salvando}
+            className="px-3 py-2 text-white text-xs rounded-xl disabled:opacity-40 flex items-center gap-1.5" style={{ background: GRAD }}>
+            {salvando ? <Loader2 size={12} className="animate-spin" /> : <Bookmark size={12} />}{t('common_save')}
+          </button>
+        </div>
+      )}
+
+      {erro && <p className="text-xs text-red-600 mt-2">{erro}</p>}
+
+      {views.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {views.map(v => (
+            <span key={v.id} className="inline-flex items-center gap-1 border border-slate-200 rounded-lg pl-2.5 pr-1 py-1 hover:bg-slate-50">
+              <button onClick={() => onApply(v.filters)} className="text-xs text-slate-700 font-medium"
+                title={v.mine ? "" : t('vw_from', { name: v.owner || "—" })}>
+                {v.name}
+              </button>
+              {v.shared && <span className="text-[10px] text-purple-500" title={t('vw_shared_hint')}>●</span>}
+              {v.mine && (
+                <>
+                  <button onClick={() => regravar(v)} title={t('vw_update')} className="text-[11px] text-slate-400 hover:text-purple-600 px-1">⟳</button>
+                  <button onClick={() => remover(v)} title={t('common_remove')} className="text-[11px] text-slate-400 hover:text-red-500 px-1">×</button>
+                </>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {!views.length && !abrindoNovo && <p className="text-xs text-slate-400 mt-2">{t('vw_empty')}</p>}
+    </div>
+  );
+}
+
 /* Comentários abertos com revisão humana.
  *
  * A classificação automática é palavra-chave e léxico: erra em ironia, negação e gíria.
  * Por isso cada comentário mostra de onde veio a sua classificação e pode ser corrigido
  * aqui mesmo — e os totais do topo passam a contar a versão revisada. Sem isso, o
  * relatório de clima repetiria um palpite de máquina com cara de dado apurado. */
-function CommentsPanel({ surveyId, canReview }) {
+function CommentsPanel({ surveyId, canReview, preset, presetKey, onState }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState(null);
@@ -4232,6 +4346,21 @@ function CommentsPanel({ surveyId, canReview }) {
       .finally(() => setLoading(false));
   };
   useEffect(() => { if (open) carregar(); /* eslint-disable-next-line */ }, [surveyId, open]);
+
+  // Visão salva: abre o painel com os filtros gravados.
+  useEffect(() => {
+    if (!preset) return;
+    setOpen(true);
+    setTema(preset.theme || ""); setSent(preset.sentiment || "");
+    setSoPendentes(!!preset.onlyPending); setSoSinalizados(!!preset.onlyFlagged);
+    setBusca(preset.search || "");
+  /* eslint-disable-next-line */
+  }, [presetKey]);
+
+  useEffect(() => {
+    if (onState) onState({ theme: tema, sentiment: sent, onlyPending: soPendentes, onlyFlagged: soSinalizados, search: busca, open });
+  /* eslint-disable-next-line */
+  }, [tema, sent, soPendentes, soSinalizados, busca, open]);
 
   const SENT = {
     positivo: { label: t('cm_positive'), cls: "bg-green-50 text-green-700", dot: "#16A34A" },
@@ -4742,9 +4871,11 @@ function ComparePanel({ surveys, currentId }) {
 
 /* Recortes obrigatórios: modalidade de contratação, distrito, regional e departamento.
    É o cruzamento que hoje obriga uma segunda exportação manual. */
-function SegmentResults({ segments, segmentation }) {
+function SegmentResults({ segments, segmentation, preset, presetKey, onState }) {
   const { t } = useLang();
   const [tab, setTab] = useState(null);
+  useEffect(() => { if (preset && preset.tab) setTab(preset.tab); /* eslint-disable-next-line */ }, [presetKey]);
+  useEffect(() => { if (onState) onState({ tab }); /* eslint-disable-next-line */ }, [tab]);
   if (!segments) return null;
 
   const tabs = [
@@ -4844,6 +4975,16 @@ function ResultsDashboard() {
   const [segQ,          setSegQ]          = useState(null);
   const [exportingPdf,  setExportingPdf]  = useState(false);
   const [exportingPptx, setExportingPptx] = useState(false);
+
+  // Estado dos painéis, para a visão nomeada. Cada painel reporta o seu pedaço aqui e
+  // aceita um preset de volta; `presetKey` só muda quando uma visão é aplicada, o que
+  // evita o preset reescrever o que o usuário acabou de mexer.
+  const [panelState, setPanelState] = useState({ segments: {}, crosstab: {}, comments: {} });
+  const [preset, setPreset] = useState(null);
+  const [presetKey, setPresetKey] = useState(0);
+  const slice = (k) => (patch) => setPanelState(p => (
+    JSON.stringify(p[k]) === JSON.stringify(patch) ? p : { ...p, [k]: patch }));
+  const aplicarVisao = (filtros) => { setPreset(filtros || {}); setPresetKey(k => k + 1); };
 
   useEffect(() => {
     (async () => {
@@ -5011,10 +5152,14 @@ function ResultsDashboard() {
         </div>
       ) : (
         <div className="space-y-4">
+          <SavedViews surveyId={selectedId} current={() => panelState} onApply={aplicarVisao} />
           <DimensionResults dimensions={result?.dimensions} />
-          <SegmentResults segments={result?.segments} segmentation={result?.segmentation} />
-          <CrosstabPanel surveyId={selectedId} />
-          <CommentsPanel surveyId={selectedId} canReview={podeRevisar()} />
+          <SegmentResults segments={result?.segments} segmentation={result?.segmentation}
+            preset={preset?.segments} presetKey={presetKey} onState={slice("segments")} />
+          <CrosstabPanel surveyId={selectedId}
+            preset={preset?.crosstab} presetKey={presetKey} onState={slice("crosstab")} />
+          <CommentsPanel surveyId={selectedId} canReview={podeRevisar()}
+            preset={preset?.comments} presetKey={presetKey} onState={slice("comments")} />
           <TrendPanel surveys={surveys} currentId={selectedId} />
           <ComparePanel surveys={surveys} currentId={selectedId} />
           {questions.map((q,i) => (
