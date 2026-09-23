@@ -170,13 +170,37 @@ Cada pergunta guarda, além do texto em PT/EN/ES:
 | `config.fields` | campos do Bloco de Formulário, com validação de e-mail/telefone/data |
 | `config.favorableFrom` | a partir de qual posição a resposta conta como Favorável |
 | `config.segmentation` | pergunta de recorte: não pontua e abre os demais resultados |
-| `logic.showIf` | exibe a pergunta só se a de nº `order` tiver uma das alternativas |
+| `config.pageBreak` | esta pergunta abre uma nova página |
+| `config.maxSizeMb` / `accept` | teto e tipos aceitos no Anexo |
+| `logic.showIf` | exibe a pergunta quando as condições baterem (E/OU) |
 | `logic.endIf` | encerra o questionário quando uma destas alternativas é marcada |
+| `logic.jumpIf` | ao sair da página, salta para outra página ou para o fim |
 | `dimensions` | vínculo N:N com as dimensões cadastradas (várias taxonomias) |
 | `notes` | observação interna, não exibida a quem responde |
 
-Tipos disponíveis: `nps`, `scale` (Likert configurável), `multiple`, `dropdown`,
-`matrix`, `form`, `text`, `rating`, `yesno`.
+### Tipos disponíveis
+
+| Tipo | O que é |
+|---|---|
+| `scale` | Escala Likert, com pontos, rótulos e pesos configuráveis |
+| `multiple` / `dropdown` | Escolha, em botões ou em lista |
+| `matrix` | Linhas × colunas, com média por linha |
+| `form` | Bloco de formulário: **vários campos numa pergunta só**, com validação de e-mail, telefone, data e número — é o que atende "várias caixas de texto" |
+| `text` | Resposta livre |
+| `rating` | Estrelas 1–5 |
+| `yesno` | Escolha binária |
+| `nps` | Recomendação 0–10, com promotores/neutros/detratores |
+| `enps` | O mesmo cálculo do NPS, aplicado à empresa **como lugar para trabalhar**: enunciado e pontas da escala próprios, e o relatório nomeia o indicador como eNPS |
+| `ranking` | **Ordenação**: a pessoa põe os itens em ordem com as setas (funciona no celular e no teclado). A apuração traz a posição média de cada item e quantas vezes foi posto em 1º. Não tem peso, alternativa neutra nem favorabilidade — não é escala |
+| `file` | **Anexo**: envio de arquivo, com teto de tamanho e tipos aceitos por pergunta |
+
+**Sobre o Anexo.** O arquivo vai junto com o envio da resposta e é guardado no banco, em
+base64, com o teto definido na pergunta (padrão 2 MB, máximo 10). A tela de resultados
+mostra só o inventário — nome, tipo e tamanho — e o conteúdo sai por download
+autenticado, que passa pela mesma permissão dos resultados. Para volume grande isso
+precisa migrar para armazenamento de objetos; como a tela já trabalha só com o
+inventário, a troca não mexe na interface. O editor avisa o óbvio que é fácil esquecer:
+numa pesquisa anônima, um anexo pode trazer nome, rosto ou crachá junto.
 
 ---
 
@@ -422,6 +446,7 @@ rodando  no ar
 | GET    | /api/v1/library/questions | ✅ | Banco de perguntas já usadas, com dimensão e onde foram aplicadas |
 | GET    | /api/v1/library/compare | ✅ | Comparação entre duas edições (`a`/`b`), pergunta a pergunta |
 | GET    | /api/v1/results/trend | ✅ | Tendência entre edições (`surveys=id1,id2,…`) |
+| GET    | /api/v1/results/:surveyId/files/:fileId | ✅ | Baixa um anexo enviado numa resposta |
 
 ---
 

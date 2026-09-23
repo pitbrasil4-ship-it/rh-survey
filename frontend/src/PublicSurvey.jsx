@@ -85,7 +85,7 @@ function Card({ children, style }) {
   return <div style={{ background:'white', borderRadius:16, border:'1px solid #E2E8F0', boxShadow:'0 1px 3px rgba(0,0,0,.05)', padding:24, ...style }}>{children}</div>;
 }
 
-function NpsInput({ value, onChange, tr }) {
+function NpsInput({ value, onChange, tr, enps }) {
   return (
     <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
       {Array.from({ length:11 }).map((_, n) => (
@@ -97,8 +97,95 @@ function NpsInput({ value, onChange, tr }) {
         </button>
       ))}
       <div style={{ width:'100%', display:'flex', justifyContent:'space-between', fontSize:11, color:'#94A3B8', marginTop:4 }}>
-        <span>{tr('nps_low')}</span><span>{tr('nps_high')}</span>
+        <span>{tr(enps ? 'enps_low' : 'nps_low')}</span><span>{tr(enps ? 'enps_high' : 'nps_high')}</span>
       </div>
+    </div>
+  );
+}
+
+/* Ordenação: o respondente move os itens até a ordem que quer. Botões em vez de
+   arrastar — funciona no celular, no teclado e no leitor de tela, e é o que a maioria
+   consegue usar sem explicação. A resposta é a lista na ordem final. */
+function RankingInput({ options, labels, value, onChange, tr }) {
+  const base = (options && options.length) ? options : [];
+  // Sem resposta ainda, a ordem de partida é a cadastrada. Item que saiu da pergunta
+  // depois de a pessoa responder é descartado; item novo entra no fim.
+  const atual = Array.isArray(value) && value.length
+    ? [...value.filter(v => base.includes(v)), ...base.filter(o => !value.includes(o))]
+    : base;
+  const rotulo = o => {
+    const i = base.indexOf(o);
+    return (labels && labels[i]) ? labels[i] : o;
+  };
+  const mover = (i, d) => {
+    const j = i + d;
+    if (j < 0 || j >= atual.length) return;
+    const lista = [...atual];
+    [lista[i], lista[j]] = [lista[j], lista[i]];
+    onChange(lista);
+  };
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+      <p style={{ margin:'0 0 2px', fontSize:12, color:'#94A3B8' }}>{tr('ranking_hint')}</p>
+      {atual.map((o, i) => (
+        <div key={o} style={{ display:'flex', alignItems:'center', gap:10, border:'1px solid #E2E8F0', borderRadius:10, padding:'10px 12px', background:'white' }}>
+          <span style={{ flexShrink:0, width:24, height:24, borderRadius:'50%', background: i === 0 ? RED : '#F1F5F9',
+            color: i === 0 ? 'white' : '#64748B', fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }}>{i+1}</span>
+          <span style={{ flex:1, fontSize:14, color:'#334155' }}>{rotulo(o)}</span>
+          <button type="button" onClick={() => mover(i, -1)} disabled={i === 0} aria-label={tr('ranking_up')}
+            style={{ border:'1px solid #E2E8F0', background:'white', borderRadius:8, width:30, height:30, cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? .35 : 1, fontSize:13 }}>↑</button>
+          <button type="button" onClick={() => mover(i, 1)} disabled={i === atual.length-1} aria-label={tr('ranking_down')}
+            style={{ border:'1px solid #E2E8F0', background:'white', borderRadius:8, width:30, height:30, cursor: i === atual.length-1 ? 'default' : 'pointer', opacity: i === atual.length-1 ? .35 : 1, fontSize:13 }}>↓</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* Anexo. O arquivo vai junto com o envio, em base64, e o teto vem da pergunta — acima
+   dele a pessoa é avisada aqui, e não só depois de esperar o envio falhar. */
+function FileInput({ config, value, onChange, tr }) {
+  const [erro, setErro] = React.useState('');
+  const maxMb = Number(config && config.maxSizeMb) > 0 ? Number(config.maxSizeMb) : 2;
+  const accept = (config && Array.isArray(config.accept) && config.accept.length) ? config.accept.join(',') : undefined;
+
+  const escolher = (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    if (f.size > maxMb * 1024 * 1024) {
+      setErro(tr('file_too_big', { mb: maxMb }));
+      e.target.value = '';
+      return;
+    }
+    setErro('');
+    const r = new FileReader();
+    r.onload = () => onChange({ filename: f.name, mime: f.type, size: f.size, data: String(r.result) });
+    r.onerror = () => setErro(tr('file_read_error'));
+    r.readAsDataURL(f);
+  };
+
+  const kb = value && value.size ? (value.size > 1024*1024 ? (value.size/1024/1024).toFixed(1) + ' MB' : Math.round(value.size/1024) + ' KB') : '';
+  return (
+    <div>
+      {value ? (
+        <div style={{ display:'flex', alignItems:'center', gap:10, border:'1px solid #E2E8F0', borderRadius:10, padding:'10px 12px' }}>
+          <span style={{ fontSize:20 }}>📎</span>
+          <span style={{ flex:1, fontSize:14, color:'#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{value.filename}</span>
+          {kb ? <span style={{ fontSize:12, color:'#94A3B8' }}>{kb}</span> : null}
+          <button type="button" onClick={() => onChange(null)}
+            style={{ border:'1px solid #FECACA', background:'white', color:RED_DARK, borderRadius:8, padding:'5px 10px', fontSize:12, cursor:'pointer' }}>
+            {tr('file_remove')}
+          </button>
+        </div>
+      ) : (
+        <label style={{ display:'block', border:'2px dashed #E2E8F0', borderRadius:10, padding:'18px', textAlign:'center', cursor:'pointer' }}>
+          <div style={{ fontSize:26, marginBottom:4 }}>📎</div>
+          <span style={{ fontSize:14, color:'#475569' }}>{tr('file_pick')}</span>
+          <span style={{ display:'block', fontSize:12, color:'#94A3B8', marginTop:2 }}>{tr('file_max', { mb: maxMb })}</span>
+          <input type="file" accept={accept} onChange={escolher} style={{ display:'none' }} />
+        </label>
+      )}
+      {erro ? <p style={{ color:RED_DARK, fontSize:13, margin:'6px 0 0' }}>{erro}</p> : null}
     </div>
   );
 }
@@ -286,6 +373,11 @@ function selectedLabels(q, value) {
     return lb ? [lb, String(value)] : [String(value)];
   }
   if (q.type === 'multiple' || q.type === 'dropdown') return Array.isArray(value) ? value.map(String) : [String(value)];
+  // Na ordenação o que vale como "resposta" é o item posto em 1º: é a escolha que a
+  // pessoa fez de fato, e é sobre ela que faz sentido ramificar.
+  if (q.type === 'ranking') return Array.isArray(value) && value.length ? [String(value[0])] : [];
+  // Anexo não tem alternativa: serve para "respondida"/"em branco", e é o nome que volta.
+  if (q.type === 'file') return (value && value.filename) ? [String(value.filename)] : [];
   if (q.type === 'matrix' || q.type === 'form') return [];
   return [String(value)];
 }
@@ -473,6 +565,8 @@ export default function PublicSurvey({ token }) {
   /* Valor final da pergunta: troca o rótulo "Outros" pelo texto digitado. */
   const finalValue = (q) => {
     const v = answers[q.id];
+    // Não tocar na ordenação é aceitar a ordem apresentada: é essa que vai no envio.
+    if (q.type === 'ranking') return (Array.isArray(v) && v.length) ? v : (q.options || []);
     const other = q.config && q.config.allowOther ? (q.config.otherLabel || 'Outros') : null;
     if (!other || !Array.isArray(v)) return v;
     const typed = String(otherText[q.id] || '').trim();
@@ -486,7 +580,10 @@ export default function PublicSurvey({ token }) {
     list.forEach(q => {
       const n = numberOf(q);
       const v = answers[q.id];
-      if (q.required && !filled(v)) { missing.push(tr('missing_q', { n })); return; }
+      // Ordenação nasce com a lista preenchida: exigir "resposta" aqui seria exigir que a
+      // pessoa mexesse. Basta a lista estar completa, que é o estado inicial.
+      const vazio = q.type === 'ranking' ? !(q.options || []).length : !filled(v);
+      if (q.required && vazio) { missing.push(tr('missing_q', { n })); return; }
       if (q.type === 'form' && q.config && Array.isArray(q.config.fields)) {
         const cur = (v && typeof v === 'object') ? v : {};
         q.config.fields.forEach(f => {
@@ -674,7 +771,7 @@ export default function PublicSurvey({ token }) {
         const rows = (q.config && Array.isArray(q.config.rows)) ? q.config.rows : [];
         const rowLabels = (lang !== 'pt' && q.config && Array.isArray(q.config['rows_'+lang])) ? q.config['rows_'+lang] : rows;
         const fields = (q.config && Array.isArray(q.config.fields)) ? q.config.fields : [];
-        const specialized = ['nps','scale','rating','yesno','matrix','form'].includes(q.type) || ((q.type === 'multiple' || q.type === 'dropdown') && hasOpts);
+        const specialized = ['nps','enps','scale','rating','yesno','matrix','form','ranking','file'].includes(q.type) || ((q.type === 'multiple' || q.type === 'dropdown') && hasOpts);
         const otherPicked = otherLabel && Array.isArray(answers[q.id]) && answers[q.id].includes(otherLabel);
         // Segmentação (ex.: modalidade de contratação) é escolha única, mesmo vindo como múltipla.
         const isSingle = !!(q.config && q.config.segmentation);
@@ -688,7 +785,11 @@ export default function PublicSurvey({ token }) {
               {q.required ? <span style={{ color:RED }} title={tr('required_q')}> *</span> : null}
             </p>
           </div>
-          {q.type === 'nps'      && <NpsInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
+          {(q.type === 'nps' || q.type === 'enps') && <NpsInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} enps={q.type === 'enps'} />}
+          {q.type === 'ranking'  && (hasOpts
+            ? <RankingInput options={q.options} labels={trOpts} value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />
+            : <p style={{ fontSize:13, color:'#94A3B8' }}>{tr('no_options')}</p>)}
+          {q.type === 'file'     && <FileInput config={q.config} value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
           {q.type === 'scale'    && <ScaleInput options={q.options} labels={trOpts} value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'rating'   && <RatingInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'yesno'    && <YesNoInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}

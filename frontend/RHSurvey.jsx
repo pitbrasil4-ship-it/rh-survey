@@ -37,7 +37,11 @@ function downloadCSV(filename, rows) {
 function mapTipoToType(raw) {
   const t = (raw == null ? "" : String(raw)).trim().toLowerCase();
   if (!t) return { type: "text", unknown: false };
+  // eNPS antes do NPS: "enps" contém "nps" e cairia na regra errada.
+  if (t.includes("enps") || t.includes("e-nps")) return { type: "enps", unknown: false };
   if (t.includes("nps")) return { type: "nps", unknown: false };
+  if (t.includes("orden") || t.includes("ranking") || t.includes("ranquea") || t.includes("prioriz")) return { type: "ranking", unknown: false };
+  if (t.includes("anexo") || t.includes("arquivo") || t.includes("upload") || t.includes("file")) return { type: "file", unknown: false };
   if (t.includes("escala") || t.includes("likert")) return { type: "scale", unknown: false };
   if (t.includes("estrela") || t.includes("nota") || t === "rating") return { type: "rating", unknown: false };
   if (t.includes("sim") || t.includes("não") || t.includes("nao") || t.includes("boolean") || t.includes("yesno")) return { type: "yesno", unknown: false };
@@ -277,6 +281,9 @@ function rowsToQuestions(rows, delim) {
 
 const QUESTION_TYPES = [
   { id:"nps",      label:"NPS (0–10)",       icon:"📊", desc:"Probabilidade de recomendar" },
+  { id:"enps",     label:"eNPS (0–10)",      icon:"💼", desc:"Recomendaria como lugar para trabalhar" },
+  { id:"ranking",  label:"Ordenação",        icon:"🔢", desc:"O respondente põe os itens em ordem" },
+  { id:"file",     label:"Anexo",            icon:"📎", desc:"Envio de arquivo pelo respondente" },
   { id:"scale",    label:"Escala Likert",    icon:"⭐", desc:"Pontos e rótulos configuráveis" },
   { id:"multiple", label:"Múltipla Escolha", icon:"☑️", desc:"Uma ou mais opções"          },
   { id:"dropdown", label:"Lista Suspensa",   icon:"🔽", desc:"Uma opção, em lista"         },
@@ -288,7 +295,7 @@ const QUESTION_TYPES = [
 ];
 
 // Tipos que têm lista de alternativas editável (rótulo, peso, opção neutra).
-const OPTION_TYPES = ["scale", "multiple", "dropdown", "matrix"];
+const OPTION_TYPES = ["scale", "multiple", "dropdown", "matrix", "ranking"];
 const hasOptionList = (type) => OPTION_TYPES.includes(type);
 
 // Alternativas iniciais por tipo — a pergunta nasce com a lista pronta para editar,
@@ -298,6 +305,7 @@ const DEFAULT_OPTIONS = {
   multiple: ["Opção 1", "Opção 2", "Opção 3"],
   dropdown: ["Opção 1", "Opção 2", "Opção 3"],
   matrix:   ["Ruim", "Regular", "Bom", "Excelente"],
+  ranking:  ["Item 1", "Item 2", "Item 3"],
 };
 
 // Rótulos prontos para as escalas Likert mais usadas (4 pontos no clima, 3 na performance).
@@ -432,6 +440,7 @@ const TYPE_COLORS = {
   rating:"bg-amber-100 text-amber-700", yesno:"bg-teal-100 text-teal-700",
   dropdown:"bg-indigo-100 text-indigo-700", matrix:"bg-pink-100 text-pink-700",
   form:"bg-slate-200 text-slate-700",
+  enps:"bg-violet-100 text-violet-700", ranking:"bg-cyan-100 text-cyan-700", file:"bg-stone-200 text-stone-700",
 };
 
 // ─── ATOMS ─────────────────────────────────────────────────────────────────────
@@ -1414,6 +1423,47 @@ function autoFavorableFrom(options, points, neutralIndex) {
   return idx === undefined ? null : idx;
 }
 
+/* Anexo: teto de tamanho e tipos aceitos. O aviso de LGPD não é decorativo — numa
+   pesquisa anônima, um arquivo pode trazer nome, rosto ou crachá junto. */
+function FileFieldEditor({ q, onChange }) {
+  const { t } = useLang();
+  const cfg = q.config || {};
+  const max = Number(cfg.maxSizeMb) > 0 ? Number(cfg.maxSizeMb) : 2;
+  const aceites = [
+    ["image/*", t('qe_file_images')],
+    ["application/pdf", "PDF"],
+    [".doc,.docx,.xls,.xlsx", t('qe_file_office')],
+  ];
+  const atual = Array.isArray(cfg.accept) ? cfg.accept : [];
+  const alternar = (v) => onChange({ config: { ...cfg, accept: atual.includes(v) ? atual.filter(x => x !== v) : [...atual, v] } });
+
+  return (
+    <div className="mt-3 border border-slate-200 rounded-xl p-3 bg-white">
+      <span className="text-xs font-semibold text-slate-600">{t('qe_file_title')}</span>
+      <div className="flex flex-wrap items-center gap-2 mt-2">
+        <label className="text-xs text-slate-600">{t('qe_file_max')}</label>
+        <input type="number" min="0.1" max="10" step="0.5" value={max}
+          onChange={e => onChange({ config: { ...cfg, maxSizeMb: Number(e.target.value) } })}
+          className="w-20 border border-slate-200 rounded-md px-2 py-1 text-xs focus:outline-none focus:border-purple-400" />
+        <span className="text-xs text-slate-400">MB</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+        <span className="text-xs text-slate-600 mr-1">{t('qe_file_accept')}</span>
+        {aceites.map(([v, label]) => (
+          <button key={v} type="button" onClick={() => alternar(v)}
+            className={`px-2 py-1 rounded-md text-xs border ${atual.includes(v) ? "border-purple-400 bg-purple-50 text-purple-700 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+            {label}
+          </button>
+        ))}
+        {!atual.length && <span className="text-xs text-slate-400">{t('qe_file_any')}</span>}
+      </div>
+      <p className="text-[11px] text-amber-600 flex items-start gap-1 mt-2">
+        <AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />{t('qe_file_lgpd')}
+      </p>
+    </div>
+  );
+}
+
 /* Lógica condicional: exibir a pergunta quando as condições baterem, encerrar em Y e
    saltar de página. As condições referenciam a pergunta-gatilho pelo id do editor. */
 function LogicEditor({ q, previous, onChange, pages, pageNumber, jumpSources }) {
@@ -1658,7 +1708,10 @@ function QuestionCard({ q, index, total, previous, pages, pageNumber, jumpSource
           )}
 
           {hasOptionList(q.type) && <OptionEditor q={q} onChange={onChange} />}
-          {hasOptionList(q.type) && <FavorabilityEditor q={q} onChange={onChange} />}
+          {/* Ordenação não tem escala: peso, alternativa neutra e favorabilidade não se
+              aplicam, e oferecê-los produziria um número sem significado. */}
+          {hasOptionList(q.type) && q.type !== "ranking" && <FavorabilityEditor q={q} onChange={onChange} />}
+          {q.type === "file" && <FileFieldEditor q={q} onChange={onChange} />}
           {q.type === "matrix" && <MatrixRowsEditor q={q} onChange={onChange} />}
           {q.type === "form"   && <FormFieldsEditor q={q} onChange={onChange} />}
           <LogicEditor q={q} previous={previous} onChange={onChange}
@@ -3665,8 +3718,69 @@ function DimensionChips({ dimensions }) {
 
 function QuestionResult({ q }) {
   const { t } = useLang();
-  // NPS
-  if (q.type === "nps") {
+
+  // Ordenação: a posição média manda (quanto menor, mais no topo). O "1º lugar" mostra
+  // quantos puseram o item na frente — um item pode ganhar na média e perder no 1º.
+  if (q.type === "ranking") {
+    const linhas = q.ranking || [];
+    const pior = linhas.length;
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-start justify-between mb-1">
+          <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses', { n: q.responseCount })}</span>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">{t('qr_ranking_hint')}</p>
+        {!linhas.length ? <p className="text-sm text-slate-400 py-4 text-center">{t('rd_no_responses_yet')}</p> : (
+          <div className="space-y-2">
+            {linhas.map((r, i) => (
+              <div key={r.label} className="flex items-center gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center"
+                  style={i === 0 ? { background: GRAD, color: "white" } : { background: "#F1F5F9", color: "#64748B" }}>{i + 1}</span>
+                <span className="text-sm text-slate-700 flex-1 min-w-0 truncate" title={r.label}>{r.label}</span>
+                <div className="w-28 h-2.5 bg-slate-100 rounded-full overflow-hidden" title={t('qr_ranking_first', { n: r.firstPlace })}>
+                  <div className="h-full rounded-full" style={{ width: `${r.firstPlacePct}%`, background: "#5B21B6" }} />
+                </div>
+                <span className="text-xs text-slate-500 w-24 text-right tabular-nums">
+                  {t('qr_ranking_avg')} {r.averagePosition ?? "—"}{pior ? `/${pior}` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <DimensionChips dimensions={q.dimensions} />
+      </div>
+    );
+  }
+
+  // Anexo: o inventário do que foi enviado. O conteúdo é baixado um a um, nunca listado
+  // aberto na tela — é arquivo de respondente, não material de navegação.
+  if (q.type === "file") {
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-start justify-between mb-1">
+          <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses', { n: q.responseCount })}</span>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">{t('qr_files_n', { n: q.fileCount || 0 })}</p>
+        {!(q.files || []).length ? <p className="text-sm text-slate-400 py-4 text-center">{t('rd_no_responses_yet')}</p> : (
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {q.files.map((f, i) => (
+              <div key={i} className="flex items-center gap-2.5 border border-slate-100 rounded-lg px-3 py-2">
+                <span>📎</span>
+                <span className="text-sm text-slate-700 flex-1 min-w-0 truncate" title={f.filename}>{f.filename}</span>
+                <span className="text-xs text-slate-400 whitespace-nowrap">{f.size > 1048576 ? (f.size / 1048576).toFixed(1) + " MB" : Math.round(f.size / 1024) + " KB"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <DimensionChips dimensions={q.dimensions} />
+      </div>
+    );
+  }
+
+  // NPS e eNPS: o mesmo cálculo, com o nome certo do indicador.
+  if (q.type === "nps" || q.type === "enps") {
     const parts = [
       { label:t('qr_promoters'), pct:q.promoters||0, color:"#10B981" },
       { label:t('qr_passives'), pct:q.passives||0, color:"#94A3B8" },
@@ -3681,7 +3795,7 @@ function QuestionResult({ q }) {
         <div className="flex items-center gap-5">
           <div className="text-center">
             <div className="text-3xl font-bold" style={{ color:"#5B21B6" }}>{q.nps}</div>
-            <div className="text-xs text-slate-400 mt-0.5">NPS · {q.classification}</div>
+            <div className="text-xs text-slate-400 mt-0.5">{q.indicator || "NPS"} · {q.classification}</div>
           </div>
           <div className="flex-1 space-y-2">
             {parts.map((p,i) => (

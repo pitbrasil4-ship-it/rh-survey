@@ -26,8 +26,13 @@
  */
 
 // Tipos que têm lista de alternativas editável.
-const OPTION_TYPES = ['scale', 'multiple', 'dropdown', 'matrix'];
-const VALID_TYPES  = ['nps', 'scale', 'rating', 'multiple', 'text', 'yesno', 'dropdown', 'matrix', 'form'];
+const OPTION_TYPES = ['scale', 'multiple', 'dropdown', 'matrix', 'ranking'];
+const VALID_TYPES  = ['nps', 'enps', 'scale', 'rating', 'multiple', 'text', 'yesno', 'dropdown', 'matrix', 'form', 'ranking', 'file'];
+
+/* eNPS é a mesma escala 0–10 do NPS, aplicada à recomendação da empresa como lugar para
+   trabalhar. Fica como tipo próprio para a apuração nomear o indicador certo e para o
+   enunciado padrão vir pronto, mas a matemática é a do NPS. */
+const NPS_TYPES = ['nps', 'enps'];
 
 const FIELD_KINDS = ['text', 'email', 'phone', 'date', 'number'];
 
@@ -54,7 +59,8 @@ function normalizeConfig(type, raw, optionCount) {
   const c = (raw && typeof raw === 'object') ? raw : {};
   const out = {};
 
-  if (hasOptions(type)) {
+  // Em ordenação, alternativa neutra e favorabilidade não se aplicam: não há escala.
+  if (hasOptions(type) && type !== 'ranking') {
     const ni = Number(c.neutralIndex);
     if (Number.isInteger(ni) && ni >= 0 && ni < optionCount) out.neutralIndex = ni;
     if (c.allowOther) {
@@ -79,6 +85,14 @@ function normalizeConfig(type, raw, optionCount) {
       const en = strList(c.rows_en); if (en && en.length === rows.length) out.rows_en = en;
       const es = strList(c.rows_es); if (es && es.length === rows.length) out.rows_es = es;
     }
+  }
+  if (type === 'file') {
+    // Limite por anexo, em MB. O arquivo vai dentro do envio da resposta, então o teto
+    // protege tanto o banco quanto o formulário de travar num celular.
+    const mb = Number(c.maxSizeMb);
+    out.maxSizeMb = (Number.isFinite(mb) && mb > 0) ? Math.min(Math.round(mb * 10) / 10, 10) : 2;
+    const ac = strList(c.accept);
+    if (ac) out.accept = ac;
   }
   if (type === 'form') {
     const fields = (Array.isArray(c.fields) ? c.fields : [])
@@ -156,7 +170,9 @@ function toRow(q, orderNum) {
   const n = options ? options.length : 0;
   const optionsEn = options ? strList(q.options_en) : null;
   const optionsEs = options ? strList(q.options_es) : null;
-  const points = options ? pointList(q.option_points) : null;
+  // Ordenação não tem peso por alternativa: o resultado é a posição média de cada item,
+  // então um "peso" aqui só produziria uma favorabilidade sem significado.
+  const points = (options && type !== 'ranking') ? pointList(q.option_points) : null;
   const config = normalizeConfig(type, q.config, n);
   const logic  = normalizeLogic(q.logic);
 
@@ -463,6 +479,7 @@ function fromRow(r) {
 
 module.exports = {
   OPTION_TYPES, VALID_TYPES, FIELD_KINDS,
+  NPS_TYPES,
   hasOptions, parseJSON, strList, jsonList, pointList, defaultFavorableFrom,
   COND_OPS, normalizeLogic,
   toRow, insertQuestions, replaceQuestions, syncQuestions, fromRow,

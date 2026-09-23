@@ -289,6 +289,20 @@ function initSchema() {
 
   // Variáveis que vieram no link (distrito, regional, departamento, modalidade).
   try { db.exec("ALTER TABLE responses ADD COLUMN link_vars TEXT"); } catch (e) {}
+
+  /* Anexos enviados nas respostas (pergunta do tipo "arquivo").
+   * O conteúdo fica no banco, em base64, com teto por arquivo definido na pergunta —
+   * a alternativa seria um bucket externo, que hoje não existe no ambiente. Para volume
+   * grande isso precisa migrar para armazenamento de objetos; o inventário na tela de
+   * resultados já trabalha só com nome, tipo e tamanho, então a troca não mexe na UI.
+   * A resposta continua anônima: o arquivo é ligado à resposta, nunca à pessoa. */
+  try { db.exec(`CREATE TABLE IF NOT EXISTS response_files (
+    id TEXT PRIMARY KEY, response_id TEXT NOT NULL, question_id TEXT NOT NULL,
+    filename TEXT, mime TEXT, size INTEGER, data TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY(response_id) REFERENCES responses(id) ON DELETE CASCADE
+  )`); } catch (e) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_rfiles_response ON response_files(response_id)"); } catch (e) {}
 }
 
 module.exports = { getDB };

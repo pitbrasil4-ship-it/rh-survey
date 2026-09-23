@@ -68,7 +68,7 @@ function getSurveyResults(req, res) {
       dimensions: currentDims[q.id] || [],
     }));
 
-    const npsQ = questionResults.find(q => q.type === 'nps');
+    const npsQ = questionResults.find(q => Q.NPS_TYPES.includes(q.type));
     const overall = rollUp(questionResults);
 
     // Nota por dimensão, respeitando a vigência de cada vínculo.
@@ -232,6 +232,34 @@ function alignRows(editions, pick) {
       semaforo: last == null ? null : semaforo(100 - last),
     };
   }).sort((a, b) => (a.set || '').localeCompare(b.set || '') || String(a.externalId || a.label).localeCompare(String(b.externalId || b.label), 'pt', { numeric: true }));
+}
+
+/* GET /results/:surveyId/files/:fileId — baixa um anexo enviado numa resposta.
+ *
+ * Passa pela mesma permissão dos resultados (supressão por tipo e escopo do gestor): o
+ * anexo é dado da pesquisa e não pode ser um atalho para contornar isso. */
+function getResponseFile(req, res) {
+  try {
+    const db = getDB();
+    const survey = db.prepare('SELECT * FROM surveys WHERE id=? AND tenant_id=?').get(req.params.surveyId, req.user.tenant_id);
+    if (!survey) return notFound(res, 'Pesquisa');
+    if (!canSeeSurvey(req.user, survey)) return err(res, 'Você não tem permissão para ver os anexos desta pesquisa', 403);
+
+    const scope = responseScopeSQL(db, req.user, 'r');
+    const row = db.prepare(`SELECT f.* FROM response_files f
+                            JOIN responses r ON r.id = f.response_id
+                            WHERE f.id = ? AND r.survey_id = ?${scope.sql}`).get(req.params.fileId, survey.id, ...scope.params);
+    if (!row) return notFound(res, 'Anexo');
+
+    const buf = Buffer.from(row.data || '', 'base64');
+    res.setHeader('Content-Type', row.mime || 'application/octet-stream');
+    // `attachment` fecha a porta para um HTML ou SVG enviado como anexo ser renderizado
+    // no domínio do painel.
+    res.setHeader('Content-Disposition', `attachment; filename="${String(row.filename || 'anexo').replace(/["\\]/g, '')}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Length', buf.length);
+    return res.end(buf);
+  } catch (e) { return err(res, 'Erro ao baixar o anexo', 500, e.message); }
 }
 
 /* GET /results/:surveyId/crosstab?rows=<chave>&cols=<chave>
@@ -458,9 +486,48 @@ function questionStats(q, answers, responseIds) {
     segmentation: !!cfg.segmentation,
   };
 
-  if (q.type === 'nps') {
+  if (Q.NPS_TYPES.includes(q.type)) {
     const scores = rows.map(a => a.value_num).filter(v => v !== null);
     Object.assign(result, calculateNPS(scores));
+    // eNPS é o mesmo cálculo com outro nome: o indicador é da empresa como empregadora,
+    // não de um produto, e o relatório precisa dizer isso.
+    if (q.type === 'enps') result.indicator = 'eNPS';
+    return result;
+  }
+
+  if (q.type === 'ranking') {
+    // A resposta é a lista ordenada. O que interessa é a posição MÉDIA de cada item
+    // (quanto menor, mais no topo) e quantas vezes cada um foi posto em 1º.
+    const soma = {}, contagem = {}, primeiro = {};
+    opts.forEach(o => { soma[o] = 0; contagem[o] = 0; primeiro[o] = 0; });
+    rows.forEach(a => {
+      let lista = null; try { lista = a.value_json ? JSON.parse(a.value_json) : null; } catch {}
+      if (!Array.isArray(lista)) return;
+      lista.forEach((item, i) => {
+        const o = String(item);
+        if (!(o in soma)) return;            // item que saiu da pergunta depois do envio
+        soma[o] += i + 1; contagem[o] += 1;
+        if (i === 0) primeiro[o] += 1;
+      });
+    });
+    const votos = rows.length;
+    result.ranking = opts.map(o => ({
+      label: o,
+      averagePosition: contagem[o] ? parseFloat((soma[o] / contagem[o]).toFixed(2)) : null,
+      firstPlace: primeiro[o],
+      firstPlacePct: votos ? Math.round((primeiro[o] / votos) * 100) : 0,
+      count: contagem[o],
+    })).sort((a, b) => (a.averagePosition ?? 99) - (b.averagePosition ?? 99));
+    return result;
+  }
+
+  if (q.type === 'file') {
+    // O conteúdo do anexo não vem para a tela de resultados: aqui é só o inventário.
+    result.files = rows.map(a => {
+      let m = null; try { m = a.value_json ? JSON.parse(a.value_json) : null; } catch {}
+      return m ? { responseId: a.response_id, filename: m.filename, size: m.size, mime: m.mime } : null;
+    }).filter(Boolean);
+    result.fileCount = result.files.length;
     return result;
   }
 
@@ -856,7 +923,7 @@ async function getInsights(req, res) {
         .filter(v => v && String(v).trim().length > 2 && !SKIP_COMMENT.has(String(v).trim().toLowerCase()) && !/^\d+$/.test(String(v).trim()));
       todosComentarios.push(...livres);
       const base = { dimensoes, categoria: survey.category || null };
-      if (q.type === 'nps') {
+      if (Q.NPS_TYPES.includes(q.type)) {
         const sc = answers.map(a => a.value_num).filter(v => v !== null);
         const n  = calculateNPS(sc);
         if (overallNps === null) overallNps = n.nps;
@@ -962,7 +1029,7 @@ function getSegments(req, res) {
     const scoredQ = db.prepare("SELECT id, type, options, option_points FROM questions WHERE survey_id=? AND option_points IS NOT NULL").all(surveyId)
       .map(q => ({ id: q.id, type: q.type, options: PJ(q.options) || [], points: PJ(q.option_points) || [] }))
       .filter(q => q.points.length);
-    const npsIds   = db.prepare("SELECT id FROM questions WHERE survey_id=? AND type='nps'").all(surveyId).map(q => q.id);
+    const npsIds   = db.prepare("SELECT id FROM questions WHERE survey_id=? AND type IN ('nps','enps')").all(surveyId).map(q => q.id);
     const scaleIds = db.prepare("SELECT id FROM questions WHERE survey_id=? AND type IN ('scale','rating')").all(surveyId).map(q => q.id);
     const metric   = scoredQ.length ? 'score' : (npsIds.length ? 'nps' : (scaleIds.length ? 'avg' : null));
     const distItems = {}, depItems = {}, allItems = [];
@@ -1056,7 +1123,7 @@ function getPdf(req, res) {
       const opts = PJ(q.options) || [];
       const pts  = PJ(q.option_points);
       const item = { text: q.text, type: q.type, count: answers.length };
-      if (q.type === 'nps') {
+      if (Q.NPS_TYPES.includes(q.type)) {
         const sc = answers.map(a => a.value_num).filter(v => v !== null); const n = calculateNPS(sc);
         if (overallNps === null) overallNps = n.nps;
         Object.assign(item, { nps: n.nps, promoters: n.promoters, passives: n.passives, detractors: n.detractors, classification: n.classification });
@@ -1145,7 +1212,7 @@ function getPdf(req, res) {
       doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(11).text(`${idx + 1}. ${q.text}`, M, doc.y, { width: CW });
       doc.fillColor(LIGHT).font('Helvetica').fontSize(8).text(T.responses(q.count), M, doc.y + 1);
       doc.moveDown(0.35);
-      if (q.type === 'nps') {
+      if (Q.NPS_TYPES.includes(q.type)) {
         doc.fillColor(PURPLE).font('Helvetica-Bold').fontSize(15).text(`NPS ${q.nps}`, M, doc.y);
         doc.fillColor(SLATE).font('Helvetica').fontSize(9).text(T.npsLine(q), M, doc.y + 1);
       } else if (q.type === 'scale' || q.type === 'rating') {
@@ -1297,4 +1364,4 @@ function getSegmentQuestions(req, res) {
   } catch (e) { return err(res, 'Erro ao detalhar por pergunta', 500, e.message); }
 }
 
-module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions, getPdf, getInsightsPdf, getCrosstab, getCrosstabAxes, getTrend };
+module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions, getPdf, getInsightsPdf, getCrosstab, getCrosstabAxes, getTrend, getResponseFile };

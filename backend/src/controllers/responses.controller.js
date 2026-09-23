@@ -222,7 +222,8 @@ function getPublic(req, res) {
 /* POST /public/survey/:token  — submit response (no auth) */
 function submitPublic(req, res) {
   try {
-    const { answers, respondentId, deviceId } = req.body;
+    let { answers } = req.body;
+    const { respondentId, deviceId } = req.body;
     if (!answers || !Array.isArray(answers) || answers.length === 0) return badReq(res, 'Respostas são obrigatórias');
 
     const db = getDB();
@@ -283,7 +284,44 @@ function submitPublic(req, res) {
     }
 
     const stmt = db.prepare('INSERT INTO answers (id, response_id, question_id, value_text, value_num, value_json) VALUES (?,?,?,?,?,?)');
-    const valid = new Set(db.prepare('SELECT id FROM questions WHERE survey_id=?').all(survey.id).map(q => q.id));
+    const qRows = db.prepare('SELECT id, type, config FROM questions WHERE survey_id=?').all(survey.id);
+    const valid = new Set(qRows.map(q => q.id));
+    const byId  = {}; qRows.forEach(q => byId[q.id] = q);
+
+    // Anexos: o arquivo chega dentro do envio, em base64. Os tamanhos são conferidos
+    // ANTES de qualquer gravação, para o respondente receber o motivo — "passou do
+    // limite" — em vez de um erro genérico depois de metade da resposta estar no banco.
+    const anexos = [];
+    for (const a of answers) {
+      const q = byId[a.questionId];
+      if (!q || q.type !== 'file') continue;
+      const f = a.value;
+      if (!f || typeof f !== 'object' || !f.data) continue;
+      const cfg = (() => { try { return JSON.parse(q.config || '{}'); } catch { return {}; } })();
+      const maxMb = Number(cfg.maxSizeMb) > 0 ? Number(cfg.maxSizeMb) : 2;
+      const base64 = String(f.data).replace(/^data:[^;]*;base64,/, '');
+      const bytes = Math.floor(base64.length * 3 / 4);
+      if (bytes > maxMb * 1024 * 1024)
+        return badReq(res, `O arquivo "${String(f.filename || '').slice(0, 60)}" passa do limite de ${maxMb} MB.`);
+      anexos.push({ questionId: q.id, base64,
+        meta: { filename: String(f.filename || 'arquivo').slice(0, 200), mime: String(f.mime || '').slice(0, 120), size: bytes } });
+    }
+
+    // A resposta guarda só o inventário (nome, tipo, tamanho) — é o que a tela mostra.
+    if (previous) db.prepare('DELETE FROM response_files WHERE response_id=?').run(responseId);
+    const insFile = db.prepare(`INSERT INTO response_files (id, response_id, question_id, filename, mime, size, data)
+                                VALUES (?,?,?,?,?,?,?)`);
+    const metaPorPergunta = {};
+    anexos.forEach(x => {
+      insFile.run(uuid(), responseId, x.questionId, x.meta.filename, x.meta.mime, x.meta.size, x.base64);
+      metaPorPergunta[x.questionId] = x.meta;
+    });
+    answers = answers.map(a => {
+      const q = byId[a.questionId];
+      if (!q || q.type !== 'file') return a;
+      return { ...a, value: metaPorPergunta[a.questionId] || null };
+    });
+
     answers.forEach(a => {
       if (!valid.has(a.questionId)) return;   // ignora pergunta de outra pesquisa
       const isNum = typeof a.value === 'number';

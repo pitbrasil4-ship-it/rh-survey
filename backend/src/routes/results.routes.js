@@ -11,6 +11,7 @@ router.get('/segment-questions', ctrl.getSegmentQuestions);
 router.get('/trend',         ctrl.getTrend);
 router.get('/:surveyId/crosstab',       ctrl.getCrosstab);
 router.get('/:surveyId/crosstab-axes',  ctrl.getCrosstabAxes);
+router.get('/:surveyId/files/:fileId', auditLog('results.file','survey'), ctrl.getResponseFile);
 router.get('/:surveyId/pdf',  auditLog('results.pdf','survey'), ctrl.getPdf);
 router.post('/insights-pdf',  auditLog('results.insightsPdf','survey'), ctrl.getInsightsPdf);
 router.post('/insights',     auditLog('results.insights','survey'), ctrl.getInsights);
