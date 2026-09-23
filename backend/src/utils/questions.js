@@ -14,9 +14,13 @@
  *       fields                                // tipo form: [{ label, kind:'text|email|phone|date|number', required }]
  *     },
  *     logic: {
- *       showIf: { order, options:[] },        // exibe a pergunta só se a de nº `order` tiver uma destas alternativas
- *       endIf:  { options:[] }                // encerra o questionário se a resposta for uma destas alternativas
+ *       showIf: { match:'all'|'any', conditions:[{ order, op, options:[] }] },
+ *                                             // exibe a pergunta só quando as condições baterem
+ *       endIf:  { options:[] },               // encerra o questionário se a resposta for uma destas alternativas
+ *       jumpIf: [{ match, conditions:[...], to: <nº da página> | 'end' }]
+ *                                             // ao sair da página, pula para outra página (ou encerra)
  *     },
+ *     config.pageBreak                        // true = esta pergunta abre uma nova página
  *     dimensions: [dimensionId, ...]          // vínculo N:N com as dimensões (taxonomias)
  *   }
  */
@@ -66,6 +70,8 @@ function normalizeConfig(type, raw, optionCount) {
     // em dimensão nenhuma — serve para abrir todos os demais resultados por ela.
     if (c.segmentation) out.segmentation = true;
   }
+  // Quebra de página: vale para qualquer tipo — é onde a página anterior termina.
+  if (c.pageBreak) out.pageBreak = true;
   if (type === 'matrix') {
     const rows = strList(c.rows);
     if (rows) {
@@ -88,18 +94,58 @@ function normalizeConfig(type, raw, optionCount) {
   return Object.keys(out).length ? out : null;
 }
 
-/* Normaliza a lógica condicional. Referencia a pergunta-gatilho pelo número de ordem (1-based). */
+/* Operadores de uma condição. `answered`/`blank` não dependem de alternativa, e por isso
+   servem para perguntas abertas, que não têm lista de opções. */
+const COND_OPS = ['is', 'not', 'answered', 'blank'];
+
+/* Uma condição: a pergunta de nº `order` (1-based) satisfaz `op` sobre `options`. */
+function normalizeCondition(raw) {
+  const c = (raw && typeof raw === 'object') ? raw : {};
+  const order = Number(c.order);
+  if (!(order > 0)) return null;
+  const op = COND_OPS.includes(c.op) ? c.op : 'is';
+  if (op === 'answered' || op === 'blank') return { order, op };
+  const options = strList(c.options);
+  return options ? { order, op, options } : null;
+}
+
+/* Um grupo de condições com o conectivo. `all` = E, `any` = OU.
+   Aceita o formato antigo de uma condição só ({ order, options }), que é o que está
+   gravado nas pesquisas criadas antes da ramificação múltipla. */
+function normalizeConditionGroup(raw) {
+  const g = (raw && typeof raw === 'object') ? raw : {};
+  const list = Array.isArray(g.conditions) ? g.conditions
+             : (g.order ? [{ order: g.order, op: g.op, options: g.options }] : []);
+  const conditions = list.map(normalizeCondition).filter(Boolean);
+  if (!conditions.length) return null;
+  return { match: g.match === 'all' ? 'all' : 'any', conditions };
+}
+
+/* Normaliza a lógica condicional. As perguntas-gatilho são referenciadas pelo número
+   de ordem (1-based), e o destino de um salto pelo número da página (1-based). */
 function normalizeLogic(raw) {
   const l = (raw && typeof raw === 'object') ? raw : {};
   const out = {};
-  if (l.showIf && Number(l.showIf.order) > 0) {
-    const opts = strList(l.showIf.options);
-    if (opts) out.showIf = { order: Number(l.showIf.order), options: opts };
-  }
+
+  const showIf = normalizeConditionGroup(l.showIf);
+  if (showIf) out.showIf = showIf;
+
   if (l.endIf) {
     const opts = strList(l.endIf.options);
     if (opts) out.endIf = { options: opts };
   }
+
+  const jumps = (Array.isArray(l.jumpIf) ? l.jumpIf : (l.jumpIf ? [l.jumpIf] : []))
+    .map(j => {
+      const group = normalizeConditionGroup(j);
+      if (!group) return null;
+      const to = j.to === 'end' ? 'end' : Number(j.to);
+      if (to !== 'end' && !(to > 0)) return null;
+      return { ...group, to };
+    })
+    .filter(Boolean);
+  if (jumps.length) out.jumpIf = jumps;
+
   return Object.keys(out).length ? out : null;
 }
 
@@ -407,7 +453,9 @@ function fromRow(r) {
     options_es:    parseJSON(r.options_es),
     option_points: parseJSON(r.option_points),
     config:        parseJSON(r.config),
-    logic:         parseJSON(r.logic),
+    // A lógica volta sempre no formato novo, mesmo quando a linha foi gravada no antigo:
+    // assim o formulário e o editor lidam com uma forma só.
+    logic:         normalizeLogic(parseJSON(r.logic)),
     required:      r.required === 0 ? false : true,
     notes:         r.notes || '',
   };
@@ -416,6 +464,7 @@ function fromRow(r) {
 module.exports = {
   OPTION_TYPES, VALID_TYPES, FIELD_KINDS,
   hasOptions, parseJSON, strList, jsonList, pointList, defaultFavorableFrom,
+  COND_OPS, normalizeLogic,
   toRow, insertQuestions, replaceQuestions, syncQuestions, fromRow,
   dimensionsAt, setDimensions,
   INSERT_SQL, UPDATE_SQL, insertParams, updateParams,

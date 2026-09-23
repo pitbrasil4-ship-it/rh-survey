@@ -238,6 +238,38 @@ encurtar a escala abaixo do que já foi respondido, ou remover pergunta respondi
 
 ---
 
+## 🧭 Páginas, ramificação e saltos
+
+O questionário pode ser quebrado em páginas: no editor, o botão **⤶** na pergunta
+abre uma nova página a partir dela, e a lista mostra onde cada página começa. O
+respondente avança com **Continuar**, volta com **Voltar** e vê em que página está.
+
+Cada pergunta aceita três regras, todas montadas no painel **Lógica**:
+
+- **Exibir só se** — uma ou mais condições, com o conectivo **todas** (E) ou
+  **qualquer uma** (OU). Cada condição é `pergunta` + `é` / `não é` / `respondida` /
+  `em branco` + alternativas. Os operadores `respondida` e `em branco` dispensam
+  alternativa, então servem também para pergunta aberta.
+- **Encerrar o questionário se** — a resposta cai numa das alternativas marcadas.
+- **Saltar de página** — avaliado ao **sair da página**: se as condições baterem, o
+  respondente vai para a página escolhida ou direto para o fim. Vários saltos podem
+  conviver; o primeiro satisfeito manda.
+
+Uma condição só é aceita se a pergunta-gatilho vier **antes** — no salto, até o fim da
+própria página, já que o salto é avaliado depois de a página ser respondida. Página de
+destino sem nenhuma pergunta liberada é atravessada, em vez de aparecer vazia.
+
+**O que a página pulada não faz**: não cobra resposta obrigatória e não grava resposta
+nenhuma. Só entra no envio o que o respondente de fato percorreu — é o que mantém a
+apuração honesta quando cada pessoa vê um caminho diferente.
+
+A lógica é gravada apontando para o **número de ordem** da pergunta-gatilho, e o editor
+traduz isso para o id interno ao abrir e de volta ao salvar. Reordenar ou remover uma
+pergunta no editor ajusta as condições junto: remover o gatilho apaga a condição que o
+usava, e o grupo inteiro se ela era a única.
+
+---
+
 ## 🔗 Coletor: senha, cotas, variáveis no link e randomização
 
 O coletor é a forma como a pesquisa chega ao respondente. As opções ficam no
@@ -250,7 +282,7 @@ editor da pesquisa, no painel **Opções do coletor**:
 | **Permitir corrigir a resposta** | Quem já respondeu reabre o formulário com o que enviou e ajusta. A correção regrava a mesma resposta — não entra como resposta nova na apuração. Pelo link nominal a pessoa é reconhecida pelo convite; pelo link geral, pelo próprio navegador (a pesquisa continua anônima: o identificador é aleatório e fica no dispositivo). |
 | **Cota por distrito** | O distrito para de receber respostas ao atingir a meta cadastrada na Estrutura. Quem abre o link depois disso vê a tela de cota atingida, com o número já recebido. |
 | **Embaralhar alternativas** | Só nas perguntas de escolha sem peso e sem alternativa neutra — escala pontuada e “Não se aplica” nunca são embaralhadas. |
-| **Embaralhar perguntas** | Desligado automaticamente quando o questionário tem lógica condicional, que depende da ordem. A ordem é sorteada por respondente e **se mantém se a pessoa recarregar a página**. |
+| **Embaralhar perguntas** | Desligado automaticamente quando o questionário tem lógica condicional, que depende da ordem. Com páginas, o sorteio é **dentro de cada página**. A ordem é sorteada por respondente e **se mantém se a pessoa recarregar a página**. |
 
 ### Variáveis no link
 

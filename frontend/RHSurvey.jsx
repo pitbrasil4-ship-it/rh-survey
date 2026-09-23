@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
 import api from "./src/api.js";
 import { LANGS, t as translate, getStoredLang, storeLang, LangContext, useLang } from "./src/i18n.js";
 import LogoMark from "./src/LogoMark.jsx";
@@ -1125,11 +1125,13 @@ function moveItem(arr, from, to) {
   return a;
 }
 
-function MiniBtn({ onClick, title, disabled, danger, children }) {
+function MiniBtn({ onClick, title, disabled, danger, active, children }) {
+  const tone = danger ? "border-red-200 text-red-500 hover:bg-red-50"
+             : active ? "border-purple-300 bg-purple-50 text-purple-600"
+             : "border-slate-200 text-slate-500 hover:bg-slate-50";
   return (
     <button type="button" onClick={onClick} title={title} disabled={disabled}
-      className={`px-1.5 py-1 rounded-md border text-xs leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-        danger ? "border-red-200 text-red-500 hover:bg-red-50" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+      className={`px-1.5 py-1 rounded-md border text-xs leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${tone}`}>
       {children}
     </button>
   );
@@ -1410,55 +1412,42 @@ function autoFavorableFrom(options, points, neutralIndex) {
   return idx === undefined ? null : idx;
 }
 
-/* Lógica condicional: exibir a pergunta só se X for marcada, e encerrar em Y. */
-function LogicEditor({ q, previous, onChange }) {
+/* Lógica condicional: exibir a pergunta quando as condições baterem, encerrar em Y e
+   saltar de página. As condições referenciam a pergunta-gatilho pelo id do editor. */
+function LogicEditor({ q, previous, onChange, pages, pageNumber, jumpSources }) {
   const { t } = useLang();
   const logic = q.logic || {};
   const show  = logic.showIf || null;
   const end   = logic.endIf || null;
-  const src   = previous.find(p => p.id === (show && show.qid));
-  const srcOptions = src ? triggerOptions(src, t) : [];
-  const myOptions  = triggerOptions(q, t);
+  const jumps = logic.jumpIf || [];
+  const myOptions = triggerOptions(q, t);
 
-  const setShow = (patch) => onChange({ logic: { ...logic, showIf: patch } });
-  const setEnd  = (patch) => onChange({ logic: { ...logic, endIf: patch } });
+  const setLogic = (patch) => onChange({ logic: { ...logic, ...patch } });
+  const setShow  = (v) => setLogic({ showIf: v });
+  const setEnd   = (v) => setLogic({ endIf: v });
+  const setJumps = (v) => setLogic({ jumpIf: v.length ? v : null });
+
+  const blank = (src) => ({ qid: src ? src.id : null, op: "is", options: [] });
 
   return (
     <div className="mt-3 border border-slate-200 rounded-xl p-3 bg-white">
       <span className="text-xs font-semibold text-slate-600">{t('qe_logic')}</span>
 
+      {/* ── exibir só se ── */}
       <div className="mt-2">
         <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
           <input type="checkbox" checked={!!show}
-            onChange={() => setShow(show ? null : { qid: previous.length ? previous[previous.length - 1].id : null, options: [] })}
+            onChange={() => setShow(show ? null : { match: "any", conditions: [blank(previous[previous.length - 1])] })}
             disabled={!previous.length} className="accent-purple-600" />
           {t('qe_show_if')}
         </label>
         {!previous.length && <p className="text-xs text-slate-400 mt-1">{t('qe_show_if_none')}</p>}
         {show && (
-          <div className="mt-2 pl-5 space-y-1.5">
-            <select value={show.qid || ""} onChange={e => setShow({ qid: e.target.value, options: [] })}
-              className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none">
-              <option value="">{t('qe_pick_question')}</option>
-              {previous.map((p, i) => <option key={p.id} value={p.id}>{i + 1}. {String(p.text || "").slice(0, 60)}</option>)}
-            </select>
-            <div className="flex flex-wrap gap-1.5">
-              {srcOptions.map(o => {
-                const on = (show.options || []).includes(o);
-                return (
-                  <button key={o} type="button"
-                    onClick={() => setShow({ ...show, options: on ? show.options.filter(x => x !== o) : [...(show.options || []), o] })}
-                    className={`px-2 py-1 rounded-md text-xs border ${on ? "border-purple-400 bg-purple-50 text-purple-700 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-                    {o}
-                  </button>
-                );
-              })}
-              {src && !srcOptions.length && <span className="text-xs text-slate-400">{t('qe_no_trigger_options')}</span>}
-            </div>
-          </div>
+          <ConditionGroup group={show} sources={previous} onChange={setShow} addLabel={t('qe_add_condition')} />
         )}
       </div>
 
+      {/* ── encerrar em ── */}
       <div className="mt-3 pt-3 border-t border-slate-100">
         <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
           <input type="checkbox" checked={!!end} onChange={() => setEnd(end ? null : { options: [] })}
@@ -1481,6 +1470,103 @@ function LogicEditor({ q, previous, onChange }) {
           </div>
         )}
       </div>
+
+      {/* ── salto de página ── */}
+      <div className="mt-3 pt-3 border-t border-slate-100">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-slate-600">{t('qe_jump')}</span>
+          <button type="button" disabled={pages.length < 2}
+            onClick={() => setJumps([...jumps, { match: "any", conditions: [blank(q)], to: Math.min(pageNumber + 1, pages.length) }])}
+            className="text-xs font-medium text-purple-600 hover:bg-purple-50 rounded-md px-2 py-1 disabled:opacity-40 disabled:hover:bg-transparent">
+            + {t('qe_add_jump')}
+          </button>
+        </div>
+        <p className="text-[11px] text-slate-400 mt-0.5">{pages.length < 2 ? t('qe_jump_none') : t('qe_jump_hint')}</p>
+        {jumps.map((j, idx) => (
+          <div key={idx} className="mt-2 border border-slate-100 rounded-lg p-2 bg-slate-50/60">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs text-slate-500">{t('qe_jump_to')}</span>
+              <select value={String(j.to)} onChange={e => setJumps(jumps.map((x, k) => k === idx ? { ...x, to: e.target.value === "end" ? "end" : Number(e.target.value) } : x))}
+                className="border border-slate-200 rounded-md px-2 py-1 text-xs bg-white focus:outline-none">
+                {pages.map(pg => <option key={pg.number} value={pg.number}>{t('qe_page_n', { n: pg.number })}</option>)}
+                <option value="end">{t('qe_jump_end')}</option>
+              </select>
+              <button type="button" onClick={() => setJumps(jumps.filter((_, k) => k !== idx))}
+                className="ml-auto text-xs text-slate-400 hover:text-red-500">{t('common_remove')}</button>
+            </div>
+            <ConditionGroup group={j} sources={jumpSources}
+              onChange={g => setJumps(jumps.map((x, k) => k === idx ? { ...g, to: x.to } : x))}
+              addLabel={t('qe_add_condition')} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* Grupo de condições com o conectivo E/OU. Cada linha é pergunta + operador +
+   alternativas; "respondida"/"em branco" dispensam alternativa e por isso servem
+   também para pergunta aberta. */
+function ConditionGroup({ group, sources, onChange, addLabel }) {
+  const { t } = useLang();
+  const conditions = group.conditions || [];
+  const set = (k, patch) => onChange({ ...group, conditions: conditions.map((c, i) => i === k ? { ...c, ...patch } : c) });
+  const OPS = [["is", t('qe_op_is')], ["not", t('qe_op_not')], ["answered", t('qe_op_answered')], ["blank", t('qe_op_blank')]];
+
+  return (
+    <div className="mt-2 pl-5 space-y-2">
+      {conditions.length > 1 && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-slate-500">{t('qe_match')}</span>
+          {[["all", t('qe_match_all')], ["any", t('qe_match_any')]].map(([v, label]) => (
+            <button key={v} type="button" onClick={() => onChange({ ...group, match: v })}
+              className={`px-2 py-0.5 rounded-md text-[11px] border ${(group.match || "any") === v ? "border-purple-400 bg-purple-50 text-purple-700 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {conditions.map((c, k) => {
+        const src = sources.find(p => p.id === c.qid);
+        const srcOptions = src ? triggerOptions(src, t) : [];
+        const needsOptions = c.op !== "answered" && c.op !== "blank";
+        return (
+          <div key={k} className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <select value={c.qid || ""} onChange={e => set(k, { qid: e.target.value, options: [] })}
+                className="flex-1 min-w-0 border border-slate-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none">
+                <option value="">{t('qe_pick_question')}</option>
+                {sources.map((p, i) => <option key={p.id} value={p.id}>{i + 1}. {String(p.text || "").slice(0, 55)}</option>)}
+              </select>
+              <select value={c.op || "is"} onChange={e => set(k, { op: e.target.value })}
+                className="border border-slate-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none">
+                {OPS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+              </select>
+              {conditions.length > 1 && (
+                <button type="button" onClick={() => onChange({ ...group, conditions: conditions.filter((_, i) => i !== k) })}
+                  className="text-xs text-slate-400 hover:text-red-500 px-1">×</button>
+              )}
+            </div>
+            {needsOptions && (
+              <div className="flex flex-wrap gap-1.5">
+                {srcOptions.map(o => {
+                  const on = (c.options || []).includes(o);
+                  return (
+                    <button key={o} type="button"
+                      onClick={() => set(k, { options: on ? c.options.filter(x => x !== o) : [...(c.options || []), o] })}
+                      className={`px-2 py-1 rounded-md text-xs border ${on ? "border-purple-400 bg-purple-50 text-purple-700 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                      {o}
+                    </button>
+                  );
+                })}
+                {src && !srcOptions.length && <span className="text-xs text-slate-400">{t('qe_no_trigger_options')}</span>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <button type="button" onClick={() => onChange({ ...group, conditions: [...conditions, { qid: null, op: "is", options: [] }] })}
+        className="text-xs font-medium text-purple-600 hover:bg-purple-50 rounded-md px-2 py-1">+ {addLabel}</button>
     </div>
   );
 }
@@ -1493,7 +1579,7 @@ function triggerOptions(q, t) {
 }
 
 /* Cartão de uma pergunta no questionário, com o editor completo ao expandir. */
-function QuestionCard({ q, index, total, previous, dimensionSets, expanded, onToggle, onChange, onRemove, onMove }) {
+function QuestionCard({ q, index, total, previous, pages, pageNumber, jumpSources, dimensionSets, expanded, onToggle, onChange, onRemove, onMove }) {
   const { t } = useLang();
   const cfg = q.config || {};
   const dims = q.dimensions || [];
@@ -1511,13 +1597,16 @@ function QuestionCard({ q, index, total, previous, dimensionSets, expanded, onTo
             {q.option_points && <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{t('qe_scored')}</span>}
             {q.required === false && <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{t('qe_optional')}</span>}
             {Number.isInteger(cfg.neutralIndex) && <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full">{t('qe_neutral')}</span>}
-            {q.logic && (q.logic.showIf || q.logic.endIf) && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{t('qe_has_logic')}</span>}
+            {q.logic && (q.logic.showIf || q.logic.endIf || (q.logic.jumpIf || []).length) && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{t('qe_has_logic')}</span>}
             {dims.length > 0 && <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full">{dims.length} {t('qe_dimensions').toLowerCase()}</span>}
             {cfg.segmentation && <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">{t('qe_segmentation_short')}</span>}
             {q.answerCount > 0 && <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full" title={t('qe_answered_hint')}>{t('qe_answered_n', { n: q.answerCount })}</span>}
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
+          <MiniBtn onClick={() => onChange({ config: { ...cfg, pageBreak: cfg.pageBreak ? undefined : true } })}
+            disabled={index === 0} active={!!cfg.pageBreak}
+            title={cfg.pageBreak ? t('qe_page_break_off') : t('qe_page_break_on')}>⤶</MiniBtn>
           <MiniBtn onClick={() => onMove(-1)} disabled={index === 0} title={t('qe_move_up')}>↑</MiniBtn>
           <MiniBtn onClick={() => onMove(1)} disabled={index === total - 1} title={t('qe_move_down')}>↓</MiniBtn>
           <MiniBtn onClick={onToggle} title={t('qe_edit')}>{expanded ? "▲" : "✎"}</MiniBtn>
@@ -1570,7 +1659,8 @@ function QuestionCard({ q, index, total, previous, dimensionSets, expanded, onTo
           {hasOptionList(q.type) && <FavorabilityEditor q={q} onChange={onChange} />}
           {q.type === "matrix" && <MatrixRowsEditor q={q} onChange={onChange} />}
           {q.type === "form"   && <FormFieldsEditor q={q} onChange={onChange} />}
-          <LogicEditor q={q} previous={previous} onChange={onChange} />
+          <LogicEditor q={q} previous={previous} onChange={onChange}
+            pages={pages} pageNumber={pageNumber} jumpSources={jumpSources} />
 
           {dimensionSets.map(set => {
             const picked = (set.dimensions || []).filter(d => dims.includes(d.id));
@@ -1733,6 +1823,59 @@ function HistoryModal({ surveyId, onClose }) {
 }
 
 // ─── SURVEY BUILDER ────────────────────────────────────────────────────────────
+/* Páginas no editor: a quebra fica na pergunta que ABRE a página seguinte, então a
+   página de uma pergunta é 1 + quantas quebras vieram antes dela. */
+function pageNumberOf(list, i) {
+  let n = 1;
+  for (let x = 1; x <= i && x < list.length; x++) if (list[x].config && list[x].config.pageBreak) n++;
+  return n;
+}
+
+/* Índice da última pergunta da página onde está a pergunta `i`. */
+function pageEndIndex(list, i) {
+  for (let x = i + 1; x < list.length; x++) if (list[x].config && list[x].config.pageBreak) return x - 1;
+  return list.length - 1;
+}
+
+/* Páginas do questionário: [{ number, first, last, count }]. */
+function pageList(list) {
+  const pages = [];
+  list.forEach((q, i) => {
+    if (!pages.length || (q.config && q.config.pageBreak)) pages.push({ number: pages.length + 1, first: i, last: i, count: 0 });
+    const cur = pages[pages.length - 1];
+    cur.last = i; cur.count++;
+  });
+  return pages;
+}
+
+/* A lógica é gravada apontando para o NÚMERO DE ORDEM da pergunta-gatilho, mas dentro do
+   editor a pergunta é identificada pelo id — que é o que sobrevive a mover e reordenar.
+   Esta passagem traduz a lista inteira ao abrir; `serializeQuestions` faz o caminho de
+   volta. Sem ela, reabrir uma pesquisa para editar descartava a lógica no salvamento. */
+function linkLogicByOrder(list) {
+  const idAt = (order) => { const q = list[Number(order) - 1]; return q ? q.id : null; };
+  const conds = (group) => {
+    if (!group || !Array.isArray(group.conditions)) return null;
+    const conditions = group.conditions
+      .map(c => ({ qid: idAt(c.order), op: c.op || "is", options: c.options || [] }))
+      .filter(c => c.qid != null);
+    return conditions.length ? { match: group.match === "all" ? "all" : "any", conditions } : null;
+  };
+  return list.map(q => {
+    if (!q.logic) return q;
+    const logic = {};
+    const showIf = conds(q.logic.showIf);
+    if (showIf) logic.showIf = showIf;
+    if (q.logic.endIf && (q.logic.endIf.options || []).length) logic.endIf = { options: q.logic.endIf.options };
+    const jumpIf = (q.logic.jumpIf || []).map(j => {
+      const g = conds(j);
+      return g ? { ...g, to: j.to } : null;
+    }).filter(Boolean);
+    if (jumpIf.length) logic.jumpIf = jumpIf;
+    return { ...q, logic: Object.keys(logic).length ? logic : null };
+  });
+}
+
 /* Normaliza uma pergunta vinda de template, IA, planilha ou do backend para o
    formato do editor — e já cria a lista de alternativas quando o tipo pede uma. */
 function toEditorQuestion(q, i) {
@@ -1771,7 +1914,7 @@ function SurveyBuilder({ onBack, initial, editId }) {
   const [tab,       setTab]       = useState("builder");
   const [surveyName,setSurveyName]= useState(initial?.name || "");
   const [questions, setQuestions] = useState(
-    Array.isArray(initial?.questions) ? initial.questions.map(toEditorQuestion) : []
+    Array.isArray(initial?.questions) ? linkLogicByOrder(initial.questions.map(toEditorQuestion)) : []
   );
   const [expandedQ, setExpandedQ] = useState(null);
   const [dimensionSets, setDimensionSets] = useState([]);
@@ -1834,7 +1977,7 @@ function SurveyBuilder({ onBack, initial, editId }) {
           allowEdit: !!sv.allow_edit, randomizeQuestions: !!sv.randomize_questions,
           randomizeOptions: !!sv.randomize_options, enforceQuota: !!sv.enforce_quota,
         });
-        const qs = (d.questions || []).map(toEditorQuestion);
+        const qs = linkLogicByOrder((d.questions || []).map(toEditorQuestion));
         setQuestions(qs);
         setResponseCount(d.responseCount || 0);
         const orig = {}; qs.forEach(q => { if (q.serverId) orig[q.serverId] = [...(q.dimensions || [])].sort().join(","); });
@@ -1886,10 +2029,24 @@ function SurveyBuilder({ onBack, initial, editId }) {
     return (i < 0) ? p : moveItem(p, i, i + dir);
   });
   const removeQuestion = (id) => setQuestions(p => {
-    // Remover a pergunta-gatilho deixaria a condicional apontando para o nada.
-    const next = p.filter(q => q.id !== id);
-    return next.map(q => (q.logic && q.logic.showIf && q.logic.showIf.qid === id)
-      ? { ...q, logic: { ...q.logic, showIf: null } } : q);
+    // Remover a pergunta-gatilho deixaria a condicional apontando para o nada: some a
+    // condição que a usava, e some o grupo inteiro se ela era a única.
+    const prune = (group) => {
+      if (!group || !Array.isArray(group.conditions)) return null;
+      const conditions = group.conditions.filter(c => c.qid !== id);
+      return conditions.length ? { ...group, conditions } : null;
+    };
+    return p.filter(q => q.id !== id).map(q => {
+      if (!q.logic) return q;
+      const logic = { ...q.logic };
+      if (logic.showIf) logic.showIf = prune(logic.showIf);
+      if (logic.jumpIf) {
+        logic.jumpIf = logic.jumpIf.map(j => { const g = prune(j); return g ? { ...g, to: j.to } : null; }).filter(Boolean);
+        if (!logic.jumpIf.length) delete logic.jumpIf;
+      }
+      const kept = Object.keys(logic).filter(k => logic[k]);
+      return { ...q, logic: kept.length ? logic : null };
+    });
   });
 
   /* Baixa as perguntas no MESMO formato da planilha de importação — é assim que o RH
@@ -1913,12 +2070,36 @@ function SurveyBuilder({ onBack, initial, editId }) {
   /* Converte as perguntas do editor para o formato da API (lógica por ordem). */
   const serializeQuestions = () => questions.map((q, i) => {
     const logic = {};
-    if (q.logic && q.logic.showIf && q.logic.showIf.qid && (q.logic.showIf.options || []).length) {
-      const srcIdx = questions.findIndex(x => x.id === q.logic.showIf.qid);
-      // A condicional só vale se o gatilho estiver ANTES desta pergunta.
-      if (srcIdx >= 0 && srcIdx < i) logic.showIf = { order: srcIdx + 1, options: q.logic.showIf.options };
+    /* Uma condição só entra se o gatilho existir e estiver ANTES desta pergunta: depois,
+       o respondente ainda não teria respondido quando a condição fosse avaliada. */
+    const conds = (group, limit) => {
+      if (!group || !Array.isArray(group.conditions)) return null;
+      const conditions = group.conditions.map(c => {
+        const srcIdx = questions.findIndex(x => x.id === c.qid);
+        if (srcIdx < 0 || srcIdx >= limit) return null;
+        const op = c.op || "is";
+        if (op === "answered" || op === "blank") return { order: srcIdx + 1, op };
+        return (c.options || []).length ? { order: srcIdx + 1, op, options: c.options } : null;
+      }).filter(Boolean);
+      return conditions.length ? { match: group.match === "all" ? "all" : "any", conditions } : null;
+    };
+
+    if (q.logic) {
+      const showIf = conds(q.logic.showIf, i);
+      if (showIf) logic.showIf = showIf;
+      if (q.logic.endIf && (q.logic.endIf.options || []).length) logic.endIf = { options: q.logic.endIf.options };
+      // O salto é avaliado ao SAIR da página, então pode olhar para qualquer pergunta
+      // até o fim da página desta pergunta — inclusive ela mesma.
+      const limit = pageEndIndex(questions, i) + 1;
+      const jumpIf = (q.logic.jumpIf || []).map(j => {
+        const g = conds(j, limit);
+        if (!g) return null;
+        if (j.to === "end") return { ...g, to: "end" };
+        const to = Number(j.to);
+        return to > 0 ? { ...g, to } : null;
+      }).filter(Boolean);
+      if (jumpIf.length) logic.jumpIf = jumpIf;
     }
-    if (q.logic && q.logic.endIf && (q.logic.endIf.options || []).length) logic.endIf = { options: q.logic.endIf.options };
     return {
       ...(q.serverId ? { id: q.serverId } : {}),
       type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "",
@@ -2267,7 +2448,7 @@ function SurveyBuilder({ onBack, initial, editId }) {
                   </label>
                 ))}
               </div>
-              {collector.randomizeQuestions && questions.some(q => q.logic && (q.logic.showIf || q.logic.endIf)) && (
+              {collector.randomizeQuestions && questions.some(q => q.logic && (q.logic.showIf || q.logic.endIf || (q.logic.jumpIf || []).length)) && (
                 <p className="text-xs text-amber-600 flex items-start gap-1">
                   <AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />{t('cl_rand_logic_warning')}
                 </p>
@@ -2492,12 +2673,24 @@ function SurveyBuilder({ onBack, initial, editId }) {
                 <p className="text-xs text-slate-400 mt-1">{t('sb_no_q_hint')}</p>
               </div>
             ) : questions.map((q,i) => (
+              <Fragment key={q.id}>
+              {i > 0 && q.config && q.config.pageBreak && (
+                <div className="flex items-center gap-2 py-1">
+                  <div className="flex-1 border-t border-dashed border-purple-200" />
+                  <span className="text-[11px] font-semibold text-purple-500 whitespace-nowrap">
+                    {t('qe_page_n', { n: pageNumberOf(questions, i) })}
+                  </span>
+                  <div className="flex-1 border-t border-dashed border-purple-200" />
+                </div>
+              )}
               <QuestionCard
-                key={q.id}
                 q={q}
                 index={i}
                 total={questions.length}
                 previous={questions.slice(0, i)}
+                pages={pageList(questions)}
+                pageNumber={pageNumberOf(questions, i)}
+                jumpSources={questions.slice(0, pageEndIndex(questions, i) + 1)}
                 dimensionSets={dimensionSets}
                 expanded={expandedQ === q.id}
                 onToggle={() => setExpandedQ(x => x === q.id ? null : q.id)}
@@ -2505,6 +2698,7 @@ function SurveyBuilder({ onBack, initial, editId }) {
                 onRemove={() => removeQuestion(q.id)}
                 onMove={dir => moveQuestion(q.id, dir)}
               />
+              </Fragment>
             ))}
           </div>
         </div>

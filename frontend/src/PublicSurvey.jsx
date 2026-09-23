@@ -290,6 +290,40 @@ function selectedLabels(q, value) {
   return [String(value)];
 }
 
+/* Uma condição isolada: a pergunta-gatilho satisfaz o operador?
+   Gatilho que não existe no questionário nunca é satisfeito — melhor a pergunta não
+   aparecer do que aparecer por engano com a condição ignorada. */
+function testCondition(cond, byOrder, answers) {
+  const src = byOrder[cond.order];
+  if (!src) return false;
+  const marked = selectedLabels(src, answers[src.id]);
+  const has = (cond.options || []).some(o => marked.includes(String(o)));
+  switch (cond.op) {
+    case 'answered': return marked.length > 0;
+    case 'blank':    return marked.length === 0;
+    case 'not':      return marked.length > 0 && !has;
+    default:         return has;   // 'is'
+  }
+}
+
+/* Grupo de condições com o conectivo: `all` = E, `any` = OU. */
+function testGroup(group, byOrder, answers) {
+  if (!group || !Array.isArray(group.conditions) || !group.conditions.length) return true;
+  const fn = c => testCondition(c, byOrder, answers);
+  return group.match === 'all' ? group.conditions.every(fn) : group.conditions.some(fn);
+}
+
+/* Divide o questionário em páginas. A quebra fica na pergunta que abre a página
+   seguinte; sem nenhuma quebra o questionário é uma página só. */
+function paginate(questions) {
+  const pages = [];
+  questions.forEach(q => {
+    if (!pages.length || (q.config && q.config.pageBreak)) pages.push([]);
+    pages[pages.length - 1].push(q);
+  });
+  return pages.length ? pages : [[]];
+}
+
 /* Aplica a lógica condicional: esconde perguntas não liberadas e corta o
    questionário quando uma alternativa de encerramento é marcada. */
 function applyLogic(questions, answers) {
@@ -300,14 +334,7 @@ function applyLogic(questions, answers) {
 
   for (const q of questions) {
     if (endedBy) break;
-    const cond = q.logic && q.logic.showIf;
-    if (cond) {
-      const src = byOrder[cond.order];
-      // Gatilho fora do questionário ou ainda não marcado: a pergunta não aparece.
-      if (!src) continue;
-      const marked = selectedLabels(src, answers[src.id]);
-      if (!cond.options.some(o => marked.includes(String(o)))) continue;
-    }
+    if (q.logic && q.logic.showIf && !testGroup(q.logic.showIf, byOrder, answers)) continue;
     visible.push(q);
     const end = q.logic && q.logic.endIf;
     if (end) {
@@ -316,6 +343,24 @@ function applyLogic(questions, answers) {
     }
   }
   return { visible, endedBy };
+}
+
+/* Para onde ir ao sair da página: o primeiro salto satisfeito manda, na ordem em que as
+   perguntas aparecem. Devolve o índice da página de destino, 'end' para encerrar, ou
+   null quando é para seguir para a próxima página. */
+function jumpTarget(pageQuestions, pages, questions, answers) {
+  const byOrder = {};
+  questions.forEach(q => { byOrder[q.order_num] = q; });
+  for (const q of pageQuestions) {
+    for (const j of (q.logic && q.logic.jumpIf) || []) {
+      if (!testGroup(j, byOrder, answers)) continue;
+      if (j.to === 'end') return 'end';
+      // O destino é gravado como número de página (1-based) do questionário montado.
+      const idx = Number(j.to) - 1;
+      if (idx >= 0 && idx < pages.length) return idx;
+    }
+  }
+  return null;
 }
 
 export default function PublicSurvey({ token }) {
@@ -336,6 +381,8 @@ export default function PublicSurvey({ token }) {
   const [pwWrong, setPwWrong] = useState(false);
   const [thankYou, setThankYou] = useState("");      // página final personalizada
   const [allowEdit, setAllowEdit] = useState(false); // pesquisa aceita corrigir o envio
+  const [trail, setTrail] = useState([0]);          // caminho percorrido entre as páginas
+  const [jumpEnded, setJumpEnded] = useState(false);// um salto levou ao fim do questionário
   const [editing, setEditing] = useState(null);      // resposta anterior, para corrigir
   const [prefill, setPrefill] = useState(null);      // resposta vinda do link
   const [linkInfo, setLinkInfo] = useState(null);
@@ -360,6 +407,7 @@ export default function PublicSurvey({ token }) {
       setQuestions(data.questions || []);
       setOnePerDevice(!!data.onePerDevice);
       setAllowEdit(!!data.allowEdit);
+      setTrail([0]); setJumpEnded(false);
       setInvited(data.invited || null);
       setThankYou(data.thankYou || "");
       setPrefill(data.prefill || null);
@@ -394,11 +442,33 @@ export default function PublicSurvey({ token }) {
   // Só as perguntas liberadas pela lógica condicional entram na contagem e no envio.
   const { visible, endedBy } = applyLogic(questions, answers);
 
+  // Páginas: a estrutura vem do questionário inteiro, porque a quebra pode estar numa
+  // pergunta que a lógica escondeu — e nesse caso a página continua existindo. O que
+  // cada página mostra é só o que a lógica liberou.
+  const visibleIds = new Set(visible.map(q => q.id));
+  const pages = paginate(questions).map(pg => pg.filter(q => visibleIds.has(q.id)));
+  const multi = pages.length > 1;
+  const curPage = Math.min(trail[trail.length - 1] || 0, pages.length - 1);
+  const onPage = multi ? (pages[curPage] || []) : visible;
+  // No envio vai o que foi efetivamente percorrido: uma página que o salto pulou não
+  // entra, nem como obrigatória em branco.
+  const walked = multi ? [...new Set(trail)].sort((a, b) => a - b).flatMap(i => pages[i] || []) : visible;
+  const numberOf = (q) => visible.indexOf(q) + 1;
+  // Páginas com conteúdo — é sobre elas que o respondente vê o progresso.
+  const filledPages = pages.filter(pg => pg.length).length;
+  const pagePos = pages.slice(0, curPage + 1).filter(pg => pg.length).length;
+  const nextPageIdx = () => {
+    for (let i = curPage + 1; i < pages.length; i++) if (pages[i].length) return i;
+    return null;
+  };
+  const finished = !!endedBy || jumpEnded;
+  const isLast = finished || !multi || nextPageIdx() === null;
+
   const filled = (v) => v !== undefined && v !== null && v !== '' &&
     !(Array.isArray(v) && v.length === 0) &&
     !(typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);
 
-  const answeredCount = visible.filter(q => filled(answers[q.id])).length;
+  const answeredCount = walked.filter(q => filled(answers[q.id])).length;
 
   /* Valor final da pergunta: troca o rótulo "Outros" pelo texto digitado. */
   const finalValue = (q) => {
@@ -409,32 +479,58 @@ export default function PublicSurvey({ token }) {
     return v.map(x => (x === other ? (typed || other) : x));
   };
 
-  /* Pendências antes de enviar: obrigatórias em branco e campos de formulário inválidos. */
-  const pending = () => {
+  /* Pendências: obrigatórias em branco e campos de formulário inválidos. Recebe a lista
+     a conferir — a página, ao avançar; o caminho inteiro, ao enviar. */
+  const pending = (list) => {
     const missing = [];
-    visible.forEach((q, i) => {
+    list.forEach(q => {
+      const n = numberOf(q);
       const v = answers[q.id];
-      if (q.required && !filled(v)) { missing.push(tr('missing_q', { n: i + 1 })); return; }
+      if (q.required && !filled(v)) { missing.push(tr('missing_q', { n })); return; }
       if (q.type === 'form' && q.config && Array.isArray(q.config.fields)) {
         const cur = (v && typeof v === 'object') ? v : {};
         q.config.fields.forEach(f => {
           const e = fieldError(f, cur[f.label], tr);
-          if (e) missing.push(`${i + 1}. ${f.label}: ${e}`);
+          if (e) missing.push(`${n}. ${f.label}: ${e}`);
         });
       }
     });
     return missing;
   };
 
+  const showMissing = (missing) => {
+    setShowErrors(true);
+    setErrMsg(tr('missing_required') + ' ' + missing.slice(0, 4).join('; ') + (missing.length > 4 ? '…' : ''));
+  };
+  const toTop = () => { try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch { } };
+
+  /* Avança de página: confere a página, consulta os saltos e empilha o destino no
+     caminho. Página de destino sem nenhuma pergunta liberada é atravessada. */
+  const goNext = () => {
+    setErrMsg('');
+    const missing = pending(onPage);
+    if (missing.length) { showMissing(missing); return; }
+    setShowErrors(false);
+    const jump = jumpTarget(onPage, pages, questions, answers);
+    if (jump === 'end') { setJumpEnded(true); toTop(); return; }
+    let target = jump == null ? nextPageIdx() : jump;
+    while (target != null && !(pages[target] || []).length) target = target + 1 < pages.length ? target + 1 : null;
+    if (target == null) { setJumpEnded(true); toTop(); return; }
+    setTrail(t => [...t, target]);
+    toTop();
+  };
+
+  const goBack = () => {
+    setJumpEnded(false); setShowErrors(false); setErrMsg('');
+    setTrail(t => (t.length > 1 ? t.slice(0, -1) : t));
+    toTop();
+  };
+
   const submit = async () => {
     setErrMsg('');
-    const missing = pending();
-    if (missing.length) {
-      setShowErrors(true);
-      setErrMsg(tr('missing_required') + ' ' + missing.slice(0, 4).join('; ') + (missing.length > 4 ? '…' : ''));
-      return;
-    }
-    const payload = visible
+    const missing = pending(walked);
+    if (missing.length) { showMissing(missing); return; }
+    const payload = walked
       .map(q => ({ questionId: q.id, value: finalValue(q) }))
       .filter(a => filled(a.value));
     // A resposta que veio no link (ex.: modalidade) vai junto, mesmo sem aparecer na tela.
@@ -554,13 +650,21 @@ export default function PublicSurvey({ token }) {
           {survey.anonymous ? <span style={{ background:'#EFF6FF', color:'#2563EB', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{tr('anon_badge')}</span> : null}
           <span style={{ background:'#F0FDF4', color:'#16A34A', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{tr('lgpd_badge')}</span>
           <span style={{ background:'#F1F5F9', color:'#64748B', padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{visible.length} {visible.length!==1 ? tr('q_many') : tr('q_one')}</span>
+          {multi ? <span style={{ background:'#FEF2F2', color:RED_DARK, padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{tr('page_of', { a: pagePos, b: filledPages })}</span> : null}
           {invited && invited.name ? <span style={{ background:'#FEF2F2', color:RED_DARK, padding:'3px 10px', borderRadius:99, fontWeight:600 }}>{tr('invited_as', { name: invited.name })}</span> : null}
           {linkInfo ? <span style={{ background:'#F8FAFC', color:'#64748B', padding:'3px 10px', borderRadius:99, fontWeight:600 }}
             title={tr('linkvars_hint')}>{Object.values(linkInfo).join(' · ')}</span> : null}
         </div>
       </Card>
 
-      {visible.map((q, idx) => {
+      {multi ? (
+        <div style={{ height:5, borderRadius:99, background:'#F1F5F9', overflow:'hidden', margin:'0 0 14px' }}>
+          <div style={{ height:'100%', borderRadius:99, background:RED, width:`${filledPages ? Math.round((pagePos / filledPages) * 100) : 0}%`, transition:'width .25s' }} />
+        </div>
+      ) : null}
+
+      {onPage.map((q) => {
+        const idx = numberOf(q) - 1;
         const otherLabel = (q.config && q.config.allowOther) ? (q.config.otherLabel || tr('other_option')) : null;
         // A opção "Outros" entra no fim da lista e abre um campo de texto quando marcada.
         const opts = otherLabel ? [...(q.options || []), otherLabel] : (q.options || []);
@@ -609,7 +713,7 @@ export default function PublicSurvey({ token }) {
         );
       })}
 
-      {endedBy ? (
+      {finished ? (
         <Card style={{ marginBottom:14, background:'#F8FAFC', borderStyle:'dashed' }}>
           <p style={{ margin:0, fontSize:13, color:'#64748B' }}>{tr('logic_ended')}</p>
         </Card>
@@ -617,12 +721,27 @@ export default function PublicSurvey({ token }) {
 
       {errMsg ? <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', color:'#B91C1C', borderRadius:10, padding:'12px 14px', fontSize:14, marginBottom:14 }}>⚠️ {errMsg}</div> : null}
 
-      <Card style={{ position:'sticky', bottom:16, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
-        <span style={{ fontSize:13, color:'#64748B' }}>{tr('answered_of', { a: answeredCount, b: visible.length })}</span>
-        <button onClick={submit} disabled={submitting}
-          style={{ padding:'12px 24px', background: submitting ? '#FCA5A5' : RED, color:'white', border:'none', borderRadius:10, cursor: submitting ? 'default' : 'pointer', fontWeight:700, fontSize:14 }}>
-          {submitting ? tr('sending') : (editing ? tr('submit_update') : tr('submit_answers'))}
-        </button>
+      <Card style={{ position:'sticky', bottom:16, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
+        <span style={{ fontSize:13, color:'#64748B' }}>{tr('answered_of', { a: answeredCount, b: walked.length })}</span>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {multi && trail.length > 1 ? (
+            <button onClick={goBack} disabled={submitting}
+              style={{ padding:'12px 18px', background:'white', color:'#475569', border:'1px solid #E2E8F0', borderRadius:10, cursor:'pointer', fontWeight:700, fontSize:14 }}>
+              {tr('page_back')}
+            </button>
+          ) : null}
+          {isLast ? (
+            <button onClick={submit} disabled={submitting}
+              style={{ padding:'12px 24px', background: submitting ? '#FCA5A5' : RED, color:'white', border:'none', borderRadius:10, cursor: submitting ? 'default' : 'pointer', fontWeight:700, fontSize:14 }}>
+              {submitting ? tr('sending') : (editing ? tr('submit_update') : tr('submit_answers'))}
+            </button>
+          ) : (
+            <button onClick={goNext} disabled={submitting}
+              style={{ padding:'12px 24px', background:RED, color:'white', border:'none', borderRadius:10, cursor:'pointer', fontWeight:700, fontSize:14 }}>
+              {tr('page_next')}
+            </button>
+          )}
+        </div>
       </Card>
 
       <p style={{ textAlign:'center', fontSize:11, color:'#94A3B8', marginTop:16 }}>

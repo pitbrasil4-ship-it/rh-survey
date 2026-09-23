@@ -94,10 +94,31 @@ function applyRandomization(survey, questions, seed) {
   if (survey.randomize_questions) {
     // A lógica condicional aponta para o número de ordem da pergunta-gatilho: embaralhar
     // as perguntas quebraria a referência, então esse par de recursos não se combina.
-    const hasLogic = list.some(q => q.logic && (q.logic.showIf || q.logic.endIf));
-    if (!hasLogic) list = shuffleWithSeed(list, seed);
+    const hasLogic = list.some(q => q.logic && (q.logic.showIf || q.logic.endIf || q.logic.jumpIf));
+    // Com páginas, o sorteio é dentro de cada página: passar pergunta de uma página para
+    // outra desmontaria o questionário desenhado em blocos e os saltos entre eles.
+    if (!hasLogic) list = shufflePages(list, seed);
   }
   return list;
+}
+
+/* Embaralha as perguntas respeitando as páginas. Sem quebra de página o questionário é
+   uma página só, e o resultado é o sorteio simples de antes. A marca de quebra fica na
+   primeira pergunta de cada página, então é reposta depois do sorteio. */
+function shufflePages(questions, seed) {
+  const pages = [];
+  questions.forEach(q => {
+    if (!pages.length || (q.config && q.config.pageBreak)) pages.push([]);
+    pages[pages.length - 1].push(q);
+  });
+  return pages.flatMap((page, pi) => {
+    const shuffled = shuffleWithSeed(page, seed + ':' + pi);
+    return shuffled.map((q, i) => {
+      const cfg = { ...(q.config || {}) };
+      if (pi > 0 && i === 0) cfg.pageBreak = true; else delete cfg.pageBreak;
+      return { ...q, config: Object.keys(cfg).length ? cfg : null };
+    });
+  });
 }
 
 /* Resposta anterior deste respondente, quando a pesquisa permite corrigir o envio.
