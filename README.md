@@ -348,6 +348,23 @@ texto aberto) aparece sem valor em vez de contar como queda.
 
 ---
 
+## 📤 Exportações
+
+| Formato | Onde | O que sai |
+|---|---|---|
+| **XLSX** | Resultados → *Relatório (Excel)* | Seis abas: Resumo, Dimensões, Por pergunta (com a distribuição rotulada, contagem e %), Recortes, Participação (meta × respostas pela Estrutura) e Pergunta × Segmento. Todas carregam favorabilidade, desfavorabilidade e semáforo. |
+| **PPTX** | Resultados → *Apresentação* | A devolutiva pronta: capa, favorabilidade geral, uma página por taxonomia de dimensões, as 8 perguntas mais críticas, uma página por recorte e a tabela com os números exatos. |
+| **PDF** | Resultados → *PDF* | O relatório impresso, gerado no servidor. |
+| **CSV** | Vários painéis | Cruzamento, tendência, comparação de edições e o questionário no formato da planilha. |
+
+**Os gráficos do PPTX são objetos de gráfico do PowerPoint, não imagens.** Cada um leva
+a sua tabela de dados embutida: quem recebe o arquivo muda rótulo, cor, ordem ou recorte
+direto no PowerPoint, sem voltar aqui pedir outra versão — que era o trabalho manual
+feito depois de cada apuração. A biblioteca que gera o arquivo entra por carregamento
+sob demanda, só quando o botão é usado, para não pesar no painel.
+
+---
+
 ## 🔄 Fluxo de deploy automático
 
 ```
