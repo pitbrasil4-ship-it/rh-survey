@@ -26,7 +26,7 @@ function getPublic(req, res) {
 /* POST /public/survey/:token  — submit response (no auth) */
 function submitPublic(req, res) {
   try {
-    const { answers, respondentId } = req.body;
+    const { answers, respondentId, clientId, distrito, departamento } = req.body;
     if (!answers || !Array.isArray(answers) || answers.length === 0) return badReq(res, 'Respostas são obrigatórias');
 
     const db     = getDB();
@@ -38,13 +38,30 @@ function submitPublic(req, res) {
     if (survey.status !== 'ativo' || (survey.deadline && new Date(survey.deadline).getTime() < Date.now()))
       return badReq(res, 'Esta pesquisa está encerrada e não aceita mais respostas.');
 
+    // Uma resposta por navegador: o aparelho manda um identificador próprio e o servidor
+    // recusa a segunda tentativa na mesma pesquisa. Não bloqueia colegas na mesma rede.
+    const cid = (typeof clientId === 'string' && clientId.trim()) ? clientId.trim().slice(0, 64) : null;
+    if (cid) {
+      const already = db.prepare('SELECT id FROM responses WHERE survey_id = ? AND client_id = ?').get(survey.id, cid);
+      if (already) return badReq(res, 'Esta pesquisa já foi respondida neste dispositivo.');
+    }
+
     const responseId = uuid();
     const ipHash     = hashIP(req.ip || '');
-    const distritoId     = link ? (link.distrito_id || null) : null;
-    const departamentoId = link ? (link.departamento_id || null) : null;
+    // Segmento: o link de segmento manda; na falta dele, aceita o que veio no endereço (?distrito=).
+    const resolveSeg = (table, val) => {
+      if (!val || typeof val !== 'string') return null;
+      const v = val.trim(); if (!v) return null;
+      const byId = db.prepare(`SELECT id FROM ${table} WHERE id = ? AND tenant_id = (SELECT tenant_id FROM surveys WHERE id = ?)`).get(v, survey.id);
+      if (byId) return byId.id;
+      const byName = db.prepare(`SELECT id FROM ${table} WHERE LOWER(name) = LOWER(?) AND tenant_id = (SELECT tenant_id FROM surveys WHERE id = ?)`).get(v, survey.id);
+      return byName ? byName.id : null;
+    };
+    const distritoId     = (link && link.distrito_id)     || resolveSeg('distritos', distrito)        || null;
+    const departamentoId = (link && link.departamento_id) || resolveSeg('departamentos', departamento) || null;
 
-    db.prepare('INSERT INTO responses (id, survey_id, respondent_id, ip_hash, distrito_id, departamento_id) VALUES (?,?,?,?,?,?)').run(
-      responseId, survey.id, survey.anonymous ? null : (respondentId || null), ipHash, distritoId, departamentoId
+    db.prepare('INSERT INTO responses (id, survey_id, respondent_id, ip_hash, distrito_id, departamento_id, client_id) VALUES (?,?,?,?,?,?,?)').run(
+      responseId, survey.id, survey.anonymous ? null : (respondentId || null), ipHash, distritoId, departamentoId, cid
     );
 
     const stmt = db.prepare('INSERT INTO answers (id, response_id, question_id, value_text, value_num, value_json) VALUES (?,?,?,?,?,?)');

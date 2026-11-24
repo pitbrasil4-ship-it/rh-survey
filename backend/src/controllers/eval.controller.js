@@ -3,6 +3,7 @@ const { v4: uuid } = require('uuid');
 const { getDB }    = require('../config/database');
 const { ok, created, err, notFound, badReq } = require('../utils/response');
 const { hashIP }   = require('../utils/crypto');
+const { earnedPct } = require('../utils/scoring');
 
 const RELS = ['auto', 'gestor', 'par', 'subordinado'];
 
@@ -91,16 +92,12 @@ function results(req, res) {
     const cycle = db.prepare(`SELECT c.*, s.name AS survey_name FROM eval_cycles c LEFT JOIN surveys s ON c.survey_id=s.id WHERE c.id=? AND c.tenant_id=?`).get(req.params.cycleId, req.user.tenant_id);
     if (!cycle) return notFound(res, 'Ciclo');
 
-    // mapa de tipos para normalização
-    const questions = db.prepare('SELECT id, type, options FROM questions WHERE survey_id=?').all(cycle.survey_id);
-    const qMax = {};
-    questions.forEach(q => {
-      let max = 5;
-      if (q.type === 'nps') max = 10;
-      else if (q.type === 'scale' && q.options) { try { max = JSON.parse(q.options).length || 5; } catch {} }
-      else if (q.type === 'rating') max = 5;
-      qMax[q.id] = max;
-    });
+    // Mapa das perguntas. A nota usa a MESMA regra da tela de Resultados (utils/scoring):
+    // pesos por alternativa quando existem, alternativa neutra fora da conta.
+    const questions = db.prepare('SELECT id, type, options, option_points FROM questions WHERE survey_id=?').all(cycle.survey_id);
+    const PJ = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+    const qmap = {};
+    questions.forEach(q => { qmap[q.id] = { type: q.type, options: PJ(q.options) || [], points: PJ(q.option_points) }; });
 
     const subjects = db.prepare(`
       SELECT DISTINCT a.subject_id AS id, r.name
@@ -113,12 +110,15 @@ function results(req, res) {
       const allNorm = [];
       RELS.forEach(rel => {
         const rows = db.prepare(`
-          SELECT an.value_num, an.question_id
+          SELECT an.value_num, an.value_json, an.value_text, an.question_id
           FROM answers an
           JOIN responses rp ON an.response_id=rp.id
-          WHERE rp.survey_id=? AND rp.subject_id=? AND rp.relationship=? AND rp.completed_at IS NOT NULL AND an.value_num IS NOT NULL
+          WHERE rp.survey_id=? AND rp.subject_id=? AND rp.relationship=? AND rp.completed_at IS NOT NULL
         `).all(cycle.survey_id, sub.id, rel);
-        const norm = rows.map(x => (qMax[x.question_id] ? (x.value_num / qMax[x.question_id]) * 100 : null)).filter(v => v !== null);
+        const norm = rows.map(x => {
+          const q = qmap[x.question_id];
+          return q ? earnedPct(q, x, q.options, q.points) : null;
+        }).filter(v => v !== null);
         const avg = norm.length ? Math.round(norm.reduce((a, b) => a + b, 0) / norm.length) : null;
         row[rel] = avg;
         if (norm.length) allNorm.push(...norm);

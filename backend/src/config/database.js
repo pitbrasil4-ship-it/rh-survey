@@ -148,6 +148,9 @@ function initSchema() {
   try { db.exec("ALTER TABLE responses ADD COLUMN distrito_id TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN departamento_id TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0"); } catch (e) {}
+  // Uma resposta por navegador: identificador do aparelho, usado para recusar a repetição.
+  try { db.exec("ALTER TABLE responses ADD COLUMN client_id TEXT"); } catch (e) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_responses_client ON responses(survey_id, client_id)"); } catch (e) {}
   // Quem nunca acessou ainda está com a senha provisória -> força a troca no 1º acesso.
   try { db.exec("UPDATE users SET must_change_password = 1 WHERE last_login IS NULL AND must_change_password = 0"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN weight REAL DEFAULT 1"); } catch (e) {}

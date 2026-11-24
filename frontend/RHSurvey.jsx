@@ -85,14 +85,22 @@ function extractOptionPoints(labels) {
 function rowsToQuestions(rows, delim) {
   if (!rows || rows.length === 0) return { questions: [], skipped: 0, unknown: 0 };
   const norm = s => (s == null ? "" : String(s)).trim().toLowerCase();
-  const header = rows[0].map(norm);
-  const looksHeader = header.some(h => h.includes("pergunta") || h.includes("tipo") || h.startsWith("op") || h.includes("texto") || h.includes("question"));
+  // O cabeçalho nem sempre é a primeira linha: planilhas costumam abrir com título e avisos.
+  const headerish = row => {
+    const h = (row || []).map(norm);
+    const named = h.some(x => x.includes("pergunta") || x.includes("question") || x.includes("tipo") || x.includes("type") || x.startsWith("op") || x.includes("texto"));
+    return named && h.filter(Boolean).length >= 2;
+  };
+  let hdrRow = -1;
+  for (let i = 0; i < Math.min(rows.length, 12); i++) { if (headerish(rows[i])) { hdrRow = i; break; } }
+  const header = (hdrRow >= 0 ? rows[hdrRow] : rows[0]).map(norm);
+  const looksHeader = hdrRow >= 0;
   const isOpt = h => h.includes("opç") || h.includes("opc") || h.startsWith("op") || h.includes("alternativa") || h.includes("escolha");
   const isEn  = h => h.includes("(en)") || h.includes("english") || h.includes("inglês") || h.includes("ingles") || h.includes(" en)") || h.endsWith(" en");
   const isEs  = h => h.includes("(es)") || h.includes("español") || h.includes("espanol") || h.includes("espanhol") || h.includes("spanish") || h.includes("pregunta") || h.includes(" es)") || h.endsWith(" es");
   let pIdx = 0, tIdx = 1, oIdx = 2, enIdx = -1, esIdx = -1, oEnIdx = -1, oEsIdx = -1, start = 0;
   if (looksHeader) {
-    start = 1;
+    start = hdrRow + 1;
     const fi = pred => header.findIndex(pred);
     oEnIdx = fi(h => isOpt(h) && isEn(h));
     oEsIdx = fi(h => isOpt(h) && isEs(h));
@@ -102,6 +110,24 @@ function rowsToQuestions(rows, delim) {
     tIdx = fi(h => h.includes("tipo") || h.includes("type")); if (tIdx < 0) tIdx = 1;
     oIdx = fi(h => isOpt(h) && !isEn(h) && !isEs(h)); if (oIdx < 0) oIdx = 2;
   }
+
+  // A coluna da pergunta nunca é a de numeração ("Nº", "#", "Item", "Ordem"). Quando o cabeçalho
+  // não deixa claro qual é, escolhe a coluna cujo conteúdo mais parece texto de pergunta.
+  const isCounter = h => /^(n[ºo°.]?|num(ero)?|#|item|ordem|seq|id)$/i.test(String(h).trim());
+  const looksLikeQuestion = v => { const s = (v == null ? "" : String(v)).trim(); return s.length >= 12 && !/^\d+([.,]\d+)?$/.test(s); };
+  const sample = rows.slice(start, start + 25);
+  const scoreCol = i => sample.filter(r => looksLikeQuestion((r || [])[i])).length;
+  if (isCounter(header[pIdx]) || scoreCol(pIdx) === 0) {
+    const width = Math.max(...rows.slice(0, 30).map(r => (r || []).length), 0);
+    let best = -1, bestScore = 0;
+    for (let i = 0; i < width; i++) {
+      if (i === tIdx || i === oIdx || isCounter(header[i])) continue;
+      const sc = scoreCol(i);
+      if (sc > bestScore) { bestScore = sc; best = i; }
+    }
+    if (best >= 0) pIdx = best; else return { questions: [], skipped: 0, unknown: 0, unreadable: true };
+  }
+
   const splitOpts = raw => {
     const s = raw == null ? "" : String(raw);
     if (!s.trim()) return null;
@@ -113,7 +139,8 @@ function rowsToQuestions(rows, delim) {
   for (let r = start; r < rows.length; r++) {
     const cols = rows[r] || [];
     const text = (cols[pIdx] == null ? "" : String(cols[pIdx])).trim();
-    if (!text) { skipped++; continue; }
+    // Linhas de título, aviso ou numeração não viram pergunta.
+    if (!text || /^\d+([.,]\d+)?$/.test(text) || text.length < 6) { skipped++; continue; }
     const text_en = (enIdx >= 0 && cols[enIdx] != null) ? String(cols[enIdx]).trim() : "";
     const text_es = (esIdx >= 0 && cols[esIdx] != null) ? String(cols[esIdx]).trim() : "";
     const mapped = mapTipoToType(cols[tIdx]);
@@ -1065,6 +1092,10 @@ function SurveyBuilder({ onBack, initial }) {
         result = rowsToQuestions(rows, delim);
       } else {
         setImportErr(t('sb_import_unsupported'));
+        return;
+      }
+      if (result.unreadable) {
+        setImportErr(t('sb_import_nocol'));
         return;
       }
       if (!result.questions.length) {
@@ -2117,7 +2148,10 @@ function QuestionResult({ q }) {
   }
   // Escala / Estrelas
   if (q.type === "scale" || q.type === "rating") {
-    const dist = q.distribution || [];
+    // Prefere os rótulos reais das alternativas; só cai no número da posição quando a pergunta não tem opções.
+    const dist = (q.choices && q.choices.length)
+      ? q.choices.map(c => ({ value: c.label, pct: c.pct, count: c.count, neutral: c.neutral }))
+      : (q.distribution || []);
     return (
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-start justify-between mb-4">
@@ -2128,15 +2162,26 @@ function QuestionResult({ q }) {
           </div>
         </div>
         <div className="flex items-center gap-5">
-          <div className="text-center">
+          <div className="text-center flex-shrink-0">
             <div className="text-3xl font-bold" style={{ color:"#5B21B6" }}>{q.average ?? "—"}</div>
             <div className="text-xs text-slate-400 mt-0.5">{t('qr_average')}</div>
+            {q.favorability && (
+              <div className="mt-2 flex flex-col items-center gap-1">
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${q.favorability.favPct >= 70 ? "bg-green-100 text-green-700" : q.favorability.favPct >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                  {q.favorability.favPct}% {t('qr_favorable')}
+                </span>
+                {q.favorability.neutralCount > 0 && (
+                  <span className="text-[11px] text-slate-400">{t('qr_neutral_out',{n:q.favorability.neutralCount})}</span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex-1 space-y-1.5">
             {dist.length === 0 ? (q.comments && q.comments.length ? <CommentsBlock items={q.comments} /> : <span className="text-xs text-slate-400">{t('qr_no_answers')}</span>) : dist.map((d,i) => (
               <div key={i} className="flex items-center gap-3">
-                <span className="text-xs text-slate-500 w-8">{d.value}</span>
-                <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${d.pct}%`,background:"#5B21B6" }} /></div>
+                <span className={`text-xs w-40 truncate ${d.neutral ? "text-slate-400 italic" : "text-slate-600"}`} title={String(d.value)}>{d.value}</span>
+                <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width:`${d.pct}%`,background: d.neutral ? "#94A3B8" : "#5B21B6" }} /></div>
+                {d.count != null && <span className="text-xs text-slate-400 w-8 text-right">{d.count}</span>}
                 <span className="text-xs font-semibold text-slate-700 w-9 text-right">{d.pct}%</span>
               </div>
             ))}
@@ -2359,15 +2404,19 @@ function ResultsDashboard() {
 
   const handleExportCSV = () => {
     if (!questions.length) return;
-    const rows = [[t('csv_question'),t('csv_type'),t('csv_responses'),t('csv_summary')]];
+    const typeLabel = { nps:"NPS", scale:t('qt_scale'), rating:t('qt_rating'), multiple:t('qt_multiple'), text:t('qt_text'), yesno:t('qt_yesno') };
+    const rows = [[t('csv_question'),t('csv_type'),t('csv_responses'),t('csv_summary'),t('csv_distribution')]];
     questions.forEach(q => {
-      let resumo = "";
+      let resumo = "", detalhe = "";
       if (q.type === "nps") resumo = `NPS ${q.nps} (${q.classification||""}) · ${q.promoters||0}% prom / ${q.detractors||0}% detr`;
-      else if (q.type === "scale" || q.type === "rating") resumo = `Média ${q.average ?? "—"}`;
+      else if (q.type === "scale" || q.type === "rating") {
+        resumo = `${t('qr_average')} ${q.average ?? "—"}` + (q.favorability ? ` · ${q.favorability.favPct}% ${t('qr_favorable')}` : "") + (q.scorePct != null ? ` · ${q.scorePct}% ${t('sc_achieved')}` : "");
+        detalhe = (q.choices||[]).map(c => `${c.label}: ${c.count} (${c.pct}%)${c.neutral ? " *" : ""}`).join(" | ");
+      }
       else if (q.type === "yesno") resumo = `Sim ${q.yesPct ?? 0}% (${q.yes||0} de ${(q.yes||0)+(q.no||0)})`;
-      else if (q.type === "multiple") resumo = (q.frequency||[]).map(f => `${f.value}: ${f.pct}%`).join(" | ");
-      else if (q.type === "text") resumo = `${(q.responses||[]).length} resposta(s) aberta(s)`;
-      rows.push([q.text, q.type, q.responseCount ?? 0, resumo]);
+      else if (q.type === "multiple") { resumo = `${q.responseCount ?? 0} resposta(s)`; detalhe = (q.frequency||[]).map(f => `${f.value}: ${f.pct}%`).join(" | "); }
+      else if (q.type === "text") { resumo = `${(q.responses||[]).length} resposta(s) aberta(s)`; detalhe = (q.responses||[]).join(" | "); }
+      rows.push([q.text, typeLabel[q.type] || q.type, q.responseCount ?? 0, resumo, detalhe]);
     });
     const nm = (survey?.name || "resultados").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "resultados";
     downloadCSV(`resultados-${nm}.csv`, rows);

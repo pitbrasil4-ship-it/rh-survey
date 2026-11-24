@@ -1,5 +1,6 @@
 'use strict';
 const PDFDocument = require('pdfkit');
+const { neutralIndexes, earnedPct, favorability }     = require('../utils/scoring');
 const { getDB }                                       = require('../config/database');
 const { calculateNPS, calculateAverage, calculateFrequency, calculateNPSWeighted, calculateAverageWeighted } = require('../utils/nps');
 const { ok, err, notFound, badReq }                   = require('../utils/response');
@@ -29,13 +30,21 @@ function getSurveyResults(req, res) {
         result = { ...result, ...calculateNPS(scores) };
 
       } else if (q.type === 'scale' || q.type === 'rating') {
-        const values = answers.map(a => a.value_num).filter(v => v !== null);
+        const all      = answers.map(a => a.value_num).filter(v => v !== null);
+        const neutral  = neutralIndexes(qOpts);
+        const values   = all.filter(v => !neutral.has(v - 1));   // a neutra fica fora da média
         result.average  = calculateAverage(values);
-        result.distribution = calculateFrequency(values.map(v => String(v)));
+        result.scoredCount = values.length;
+        result.distribution = calculateFrequency(all.map(v => String(v)));
         if (qOpts && qOpts.length) {
-          const total = values.length;
-          result.choices = qOpts.map((label, idx) => { const cnt = values.filter(v => v === idx + 1).length; return { label, count: cnt, pct: total ? Math.round((cnt / total) * 100) : 0 }; });
+          const total = all.length;                              // a distribuição mostra TODAS as respostas
+          result.choices = qOpts.map((label, idx) => {
+            const cnt = all.filter(v => v === idx + 1).length;
+            return { label, count: cnt, pct: total ? Math.round((cnt / total) * 100) : 0, neutral: neutral.has(idx) };
+          });
         }
+        const fav = favorability(q, answers, qOpts, PJc(q.option_points));
+        if (fav) result.favorability = fav;
 
       } else if (q.type === 'multiple') {
         const all = answers.flatMap(a => { try { return JSON.parse(a.value_json || '[]'); } catch { return []; } });
@@ -64,9 +73,7 @@ function getSurveyResults(req, res) {
         const opts = PJq(q.options) || [];
         let sum = 0, n = 0;
         answers.forEach(a => {
-          let earned = null;
-          if (q.type === 'scale' || q.type === 'rating') { const pos = a.value_num; if (pos != null && pts[pos - 1] != null) earned = Number(pts[pos - 1]); }
-          else if (q.type === 'multiple') { let sel = []; try { sel = JSON.parse(a.value_json || '[]'); } catch {} const vals = (Array.isArray(sel) ? sel : []).map(l => { const idx = opts.indexOf(l); return (idx >= 0 && pts[idx] != null) ? Number(pts[idx]) : null; }).filter(v => v != null); if (vals.length) earned = vals.reduce((x, y) => x + y, 0) / vals.length; }
+          const earned = earnedPct(q, a, opts, pts);   // regra única: pesos + neutra fora
           if (earned != null) { sum += earned; n++; }
         });
         if (n) result.scorePct = Math.round(sum / n);
@@ -302,14 +309,7 @@ function getSegments(req, res) {
         WHERE r.survey_id=? AND r.completed_at IS NOT NULL AND a.question_id IN (${ph})`).all(surveyId, ...ids);
       rows.forEach(row => {
         const q = qmap[row.qid]; if (!q) return;
-        let earned = null;
-        if (q.type === 'scale' || q.type === 'rating') {
-          const pos = row.vn; if (pos != null && q.points[pos - 1] != null) earned = Number(q.points[pos - 1]);
-        } else if (q.type === 'multiple') {
-          let sel = []; try { sel = JSON.parse(row.vj || '[]'); } catch {}
-          const vals = (Array.isArray(sel) ? sel : []).map(lbl => { const idx = q.options.indexOf(lbl); return (idx >= 0 && q.points[idx] != null) ? Number(q.points[idx]) : null; }).filter(v => v != null);
-          if (vals.length) earned = vals.reduce((a, b) => a + b, 0) / vals.length;
-        }
+        const earned = earnedPct(q, { value_num: row.vn, value_json: row.vj }, q.options, q.points);
         if (earned != null) pushItem(row.dd, row.pp, earned, row.w);
       });
     } else if (metric === 'nps' || metric === 'avg') {
@@ -380,9 +380,13 @@ function getPdf(req, res) {
         if (overallNps === null) overallNps = n.nps;
         Object.assign(item, { nps: n.nps, promoters: n.promoters, passives: n.passives, detractors: n.detractors, classification: n.classification });
       } else if (q.type === 'scale' || q.type === 'rating') {
-        const v = answers.map(a => a.value_num).filter(x => x !== null);
+        const all     = answers.map(a => a.value_num).filter(x => x !== null);
+        const neutral = neutralIndexes(opts);
+        const v       = all.filter(x => !neutral.has(x - 1));   // neutra fora da média
         item.average = calculateAverage(v);
-        item.choices = opts.map((label, idx) => { const c = v.filter(x => x === idx + 1).length; return { label, pct: v.length ? Math.round(c / v.length * 100) : 0 }; });
+        item.choices = opts.map((label, idx) => { const c = all.filter(x => x === idx + 1).length; return { label, count: c, pct: all.length ? Math.round(c / all.length * 100) : 0, neutral: neutral.has(idx) }; });
+        const fv = favorability(q, answers, opts, pts);
+        if (fv) item.favorability = fv;
       } else if (q.type === 'multiple') {
         const all = answers.flatMap(a => { try { return JSON.parse(a.value_json || '[]'); } catch { return []; } });
         item.choices = opts.map(label => { const c = all.filter(x => String(x) === label).length; return { label, pct: answers.length ? Math.round(c / answers.length * 100) : 0 }; });
@@ -393,9 +397,7 @@ function getPdf(req, res) {
       if (pts && pts.length) {
         let sum = 0, n2 = 0;
         answers.forEach(a => {
-          let e = null;
-          if (q.type === 'scale' || q.type === 'rating') { if (a.value_num != null && pts[a.value_num - 1] != null) e = Number(pts[a.value_num - 1]); }
-          else if (q.type === 'multiple') { let sel = []; try { sel = JSON.parse(a.value_json || '[]'); } catch {} const vals = (Array.isArray(sel) ? sel : []).map(l => { const i2 = opts.indexOf(l); return (i2 >= 0 && pts[i2] != null) ? Number(pts[i2]) : null; }).filter(x => x != null); if (vals.length) e = vals.reduce((x, y) => x + y, 0) / vals.length; }
+          const e = earnedPct(q, a, opts, pts);
           if (e != null) { sum += e; n2++; }
         });
         if (n2) { item.scorePct = Math.round(sum / n2); gSum += sum; gN += n2; }
@@ -577,11 +579,7 @@ function getSegmentQuestions(req, res) {
 
     const distB = {}, depB = {}, corpB = {};
     const add = (obj, qid, e) => { const k = obj[qid] || (obj[qid] = { sum: 0, n: 0 }); k.sum += e; k.n++; };
-    const earnedOf = (q, vn, vj) => {
-      if (q.type === 'scale' || q.type === 'rating') { return (vn != null && q.points[vn - 1] != null) ? Number(q.points[vn - 1]) : null; }
-      if (q.type === 'multiple') { let sel = []; try { sel = JSON.parse(vj || '[]'); } catch {} const vals = (Array.isArray(sel) ? sel : []).map(l => { const idx = q.options.indexOf(l); return (idx >= 0 && q.points[idx] != null) ? Number(q.points[idx]) : null; }).filter(v => v != null); return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null; }
-      return null;
-    };
+    const earnedOf = (q, vn, vj) => earnedPct(q, { value_num: vn, value_json: vj }, q.options, q.points);
     rows.forEach(row => {
       const q = qmap[row.qid]; if (!q) return;
       const e = earnedOf(q, row.vn, row.vj); if (e == null) return;

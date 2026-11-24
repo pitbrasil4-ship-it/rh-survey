@@ -29,6 +29,35 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const RED = '#DC2626';
 const RED_DARK = '#B91C1C';
 
+/* Identificador deste navegador — base da trava de uma resposta por dispositivo.
+   Não identifica a pessoa: é um número aleatório guardado só neste aparelho. */
+function clientId() {
+  try {
+    let id = localStorage.getItem('rh_client_id');
+    if (!id) {
+      id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2));
+      localStorage.setItem('rh_client_id', id);
+    }
+    return id;
+  } catch { return null; }
+}
+const answeredKey = (token) => 'rh_answered_' + token;
+function alreadyAnswered(token) {
+  try { return !!localStorage.getItem(answeredKey(token)); } catch { return false; }
+}
+function markAnswered(token) {
+  try { localStorage.setItem(answeredKey(token), new Date().toISOString()); } catch {}
+}
+
+/* Segmento vindo no endereço: ?distrito=Manaus&departamento=Opera%C3%A7%C3%B5es */
+function segmentFromUrl() {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    const get = (...keys) => { for (const k of keys) { const v = q.get(k); if (v && v.trim()) return v.trim(); } return null; };
+    return { distrito: get('distrito', 'd'), departamento: get('departamento', 'dep') };
+  } catch { return { distrito: null, departamento: null }; }
+}
+
 async function pub(method, token, body) {
   const res = await fetch(`${API_URL}/api/v1/public/survey/${encodeURIComponent(token)}`, {
     method,
@@ -177,6 +206,8 @@ export default function PublicSurvey({ token }) {
         if (data.closed) { setSurvey(data.survey); setState('closed'); return; }
         setSurvey(data.survey);
         setQuestions(data.questions || []);
+        // Uma resposta por navegador: se este aparelho já respondeu, não abre o formulário de novo.
+        if (alreadyAnswered(token)) { setState('answered'); return; }
         setState('ready');
       } catch (e) {
         if (!alive) return;
@@ -206,7 +237,9 @@ export default function PublicSurvey({ token }) {
     if (payload.length === 0) { setErrMsg(tr('at_least_one')); return; }
     setSubmitting(true);
     try {
-      await pub('POST', token, { answers: payload });
+      const seg = segmentFromUrl();
+      await pub('POST', token, { answers: payload, clientId: clientId(), distrito: seg.distrito, departamento: seg.departamento });
+      markAnswered(token);
       setState('done');
     } catch (e) {
       setErrMsg(e.message || tr('submit_error'));
@@ -240,6 +273,17 @@ export default function PublicSurvey({ token }) {
         <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>{tr('done_title')}</h2>
         <p style={{ color:'#64748B', fontSize:14, margin:0 }}>{tr('done_body')}</p>
         {survey && survey.anonymous ? <p style={{ color:'#16A34A', fontSize:12, marginTop:12, fontWeight:600 }}>{tr('anon_note')}</p> : null}
+      </Card>
+    </Shell>;
+  }
+
+  if (state === 'answered') {
+    return <Shell>
+      <div style={{ marginBottom:16 }}><Logo /></div>
+      <Card style={{ textAlign:'center' }}>
+        <div style={{ width:64, height:64, borderRadius:'50%', background:'#DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', fontSize:30 }}>✓</div>
+        <h2 style={{ color:'#0F172A', fontSize:20, margin:'0 0 8px' }}>{tr('already_title')}</h2>
+        <p style={{ color:'#64748B', fontSize:14, margin:0 }}>{tr('already_body')}</p>
       </Card>
     </Shell>;
   }
