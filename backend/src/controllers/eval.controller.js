@@ -421,7 +421,7 @@ function submitEvalPublic(req, res) {
     const stmt = db.prepare('INSERT INTO answers (id, response_id, question_id, value_text, value_num, value_json) VALUES (?,?,?,?,?,?)');
     answers.forEach(ans => {
       const isNum = typeof ans.value === 'number';
-      const isArr = Array.isArray(ans.value);
+      const isArr = ans.value !== null && typeof ans.value === 'object';   // lista ou objeto (matriz)
       stmt.run(uuid(), responseId, ans.questionId,
         !isNum && !isArr ? String(ans.value) : null,
         isNum ? ans.value : null,

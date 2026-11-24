@@ -163,6 +163,77 @@ function YesNoInput({ value, onChange, tr }) {
   return <div style={{ display:'flex', gap:10 }}>{opt('sim', tr('yes'))}{opt('nao', tr('no'))}</div>;
 }
 
+
+/* Matriz: várias afirmações na mesma escala. Cada linha guarda a posição marcada. */
+function MatrixInput({ rows, options, value, onChange }) {
+  const marcado = (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
+  const linhas = Array.isArray(rows) ? rows : [];
+  const opts = Array.isArray(options) ? options : [];
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {linhas.map((linha, li) => {
+        const nome = typeof linha === 'string' ? linha : (linha && linha.text) || '';
+        return (
+          <div key={li}>
+            <div style={{ fontSize:14, color:'#334155', marginBottom:6, fontWeight:600 }}>{nome}</div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+              {opts.map((label, oi) => {
+                const sel = marcado[nome] === oi + 1;
+                return (
+                  <button key={oi} type="button" onClick={() => onChange({ ...marcado, [nome]: oi + 1 })}
+                    style={{ flex:'1 1 90px', minWidth:90, padding:'9px 10px', borderRadius:9, cursor:'pointer', fontSize:13, fontWeight:600,
+                      border: sel ? `2px solid ${RED}` : '1px solid #E2E8F0',
+                      background: sel ? '#FEF2F2' : 'white', color: sel ? RED_DARK : '#475569' }}>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* Lista suspensa: uma escolha só, em formato compacto. */
+function DropdownInput({ options, value, onChange, tr }) {
+  const opts = Array.isArray(options) ? options : [];
+  return (
+    <select value={value || ''} onChange={e => onChange(e.target.value)}
+      style={{ width:'100%', boxSizing:'border-box', border:'1px solid #E2E8F0', borderRadius:10, padding:'12px 14px', fontSize:14, background:'white', color:'#334155' }}>
+      <option value="">{tr('select_placeholder')}</option>
+      {opts.map((o, i) => <option key={i} value={o}>{o}</option>)}
+    </select>
+  );
+}
+
+/* Ordenação: a pessoa sobe e desce as alternativas até a ordem desejada. */
+function RankingInput({ options, value, onChange, tr }) {
+  const base = Array.isArray(options) ? options : [];
+  const ordem = (Array.isArray(value) && value.length === base.length) ? value : base;
+  const mover = (i, d) => {
+    const alvo = i + d; if (alvo < 0 || alvo >= ordem.length) return;
+    const nova = [...ordem]; const tmp = nova[i]; nova[i] = nova[alvo]; nova[alvo] = tmp;
+    onChange(nova);
+  };
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+      <div style={{ fontSize:12, color:'#94A3B8', marginBottom:2 }}>{tr('ranking_hint')}</div>
+      {ordem.map((o, i) => (
+        <div key={o} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', border:'1px solid #E2E8F0', borderRadius:10, background:'white' }}>
+          <span style={{ width:22, height:22, borderRadius:'50%', background:RED, color:'white', fontSize:12, fontWeight:700, display:'inline-flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{i + 1}</span>
+          <span style={{ flex:1, fontSize:14, color:'#334155' }}>{o}</span>
+          <button type="button" onClick={() => mover(i, -1)} disabled={i === 0}
+            style={{ padding:'4px 9px', border:'1px solid #E2E8F0', borderRadius:7, background:'white', cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? 0.35 : 1, fontSize:13 }}>↑</button>
+          <button type="button" onClick={() => mover(i, 1)} disabled={i === ordem.length - 1}
+            style={{ padding:'4px 9px', border:'1px solid #E2E8F0', borderRadius:7, background:'white', cursor: i === ordem.length - 1 ? 'default' : 'pointer', opacity: i === ordem.length - 1 ? 0.35 : 1, fontSize:13 }}>↓</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MultipleInput({ options, labels, value, onToggle, tr, single }) {
   const opts = options && options.length ? options : [];
   const lab = (labels && labels.length === opts.length) ? labels : opts;
@@ -234,7 +305,7 @@ export default function PublicSurvey({ token }) {
     setErrMsg('');
     const payload = questions
       .map(q => ({ questionId: q.id, value: answers[q.id] }))
-      .filter(a => a.value !== undefined && a.value !== '' && !(Array.isArray(a.value) && a.value.length === 0));
+      .filter(a => a.value !== undefined && a.value !== '' && !(Array.isArray(a.value) && a.value.length === 0) && !(a.value !== null && typeof a.value === 'object' && !Array.isArray(a.value) && Object.keys(a.value).length === 0));
     if (payload.length === 0) { setErrMsg(tr('at_least_one')); return; }
     setSubmitting(true);
     try {
@@ -320,14 +391,17 @@ export default function PublicSurvey({ token }) {
       {questions.map((q, idx) => {
         const hasOpts = Array.isArray(q.options) && q.options.length > 0;
         const optsLabels = (lang !== 'pt' && Array.isArray(q['options_'+lang]) && q['options_'+lang].length === (q.options || []).length) ? q['options_'+lang] : q.options;
-        const specialized = q.type === 'nps' || q.type === 'scale' || q.type === 'rating' || q.type === 'yesno' || (q.type === 'multiple' && hasOpts);
+        const specialized = q.type === 'nps' || q.type === 'enps' || q.type === 'scale' || q.type === 'rating' || q.type === 'yesno' || q.type === 'matrix' || q.type === 'dropdown' || q.type === 'ranking' || (q.type === 'multiple' && hasOpts);
         return (
         <Card key={q.id} style={{ marginBottom:14 }}>
           <div style={{ display:'flex', gap:10, marginBottom:14 }}>
             <span style={{ flexShrink:0, width:24, height:24, borderRadius:'50%', background:RED, color:'white', fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }}>{idx+1}</span>
             <p style={{ margin:0, fontSize:15, fontWeight:600, color:'#1E293B', lineHeight:1.4 }}>{(lang !== 'pt' && q['text_'+lang]) ? q['text_'+lang] : q.text}</p>
           </div>
-          {q.type === 'nps'      && <NpsInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
+          {(q.type === 'nps' || q.type === 'enps') && <NpsInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
+          {q.type === 'matrix'   && <MatrixInput rows={q.rows} options={q.options} value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
+          {q.type === 'dropdown' && <DropdownInput options={q.options} value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
+          {q.type === 'ranking'  && <RankingInput options={q.options} value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
           {q.type === 'scale'    && <ScaleInput options={q.options} labels={optsLabels} value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'rating'   && <RatingInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'yesno'    && <YesNoInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}

@@ -168,11 +168,23 @@ function rowsToQuestions(rows, delim) {
 
 const QUESTION_TYPES = [
   { id:"nps",      label:"NPS (0–10)",      icon:"📊", desc:"Probabilidade de recomendar" },
-  { id:"scale",    label:"Escala Likert",   icon:"⭐", desc:"Avaliação 1 a 5"             },
+  { id:"scale",    label:"Escala Likert",   icon:"⭐", desc:"3, 4 ou 5 pontos"             },
+  { id:"matrix",   label:"Matriz",          icon:"▦",  desc:"Várias afirmações na mesma escala" },
   { id:"multiple", label:"Múltipla Escolha",icon:"☑️", desc:"Uma ou mais opções"          },
+  { id:"dropdown", label:"Lista Suspensa",  icon:"▾",  desc:"Uma escolha, em formato compacto" },
   { id:"text",     label:"Texto Aberto",    icon:"✏️", desc:"Resposta livre"               },
   { id:"rating",   label:"Estrelas",        icon:"🌟", desc:"Avaliação visual 1–5"         },
   { id:"yesno",    label:"Sim / Não",       icon:"✅", desc:"Escolha binária"              },
+  { id:"enps",     label:"eNPS",            icon:"💼", desc:"Recomendaria como lugar para trabalhar" },
+  { id:"ranking",  label:"Ordenação",       icon:"↕",  desc:"Colocar em ordem de prioridade" },
+];
+
+/* Atalhos de escala Likert — a base do item A5. */
+const LIKERT_PRESETS = [
+  { n:3, labels:["Discordo","Neutro","Concordo"],                                           points:[0,50,100] },
+  { n:4, labels:["Discordo totalmente","Discordo","Concordo","Concordo totalmente"],         points:[0,33,67,100] },
+  { n:5, labels:["Discordo totalmente","Discordo","Neutro","Concordo","Concordo totalmente"],points:[0,25,50,75,100] },
+  { n:5, labels:["Nunca","Quase nunca","Às vezes","Quase sempre","Sempre"],                  points:[0,25,50,75,100] },
 ];
 
 
@@ -291,6 +303,8 @@ const TYPE_COLORS = {
   nps:"bg-purple-100 text-purple-700", scale:"bg-blue-100 text-blue-700",
   multiple:"bg-green-100 text-green-700", text:"bg-orange-100 text-orange-700",
   rating:"bg-amber-100 text-amber-700", yesno:"bg-teal-100 text-teal-700",
+  matrix:"bg-indigo-100 text-indigo-700", dropdown:"bg-sky-100 text-sky-700",
+  enps:"bg-violet-100 text-violet-700", ranking:"bg-rose-100 text-rose-700",
 };
 
 // ─── ATOMS ─────────────────────────────────────────────────────────────────────
@@ -1076,6 +1090,8 @@ function SurveyBuilder({ onBack, initial, editSurvey }) {
           ...(PJ(q.option_points) ? { option_points: PJ(q.option_points) } : {}),
           ...(q.single_choice ? { singleChoice: true } : {}),
           ...(q.text_self ? { text_self: q.text_self } : {}),
+          ...(PJ(q.rows_json) ? { rows: PJ(q.rows_json) } : {}),
+          ...(PJ(q.neutral_idx) ? { neutralIdx: PJ(q.neutral_idx) } : {}),
         })));
       } catch (e) { setError((e && e.message) || ""); }
       if (alive) setLoadingEdit(false);
@@ -1091,6 +1107,8 @@ function SurveyBuilder({ onBack, initial, editSurvey }) {
     ...(q.singleChoice ? { singleChoice: true } : {}),
     ...(q.text_self ? { text_self: q.text_self } : {}),
     ...(q.dimensoes ? { dimensoes: q.dimensoes } : {}),
+    ...(Array.isArray(q.rows) && q.rows.length ? { rows: q.rows } : {}),
+    ...(Array.isArray(q.neutralIdx) && q.neutralIdx.length ? { neutralIdx: q.neutralIdx } : {}),
   }));
 
   const saveEdit = async (confirm) => {
@@ -1116,7 +1134,7 @@ function SurveyBuilder({ onBack, initial, editSurvey }) {
         targetGroup: GROUP_MAP[targetGroup] || "todos",
         anonymous,
         deadline: deadline ? deadline + "T23:59:59-03:00" : null,
-        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es, ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}), ...(q.singleChoice ? { singleChoice: true } : {}), ...(q.text_self ? { text_self: q.text_self } : {}), ...(q.dimensoes ? { dimensoes: q.dimensoes } : {}) })),
+        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es, ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}), ...(q.singleChoice ? { singleChoice: true } : {}), ...(q.text_self ? { text_self: q.text_self } : {}), ...(q.dimensoes ? { dimensoes: q.dimensoes } : {}), ...(Array.isArray(q.rows) && q.rows.length ? { rows: q.rows } : {}), ...(Array.isArray(q.neutralIdx) && q.neutralIdx.length ? { neutralIdx: q.neutralIdx } : {}) })),
         lgpdBasis: "consentimento",
       });
       const id = result && result.survey && result.survey.id;
@@ -1142,6 +1160,25 @@ function SurveyBuilder({ onBack, initial, editSurvey }) {
     const ramp = (q.options || []).map((_, i) => n > 1 ? Math.round(((n - 1 - i) / (n - 1)) * 100) : 100);
     return { ...q, option_points: ramp };
   }));
+  /* Troca o rótulo de uma alternativa (base da Likert configurável). */
+  const setOptLabel = (qid, idx, val) => setQuestions(p => p.map(q => {
+    if (q.id !== qid || !Array.isArray(q.options)) return q;
+    const opts = [...q.options]; opts[idx] = val;
+    return { ...q, options: opts };
+  }));
+
+  /* Marca ou desmarca a alternativa como neutra — ela fica fora da média e da favorabilidade. */
+  const toggleNeutral = (qid, idx, on) => setQuestions(p => p.map(q => {
+    if (q.id !== qid) return q;
+    const atual = Array.isArray(q.neutralIdx) ? q.neutralIdx : [];
+    const novo = on ? [...new Set([...atual, idx])].sort((a,b)=>a-b) : atual.filter(i => i !== idx);
+    return { ...q, neutralIdx: novo.length ? novo : undefined };
+  }));
+
+  /* Aplica um atalho de escala Likert: troca rótulos e pesos de uma vez. */
+  const applyPreset = (qid, preset) => setQuestions(p => p.map(q =>
+    q.id === qid ? { ...q, options: [...preset.labels], option_points: [...preset.points], neutralIdx: undefined } : q));
+
   const setOptPoint = (qid, idx, val) => setQuestions(p => p.map(q => {
     if (q.id !== qid) return q;
     const arr = [...(q.option_points || (q.options || []).map(() => 0))];
@@ -1511,6 +1548,17 @@ function SurveyBuilder({ onBack, initial, editSurvey }) {
                           <input type="checkbox" checked={!!q.option_points} onChange={() => toggleScore(q.id)} className="accent-purple-600" />
                           {t('sb_score_toggle')}
                         </label>
+                        {(q.type === 'scale' || q.type === 'matrix') && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-slate-400">{t('sb_likert_preset')}</span>
+                            {LIKERT_PRESETS.map((p, pi) => (
+                              <button key={pi} onClick={() => applyPreset(q.id, p)} title={p.labels.join(' · ')}
+                                className="text-xs px-2 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-purple-50 hover:border-purple-300">
+                                {p.n}{pi === 3 ? '*' : ''}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         {q.type === 'multiple' && (
                           <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
                             <input type="checkbox" checked={!!q.singleChoice}
@@ -1522,12 +1570,21 @@ function SurveyBuilder({ onBack, initial, editSurvey }) {
                       </div>
                       {q.option_points && (
                         <div className="mt-2 space-y-1 bg-white rounded-lg border border-slate-100 p-2">
+                          <div className="flex items-center gap-2 pb-1 border-b border-slate-50 mb-1">
+                            <span className="text-[11px] text-slate-400 flex-1">{t('sb_opt_label')}</span>
+                            <span className="text-[11px] text-slate-400 w-16 text-center">{t('sb_opt_weight')}</span>
+                            <span className="text-[11px] text-slate-400 w-14 text-center">{t('sb_opt_neutral')}</span>
+                          </div>
                           {q.options.map((opt, oi) => (
                             <div key={oi} className="flex items-center gap-2">
-                              <span className="text-xs text-slate-600 flex-1 min-w-0 truncate">{opt}</span>
+                              <input value={opt} onChange={e => setOptLabel(q.id, oi, e.target.value)}
+                                className="text-xs text-slate-700 flex-1 min-w-0 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:border-purple-400" />
                               <input type="number" min="0" max="100" value={q.option_points[oi] ?? 0} onChange={e => setOptPoint(q.id, oi, e.target.value)}
                                 className="w-16 border border-slate-200 rounded-md px-2 py-1 text-xs text-right focus:outline-none focus:border-purple-400" />
-                              <span className="text-xs text-slate-400">%</span>
+                              <label className="w-14 flex items-center justify-center" title={t('sb_opt_neutral_tip')}>
+                                <input type="checkbox" checked={Array.isArray(q.neutralIdx) && q.neutralIdx.includes(oi)}
+                                  onChange={e => toggleNeutral(q.id, oi, e.target.checked)} className="accent-slate-500" />
+                              </label>
                             </div>
                           ))}
                           <p className="text-xs text-slate-400 pt-1">{t('sb_score_hint')}</p>
@@ -2590,7 +2647,7 @@ function ScoreBadge({ pct }) {
 function QuestionResult({ q }) {
   const { t } = useLang();
   // NPS
-  if (q.type === "nps") {
+  if (q.type === "nps" || q.type === "enps") {
     const parts = [
       { label:t('qr_promoters'), pct:q.promoters||0, color:"#10B981" },
       { label:t('qr_passives'), pct:q.passives||0, color:"#94A3B8" },
@@ -2620,8 +2677,62 @@ function QuestionResult({ q }) {
       </div>
     );
   }
-  // Escala / Estrelas
-  if (q.type === "scale" || q.type === "rating") {
+  // Matriz — cada linha com sua média e distribuição
+  if (q.type === "matrix") {
+    const linhas = q.rows || [];
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-start justify-between mb-4">
+          <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <ScoreBadge pct={q.scorePct} />
+            <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
+          </div>
+        </div>
+        {linhas.length === 0 ? <span className="text-xs text-slate-400">{t('qr_no_answers')}</span> : (
+          <div className="space-y-3">
+            {linhas.map((ln,i) => (
+              <div key={i} className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+                <span className="w-full sm:w-52 text-sm text-slate-700 truncate flex-shrink-0" title={ln.text}>{ln.text}</span>
+                <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden min-w-[100px]">
+                  <div className="h-full rounded-full" style={{ width:`${ln.scorePct ?? 0}%`, background: (ln.scorePct ?? 0)>=70?"#16A34A":(ln.scorePct ?? 0)>=40?"#D97706":"#DC2626" }} />
+                </div>
+                <span className="text-xs text-slate-400 w-14 text-right flex-shrink-0">{t('qr_average')} {ln.average ?? "—"}</span>
+                <span className="text-xs font-bold text-slate-700 w-10 text-right flex-shrink-0">{ln.scorePct == null ? "—" : ln.scorePct + "%"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Ordenação — posição média de cada alternativa
+  if (q.type === "ranking") {
+    const rk = q.ranking || [];
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-start justify-between mb-4">
+          <h4 className="text-sm font-medium text-slate-700 flex-1 pr-4">{q.text}</h4>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{t('dash_n_responses',{n:q.responseCount})}</span>
+        </div>
+        {rk.length === 0 ? <span className="text-xs text-slate-400">{t('qr_no_answers')}</span> : (
+          <div className="space-y-2">
+            {rk.map((r,i) => (
+              <div key={i} className="flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center flex-shrink-0" style={{ background:GRAD }}>{i+1}</span>
+                <span className="flex-1 text-sm text-slate-700 truncate">{r.label}</span>
+                <span className="text-xs text-slate-400">{t('qr_avg_position')} {r.avgPosition ?? "—"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Escala / Estrelas / Lista suspensa
+  if (q.type === "scale" || q.type === "rating" || q.type === "dropdown") {
     // Prefere os rótulos reais das alternativas; só cai no número da posição quando a pergunta não tem opções.
     const dist = (q.choices && q.choices.length)
       ? q.choices.map(c => ({ value: c.label, pct: c.pct, count: c.count, neutral: c.neutral }))
