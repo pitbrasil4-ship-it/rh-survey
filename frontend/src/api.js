@@ -129,6 +129,10 @@ export const api = {
     insights:  (surveyId, lang) => request('POST', '/results/insights', { surveyId, lang }),
     segments:  (surveyId) => request('GET', `/results/segments?surveyId=${encodeURIComponent(surveyId)}`),
     segmentQuestions: (surveyId) => request('GET', `/results/segment-questions?surveyId=${encodeURIComponent(surveyId)}`),
+    dimensoes:        (surveyId, filtros) => {
+      const q = new URLSearchParams({ surveyId, ...(filtros || {}) }).toString();
+      return request('GET', `/results/dimensoes?${q}`);
+    },
     pdf: async (surveyId, lang) => {
       const q = lang ? `?lang=${encodeURIComponent(lang)}` : '';
       const path = `/results/${encodeURIComponent(surveyId)}/pdf${q}`;
@@ -166,6 +170,15 @@ export const api = {
     updateDepartamento: (id, d)   => request('PUT',  `/org/departamentos/${id}`, d),
     deleteDepartamento: (id)      => request('DELETE', `/org/departamentos/${id}`),
     import:             (data)    => request('POST', '/org/import', data),
+  },
+  dimensoes: {
+    list:        ()            => request('GET', '/dimensoes'),
+    create:      (name, taxonomia) => request('POST', '/dimensoes', { name, taxonomia }),
+    update:      (id, data)    => request('PUT', `/dimensoes/${id}`, data),
+    remove:      (id)          => request('DELETE', `/dimensoes/${id}`),
+    seedHse:     ()            => request('POST', '/dimensoes/hse-padrao'),
+    bySurvey:    (surveyId)    => request('GET', `/dimensoes/survey/${surveyId}`),
+    setForQuestion: (qid, dimensoes) => request('PUT', `/dimensoes/question/${qid}`, { dimensoes }),
   },
   eval: {
     cycles:           ()               => request('GET', '/eval/cycles'),

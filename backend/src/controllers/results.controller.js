@@ -356,6 +356,75 @@ function getSegments(req, res) {
   } catch (e) { return err(res, 'Erro ao consolidar resultados', 500, e.message); }
 }
 
+/* GET /results/dimensoes?surveyId= — resultado agrupado por dimensão, nas duas taxonomias.
+   Cada dimensão traz o % atingido, a favorabilidade e quantas perguntas a compõem. */
+function getDimensionResults(req, res) {
+  try {
+    const db = getDB(); const t = req.user.tenant_id;
+    const surveyId = req.query.surveyId;
+    const survey = db.prepare('SELECT id FROM surveys WHERE id=? AND tenant_id=?').get(surveyId, t);
+    if (!survey) return notFound(res, 'Pesquisa');
+
+    const PJ = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+    const questions = db.prepare('SELECT id, type, text, options, option_points FROM questions WHERE survey_id=? ORDER BY order_num').all(surveyId);
+    const vinc = db.prepare(`
+      SELECT qd.question_id, d.id, d.name, d.taxonomia, d.ordem
+      FROM question_dimensoes qd JOIN dimensoes d ON d.id = qd.dimensao_id
+      JOIN questions q ON q.id = qd.question_id
+      WHERE q.survey_id = ? AND d.tenant_id = ?
+    `).all(surveyId, t);
+    if (!vinc.length) return ok(res, { clima: [], hse: [], semDimensao: true });
+
+    // Filtros opcionais do recorte.
+    const where = ['r.survey_id = ?', 'r.completed_at IS NOT NULL']; const args = [surveyId];
+    if (req.query.distrito)      { where.push('r.distrito_id = ?');      args.push(req.query.distrito); }
+    if (req.query.departamento)  { where.push('r.departamento_id = ?');  args.push(req.query.departamento); }
+    if (req.query.modalidade)    { where.push('LOWER(r.modalidade) = LOWER(?)'); args.push(req.query.modalidade); }
+    const rows = db.prepare(`
+      SELECT a.question_id qid, a.value_num vn, a.value_json vj, a.value_text vt
+      FROM answers a JOIN responses r ON r.id = a.response_id
+      WHERE ${where.join(' AND ')}
+    `).all(...args);
+
+    const qmeta = {}; questions.forEach(q => { qmeta[q.id] = { type: q.type, text: q.text, options: PJ(q.options) || [], points: PJ(q.option_points) }; });
+
+    // Acumula por dimensão: pontos atingidos e contagem de favoráveis.
+    const dims = {};
+    vinc.forEach(v => {
+      const k = v.id;
+      if (!dims[k]) dims[k] = { id: v.id, name: v.name, taxonomia: v.taxonomia, ordem: v.ordem, perguntas: new Set(), sum: 0, n: 0, fav: 0, unfav: 0, base: 0 };
+      dims[k].perguntas.add(v.question_id);
+    });
+    const porPergunta = {};
+    vinc.forEach(v => { (porPergunta[v.question_id] = porPergunta[v.question_id] || []).push(v.id); });
+
+    rows.forEach(row => {
+      const meta = qmeta[row.qid]; const alvos = porPergunta[row.qid];
+      if (!meta || !alvos) return;
+      const ans = { value_num: row.vn, value_json: row.vj, value_text: row.vt };
+      const e = earnedPct(meta, ans, meta.options, meta.points);
+      if (e == null) return;
+      alvos.forEach(did => {
+        const d = dims[did]; if (!d) return;
+        d.sum += e; d.n++;
+        d.base++;
+        if (e >= 75) d.fav++; else if (e <= 25) d.unfav++;
+      });
+    });
+
+    const monta = tax => Object.values(dims).filter(d => d.taxonomia === tax)
+      .sort((a, b) => (a.ordem - b.ordem) || a.name.localeCompare(b.name))
+      .map(d => ({
+        id: d.id, name: d.name, questionCount: d.perguntas.size, responses: d.n,
+        scorePct: d.n ? Math.round(d.sum / d.n) : null,
+        favPct:   d.base ? Math.round(d.fav / d.base * 100) : null,
+        unfavPct: d.base ? Math.round(d.unfav / d.base * 100) : null,
+      }));
+
+    return ok(res, { clima: monta('clima'), hse: monta('hse') });
+  } catch (e) { return err(res, 'Erro ao calcular o resultado por dimensão', 500, e.message); }
+}
+
 /* GET /results/:surveyId/pdf — relatório em PDF (apresentável, com comentários, médias e resultado geral) */
 function getPdf(req, res) {
   try {
@@ -610,4 +679,4 @@ function getSegmentQuestions(req, res) {
   } catch (e) { return err(res, 'Erro ao detalhar por pergunta', 500, e.message); }
 }
 
-module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions, getPdf, getInsightsPdf };
+module.exports = { getSurveyResults, getDashboard, getInsights, getSegments, getSegmentQuestions, getPdf, getInsightsPdf, getDimensionResults };

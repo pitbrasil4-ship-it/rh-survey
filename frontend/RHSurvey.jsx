@@ -2,14 +2,7 @@ import { useState, useEffect } from "react";
 import api from "./src/api.js";
 import { LANGS, t as translate, getStoredLang, storeLang, LangContext, useLang } from "./src/i18n.js";
 import LogoMark from "./src/LogoMark.jsx";
-import {
-  LayoutDashboard, ClipboardList, Users, BarChart3, Settings, Plus, Search,
-  Bell, TrendingUp, CheckCircle, Clock, CalendarClock, Send, Sparkles, Download, Eye, Edit,
-  Trash2, X, Loader2, Target, Award, Mail, Link2, ChevronDown, ArrowUpRight,
-  UserCheck, Building2, MessageSquare, ChevronRight, Shield, Lock, AlertTriangle,
-  FileText, Key, Activity, EyeOff, Database, RefreshCw, Info,
-  FileCheck, Zap, MessageCircle, BarChart2, Star, LogOut, Menu
-} from "lucide-react";
+import { Activity, AlertTriangle, ArrowUpRight, Award, BarChart2, BarChart3, Bell, Building2, CalendarClock, CheckCircle, ChevronDown, ChevronRight, ClipboardList, Clock, Database, Download, Edit, Eye, EyeOff, FileCheck, FileText, Info, Key, Layers, LayoutDashboard, Link2, Loader2, Lock, LogOut, Mail, Menu, MessageCircle, MessageSquare, Plus, RefreshCw, Search, Send, Settings, Shield, Sparkles, Star, Target, Trash2, TrendingUp, UserCheck, Users, X, Zap } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, Radar
@@ -98,7 +91,7 @@ function rowsToQuestions(rows, delim) {
   const isOpt = h => h.includes("opç") || h.includes("opc") || h.startsWith("op") || h.includes("alternativa") || h.includes("escolha");
   const isEn  = h => h.includes("(en)") || h.includes("english") || h.includes("inglês") || h.includes("ingles") || h.includes(" en)") || h.endsWith(" en");
   const isEs  = h => h.includes("(es)") || h.includes("español") || h.includes("espanol") || h.includes("espanhol") || h.includes("spanish") || h.includes("pregunta") || h.includes(" es)") || h.endsWith(" es");
-  let pIdx = 0, tIdx = 1, oIdx = 2, enIdx = -1, esIdx = -1, oEnIdx = -1, oEsIdx = -1, start = 0;
+  let pIdx = 0, tIdx = 1, oIdx = 2, enIdx = -1, esIdx = -1, oEnIdx = -1, oEsIdx = -1, start = 0, dimClimaIdx = -1, dimHseIdx = -1;
   if (looksHeader) {
     start = hdrRow + 1;
     const fi = pred => header.findIndex(pred);
@@ -109,6 +102,9 @@ function rowsToQuestions(rows, delim) {
     pIdx = fi(h => (h.includes("pergunta") || h.includes("texto") || h.includes("question")) && !isEn(h) && !isEs(h)); if (pIdx < 0) pIdx = 0;
     tIdx = fi(h => h.includes("tipo") || h.includes("type")); if (tIdx < 0) tIdx = 1;
     oIdx = fi(h => isOpt(h) && !isEn(h) && !isEs(h)); if (oIdx < 0) oIdx = 2;
+    // Colunas de dimensão: "Dimensão", "Dimensão Clima", "Dimensão HSE", "Fator HSE"...
+    dimHseIdx  = fi(h => (h.includes("dimens") || h.includes("fator") || h.includes("categoria")) && h.includes("hse"));
+    dimClimaIdx = fi(h => (h.includes("dimens") || h.includes("fator") || h.includes("categoria")) && !h.includes("hse"));
   }
 
   // A coluna da pergunta nunca é a de numeração ("Nº", "#", "Item", "Ordem"). Quando o cabeçalho
@@ -121,7 +117,7 @@ function rowsToQuestions(rows, delim) {
     const width = Math.max(...rows.slice(0, 30).map(r => (r || []).length), 0);
     let best = -1, bestScore = 0;
     for (let i = 0; i < width; i++) {
-      if (i === tIdx || i === oIdx || isCounter(header[i])) continue;
+      if (i === tIdx || i === oIdx || i === dimClimaIdx || i === dimHseIdx || isCounter(header[i])) continue;
       const sc = scoreCol(i);
       if (sc > bestScore) { bestScore = sc; best = i; }
     }
@@ -154,7 +150,11 @@ function rowsToQuestions(rows, delim) {
       if (options && oe && oe.length === options.length) options_en = oe;
       if (options && os && os.length === options.length) options_es = os;
     }
-    out.push({ id: Date.now() + r, text, type: mapped.type,
+    const splitDim = v => { const t2 = (v == null ? "" : String(v)).trim(); return t2 ? t2.split(/[;|/]/).map(x => x.trim()).filter(Boolean) : []; };
+    const dimClima = dimClimaIdx >= 0 ? splitDim(cols[dimClimaIdx]) : [];
+    const dimHse   = dimHseIdx   >= 0 ? splitDim(cols[dimHseIdx])   : [];
+    const dimensoes = (dimClima.length || dimHse.length) ? { clima: dimClima, hse: dimHse } : null;
+    out.push({ id: Date.now() + r, text, type: mapped.type, ...(dimensoes ? { dimensoes } : {}),
       ...(text_en ? { text_en } : {}), ...(text_es ? { text_es } : {}),
       ...(options ? { options } : {}), ...(options_en ? { options_en } : {}), ...(options_es ? { options_es } : {}),
       ...(option_points ? { option_points } : {}) });
@@ -994,7 +994,7 @@ function SurveyBuilder({ onBack, initial }) {
         targetGroup: GROUP_MAP[targetGroup] || "todos",
         anonymous,
         deadline: deadline ? deadline + "T23:59:59-03:00" : null,
-        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es, ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}), ...(q.singleChoice ? { singleChoice: true } : {}), ...(q.text_self ? { text_self: q.text_self } : {}) })),
+        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es, ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}), ...(q.singleChoice ? { singleChoice: true } : {}), ...(q.text_self ? { text_self: q.text_self } : {}), ...(q.dimensoes ? { dimensoes: q.dimensoes } : {}) })),
         lgpdBasis: "consentimento",
       });
       const id = result && result.survey && result.survey.id;
@@ -2323,6 +2323,71 @@ function CycleDetail({ cycleId, onBack }) {
   );
 }
 
+/* Resultado agrupado por dimensão, alternando entre as taxonomias Clima e HSE. */
+function DimensionPanel({ surveyId }) {
+  const { t } = useLang();
+  const [data, setData] = useState(null);
+  const [tax, setTax]   = useState("clima");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!surveyId) { setData(null); return; }
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try { const d = await api.results.dimensoes(surveyId); if (alive) setData(d); }
+      catch { if (alive) setData(null); }
+      if (alive) setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [surveyId]);
+
+  if (loading) return <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm mt-6 flex items-center justify-center gap-2 text-slate-400 text-sm"><Loader2 size={16} className="animate-spin" />{t('common_loading')}</div>;
+  if (!data || data.semDimensao) return null;
+  const lista = data[tax] || [];
+  const outra = tax === "clima" ? "hse" : "clima";
+  const temOutra = (data[outra] || []).length > 0;
+  const cor = p => p == null ? "bg-slate-100 text-slate-500" : p >= 70 ? "bg-green-100 text-green-700" : p >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700";
+  const barra = p => p == null ? "#CBD5E1" : p >= 70 ? "#16A34A" : p >= 50 ? "#D97706" : "#DC2626";
+
+  return (
+    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mt-6">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Layers size={15} className="text-purple-600" />{t('dim_title')}</h3>
+        {temOutra && (
+          <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+            {["clima","hse"].map(k => (data[k] || []).length === 0 ? null : (
+              <button key={k} onClick={() => setTax(k)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${tax===k ? "bg-white text-purple-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                {k === "clima" ? t('dim_clima') : t('dim_hse')}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {lista.length === 0 ? (
+        <p className="text-sm text-slate-400 py-4 text-center">{t('dim_empty')}</p>
+      ) : (
+        <div className="space-y-3">
+          {lista.map(d => (
+            <div key={d.id} className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+              <div className="w-full sm:w-52 flex-shrink-0">
+                <div className="text-sm text-slate-700 font-medium truncate" title={d.name}>{d.name}</div>
+                <div className="text-xs text-slate-400">{t('dim_nq',{n:d.questionCount})}</div>
+              </div>
+              <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden min-w-[120px]">
+                <div className="h-full rounded-full transition-all" style={{ width:`${d.scorePct ?? 0}%`, background:barra(d.scorePct) }} />
+              </div>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${cor(d.scorePct)}`}>{d.scorePct == null ? "—" : d.scorePct + "%"}</span>
+              <span className="text-xs text-slate-400 w-28 flex-shrink-0 text-right">{d.favPct == null ? "" : t('dim_fav',{f:d.favPct,u:d.unfavPct})}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── RESULTS ───────────────────────────────────────────────────────────────────
 function SegPerQuestion({ segScores }) {
   const { t } = useLang();
@@ -2648,6 +2713,31 @@ function ResultsDashboard() {
         XLSX.utils.book_append_sheet(wb, ws3, t('rep_sheet_matrix'));
       }
 
+      // Abas de dimensão — uma por taxonomia, quando a pesquisa tem dimensões vinculadas.
+      let dims = null;
+      try { dims = await api.results.dimensoes(selectedId); } catch {}
+      if (dims && !dims.semDimensao) {
+        [["clima", t('rep_sheet_dim_clima')], ["hse", t('rep_sheet_dim_hse')]].forEach(([k, titulo]) => {
+          const lista = dims[k] || [];
+          if (!lista.length) return;
+          const rows = [[titulo], [], [t('dim_title'), t('dim_nq',{n:""}).replace("()","").trim(), t('sc_achieved'), "% favorável", "% desfavorável", t('csv_responses')]];
+          lista.forEach(d => rows.push([d.name, d.questionCount, d.scorePct == null ? "—" : d.scorePct + "%", d.favPct == null ? "—" : d.favPct + "%", d.unfavPct == null ? "—" : d.unfavPct + "%", d.responses]));
+          const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = [{wch:38},{wch:12},{wch:12},{wch:14},{wch:16},{wch:12}];
+          XLSX.utils.book_append_sheet(wb, ws, titulo);
+        });
+      }
+
+      // Aba de comentários abertos, pergunta a pergunta.
+      const comentarios = [[t('rep_sheet_comments')], [], [t('csv_question'), t('csv_summary')]];
+      (questions || []).forEach(q => {
+        const lista = q.type === "text" ? (q.responses || []) : (q.comments || []);
+        lista.forEach(c => comentarios.push([q.text, c]));
+      });
+      if (comentarios.length > 3) {
+        const wsC = XLSX.utils.aoa_to_sheet(comentarios); wsC['!cols'] = [{wch:52},{wch:90}];
+        XLSX.utils.book_append_sheet(wb, wsC, t('rep_sheet_comments'));
+      }
+
       const nm = surveyName.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "relatorio";
       XLSX.writeFile(wb, `relatorio-${nm}.xlsx`);
     } catch (e) { alert((e && e.message) || ""); }
@@ -2773,6 +2863,7 @@ function ResultsDashboard() {
       )}
       </>
       )}
+      <DimensionPanel surveyId={selectedId} />
       <SegmentResultsPanel surveyId={selectedId} />
     </div>
   );

@@ -54,8 +54,8 @@ function segmentFromUrl() {
   try {
     const q = new URLSearchParams(window.location.search);
     const get = (...keys) => { for (const k of keys) { const v = q.get(k); if (v && v.trim()) return v.trim(); } return null; };
-    return { distrito: get('distrito', 'd'), departamento: get('departamento', 'dep') };
-  } catch { return { distrito: null, departamento: null }; }
+    return { distrito: get('distrito', 'd'), departamento: get('departamento', 'dep'), modalidade: get('modalidade', 'mod') };
+  } catch { return { distrito: null, departamento: null, modalidade: null }; }
 }
 
 async function pub(method, token, body) {
@@ -239,7 +239,7 @@ export default function PublicSurvey({ token }) {
     setSubmitting(true);
     try {
       const seg = segmentFromUrl();
-      await pub('POST', token, { answers: payload, clientId: clientId(), distrito: seg.distrito, departamento: seg.departamento });
+      await pub('POST', token, { answers: payload, clientId: clientId(), distrito: seg.distrito, departamento: seg.departamento, modalidade: seg.modalidade });
       markAnswered(token);
       setState('done');
     } catch (e) {

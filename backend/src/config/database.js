@@ -157,6 +157,22 @@ function initSchema() {
   try { db.exec("ALTER TABLE questions ADD COLUMN single_choice INTEGER DEFAULT 0"); } catch (e) {}
   // Texto alternativo da pergunta quando a pessoa está se autoavaliando.
   try { db.exec("ALTER TABLE questions ADD COLUMN text_self TEXT"); } catch (e) {}
+
+  // Dimensões em duas taxonomias (Clima e HSE). Uma pergunta pode pertencer a mais de uma,
+  // inclusive a uma de cada taxonomia — por isso o vínculo é uma tabela à parte.
+  try { db.exec(`CREATE TABLE IF NOT EXISTS dimensoes (
+    id TEXT PRIMARY KEY, tenant_id TEXT, taxonomia TEXT NOT NULL DEFAULT 'clima',
+    name TEXT NOT NULL, ordem INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS question_dimensoes (
+    question_id TEXT NOT NULL, dimensao_id TEXT NOT NULL,
+    PRIMARY KEY (question_id, dimensao_id)
+  )`); } catch (e) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_qdim_dim ON question_dimensoes(dimensao_id)"); } catch (e) {}
+  try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_unico ON dimensoes(tenant_id, taxonomia, LOWER(name))"); } catch (e) {}
+
+  // Modalidade do respondente (mensalista, horista...), para o recorte dos resultados.
+  try { db.exec("ALTER TABLE responses ADD COLUMN modalidade TEXT"); } catch (e) {}
   // Quem nunca acessou ainda está com a senha provisória -> força a troca no 1º acesso.
   try { db.exec("UPDATE users SET must_change_password = 1 WHERE last_login IS NULL AND must_change_password = 0"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN weight REAL DEFAULT 1"); } catch (e) {}

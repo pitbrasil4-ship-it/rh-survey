@@ -11,4 +11,5 @@ router.use('/audit',       require('./audit.routes'));
 router.use('/lgpd',        require('./lgpd.routes'));
 router.use('/push',        require('./push.routes'));
 router.use('/org',         require('./org.routes'));
+router.use('/dimensoes',   require('./dimensoes.routes'));
 module.exports = router;

@@ -26,7 +26,7 @@ function getPublic(req, res) {
 /* POST /public/survey/:token  — submit response (no auth) */
 function submitPublic(req, res) {
   try {
-    const { answers, respondentId, clientId, distrito, departamento } = req.body;
+    const { answers, respondentId, clientId, distrito, departamento, modalidade } = req.body;
     if (!answers || !Array.isArray(answers) || answers.length === 0) return badReq(res, 'Respostas são obrigatórias');
 
     const db     = getDB();
@@ -60,8 +60,9 @@ function submitPublic(req, res) {
     const distritoId     = (link && link.distrito_id)     || resolveSeg('distritos', distrito)        || null;
     const departamentoId = (link && link.departamento_id) || resolveSeg('departamentos', departamento) || null;
 
-    db.prepare('INSERT INTO responses (id, survey_id, respondent_id, ip_hash, distrito_id, departamento_id, client_id) VALUES (?,?,?,?,?,?,?)').run(
-      responseId, survey.id, survey.anonymous ? null : (respondentId || null), ipHash, distritoId, departamentoId, cid
+    db.prepare('INSERT INTO responses (id, survey_id, respondent_id, ip_hash, distrito_id, departamento_id, client_id, modalidade) VALUES (?,?,?,?,?,?,?,?)').run(
+      responseId, survey.id, survey.anonymous ? null : (respondentId || null), ipHash, distritoId, departamentoId, cid,
+      (typeof modalidade === 'string' && modalidade.trim()) ? modalidade.trim().slice(0, 60) : null
     );
 
     const stmt = db.prepare('INSERT INTO answers (id, response_id, question_id, value_text, value_num, value_json) VALUES (?,?,?,?,?,?)');

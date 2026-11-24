@@ -3,6 +3,7 @@ const { v4: uuid }   = require('uuid');
 const { getDB }      = require('../config/database');
 const { ok, created, err, notFound, badReq } = require('../utils/response');
 const logger         = require('../utils/logger');
+const { linkQuestionDimensoes } = require('./dimensoes.controller');
 const { translateSurvey, aiEnabled } = require('../utils/translate');
 
 // Grava no banco as traduções (EN/ES) de uma pesquisa já criada e suas perguntas.
@@ -60,6 +61,8 @@ async function create(req, res) {
         stmt.run(qid, surveyId, i+1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es),
           (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null,
           q.singleChoice ? 1 : 0, q.text_self || null);
+        // Dimensões vindas da planilha ou do construtor: { clima: [...], hse: [...] }
+        if (q.dimensoes) { try { linkQuestionDimensoes(db, req.user.tenant_id, qid, q.dimensoes); } catch (e) { logger.warn('Vínculo de dimensão falhou: ' + e.message); } }
       });
     }
 
