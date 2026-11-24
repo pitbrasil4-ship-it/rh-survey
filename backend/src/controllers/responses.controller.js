@@ -32,8 +32,8 @@ function submitPublic(req, res) {
     const db     = getDB();
     const link   = db.prepare("SELECT survey_id, distrito_id, departamento_id FROM survey_links WHERE token = ?").get(req.params.token);
     const survey = link
-      ? db.prepare("SELECT id, anonymous, status, deadline FROM surveys WHERE id = ?").get(link.survey_id)
-      : db.prepare("SELECT id, anonymous, status, deadline FROM surveys WHERE public_token = ?").get(req.params.token);
+      ? db.prepare("SELECT id, anonymous, status, deadline, IFNULL(version,1) version FROM surveys WHERE id = ?").get(link.survey_id)
+      : db.prepare("SELECT id, anonymous, status, deadline, IFNULL(version,1) version FROM surveys WHERE public_token = ?").get(req.params.token);
     if (!survey) return notFound(res, 'Pesquisa');
     if (survey.status !== 'ativo' || (survey.deadline && new Date(survey.deadline).getTime() < Date.now()))
       return badReq(res, 'Esta pesquisa está encerrada e não aceita mais respostas.');
@@ -60,9 +60,10 @@ function submitPublic(req, res) {
     const distritoId     = (link && link.distrito_id)     || resolveSeg('distritos', distrito)        || null;
     const departamentoId = (link && link.departamento_id) || resolveSeg('departamentos', departamento) || null;
 
-    db.prepare('INSERT INTO responses (id, survey_id, respondent_id, ip_hash, distrito_id, departamento_id, client_id, modalidade) VALUES (?,?,?,?,?,?,?,?)').run(
+    db.prepare('INSERT INTO responses (id, survey_id, respondent_id, ip_hash, distrito_id, departamento_id, client_id, modalidade, survey_version) VALUES (?,?,?,?,?,?,?,?,?)').run(
       responseId, survey.id, survey.anonymous ? null : (respondentId || null), ipHash, distritoId, departamentoId, cid,
-      (typeof modalidade === 'string' && modalidade.trim()) ? modalidade.trim().slice(0, 60) : null
+      (typeof modalidade === 'string' && modalidade.trim()) ? modalidade.trim().slice(0, 60) : null,
+      survey.version || 1
     );
 
     const stmt = db.prepare('INSERT INTO answers (id, response_id, question_id, value_text, value_num, value_json) VALUES (?,?,?,?,?,?)');

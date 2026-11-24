@@ -4,6 +4,7 @@ const { getDB }      = require('../config/database');
 const { ok, created, err, notFound, badReq } = require('../utils/response');
 const logger         = require('../utils/logger');
 const { linkQuestionDimensoes } = require('./dimensoes.controller');
+const { diffQuestions, respostasDe, logChange, bumpVersion } = require('../utils/versioning');
 const { translateSurvey, aiEnabled } = require('../utils/translate');
 
 // Grava no banco as traduções (EN/ES) de uma pesquisa já criada e suas perguntas.
@@ -76,6 +77,119 @@ async function create(req, res) {
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(surveyId);
     return created(res, { survey }, 'Pesquisa criada com sucesso');
   } catch (e) { return err(res, 'Erro ao criar pesquisa', 500, e.message); }
+}
+
+/* PUT /surveys/:id/questions — edita o questionário de uma pesquisa, inclusive publicada.
+   Com respostas na base, alterações que mudam o significado exigem { confirm: true }. */
+function updateQuestions(req, res) {
+  try {
+    const db = getDB();
+    const survey = db.prepare('SELECT * FROM surveys WHERE id=? AND tenant_id=?').get(req.params.id, req.user.tenant_id);
+    if (!survey) return notFound(res, 'Pesquisa');
+    const brutas = Array.isArray(req.body.questions) ? req.body.questions : null;
+    if (!brutas || !brutas.length) return badReq(res, 'Informe as perguntas');
+    // A API devolve opções como texto JSON e o construtor manda lista: aceita as duas formas.
+    const comoLista = v => { if (Array.isArray(v)) return v; if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : null; } catch { return null; } } return null; };
+    const novas = brutas.map(q => ({ ...q,
+      options: comoLista(q.options), options_en: comoLista(q.options_en), options_es: comoLista(q.options_es),
+      option_points: comoLista(q.option_points) }));
+
+    const atuais = db.prepare('SELECT * FROM questions WHERE survey_id=? ORDER BY order_num').all(survey.id);
+    const { quebras, seguras } = diffQuestions(atuais, novas);
+    const respostas = respostasDe(db, survey.id);
+
+    // Com respostas na base e alteração que quebra, só segue com confirmação explícita.
+    if (respostas > 0 && quebras.length && !req.body.confirm) {
+      return ok(res, { precisaConfirmar: true, respostas, quebras, seguras, versaoAtual: survey.version || 1 },
+        'Esta alteração muda o significado de perguntas que já foram respondidas.');
+    }
+
+    let versao = survey.version || 1;
+    db.exec('BEGIN');
+    try {
+      if (respostas > 0 && quebras.length) versao = bumpVersion(db, survey.id, req.user);
+
+      const J = a => (Array.isArray(a) && a.length) ? JSON.stringify(a) : null;
+      const manter = new Set(novas.filter(q => q.id).map(q => q.id));
+      // Remove as perguntas que saíram (as respostas antigas continuam na versão guardada).
+      atuais.forEach(q => { if (!manter.has(q.id)) {
+        db.prepare('DELETE FROM question_dimensoes WHERE question_id=?').run(q.id);
+        db.prepare('DELETE FROM questions WHERE id=?').run(q.id);
+      } });
+
+      const upd = db.prepare(`UPDATE questions SET order_num=?, type=?, text=?, text_en=?, text_es=?, options=?, options_en=?, options_es=?,
+        option_points=?, single_choice=?, text_self=? WHERE id=?`);
+      const ins = db.prepare(`INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points, single_choice, text_self)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+
+      novas.forEach((q, i) => {
+        const pts = (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null;
+        let qid = q.id;
+        if (qid && atuais.some(a => a.id === qid)) {
+          upd.run(i + 1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es), pts, q.singleChoice ? 1 : 0, q.text_self || null, qid);
+        } else {
+          qid = uuid();
+          ins.run(qid, survey.id, i + 1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es), pts, q.singleChoice ? 1 : 0, q.text_self || null);
+        }
+        if (q.dimensoes) {
+          db.prepare('DELETE FROM question_dimensoes WHERE question_id=?').run(qid);
+          try { linkQuestionDimensoes(db, req.user.tenant_id, qid, q.dimensoes); } catch (e) { logger.warn('Vínculo de dimensão: ' + e.message); }
+        }
+      });
+
+      logChange(db, { surveyId: survey.id, version: versao, user: req.user, action: 'questionario_editado',
+        detail: { quebras: quebras.length, seguras: seguras.length, respostasNaEpoca: respostas, itens: [...quebras, ...seguras].slice(0, 40) } });
+      db.exec('COMMIT');
+    } catch (e) { try { db.exec('ROLLBACK'); } catch {} throw e; }
+
+    const atualizada = db.prepare('SELECT * FROM surveys WHERE id=?').get(survey.id);
+    return ok(res, { survey: atualizada, versao, quebras: quebras.length, seguras: seguras.length }, 'Questionário atualizado');
+  } catch (e) { return err(res, 'Erro ao editar o questionário', 500, e.message); }
+}
+
+/* POST /surveys/:id/duplicate — cria uma cópia em rascunho, com as perguntas e as dimensões */
+function duplicate(req, res) {
+  try {
+    const db = getDB();
+    const origem = db.prepare('SELECT * FROM surveys WHERE id=? AND tenant_id=?').get(req.params.id, req.user.tenant_id);
+    if (!origem) return notFound(res, 'Pesquisa');
+    const questions = db.prepare('SELECT * FROM questions WHERE survey_id=? ORDER BY order_num').all(origem.id);
+    const novoId = uuid();
+    const nome = (req.body && req.body.name) ? String(req.body.name).trim() : `${origem.name} (cópia)`;
+
+    db.exec('BEGIN');
+    try {
+      db.prepare(`INSERT INTO surveys (id, tenant_id, created_by_id, name, description, category, target_group, anonymous, lgpd_basis, public_token, status, version)
+                  VALUES (?,?,?,?,?,?,?,?,?,?, 'rascunho', 1)`)
+        .run(novoId, origem.tenant_id, req.user.id, nome, origem.description, origem.category, origem.target_group, origem.anonymous, origem.lgpd_basis, uuid());
+      const ins = db.prepare(`INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points, single_choice, text_self)
+                              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      const dims = db.prepare('SELECT dimensao_id FROM question_dimensoes WHERE question_id=?');
+      const insDim = db.prepare('INSERT OR IGNORE INTO question_dimensoes (question_id, dimensao_id) VALUES (?,?)');
+      questions.forEach((q, i) => {
+        const qid = uuid();
+        ins.run(qid, novoId, i + 1, q.type, q.text, q.text_en, q.text_es, q.options, q.options_en, q.options_es, q.option_points, q.single_choice || 0, q.text_self);
+        dims.all(q.id).forEach(d => insDim.run(qid, d.dimensao_id));
+      });
+      logChange(db, { surveyId: novoId, version: 1, user: req.user, action: 'duplicada', detail: { de: origem.id, nome: origem.name } });
+      db.exec('COMMIT');
+    } catch (e) { try { db.exec('ROLLBACK'); } catch {} throw e; }
+
+    return created(res, { survey: db.prepare('SELECT * FROM surveys WHERE id=?').get(novoId) }, 'Pesquisa duplicada');
+  } catch (e) { return err(res, 'Erro ao duplicar a pesquisa', 500, e.message); }
+}
+
+/* GET /surveys/:id/history — histórico de alterações e versões guardadas */
+function history(req, res) {
+  try {
+    const db = getDB();
+    const survey = db.prepare('SELECT id, name, IFNULL(version,1) version FROM surveys WHERE id=? AND tenant_id=?').get(req.params.id, req.user.tenant_id);
+    if (!survey) return notFound(res, 'Pesquisa');
+    const changes = db.prepare('SELECT id, version, user_name, action, detail, created_at FROM survey_changes WHERE survey_id=? ORDER BY created_at DESC LIMIT 200').all(survey.id)
+      .map(c => ({ ...c, detail: (() => { try { return JSON.parse(c.detail); } catch { return c.detail; } })() }));
+    const versions = db.prepare('SELECT id, version, created_at FROM survey_versions WHERE survey_id=? ORDER BY version DESC').all(survey.id);
+    return ok(res, { survey, changes, versions });
+  } catch (e) { return err(res, 'Erro ao carregar o histórico', 500, e.message); }
 }
 
 /* POST /surveys/bulk — cria UMA pesquisa por nome (ex.: avaliação por gestor), já publicada, com link próprio.
@@ -281,4 +395,4 @@ function segmentLinks(req, res) {
   } catch (e) { return err(res, 'Erro ao gerar links', 500, e.message); }
 }
 
-module.exports = { list, create, getOne, update, publish, remove, generateAI, translateExisting, setDeadline, listSegmentLinks, segmentLinks, bulkCreate };
+module.exports = { list, create, getOne, update, publish, remove, generateAI, translateExisting, setDeadline, listSegmentLinks, segmentLinks, bulkCreate, updateQuestions, duplicate, history };

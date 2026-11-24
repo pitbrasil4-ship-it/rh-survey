@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import api from "./src/api.js";
 import { LANGS, t as translate, getStoredLang, storeLang, LangContext, useLang } from "./src/i18n.js";
 import LogoMark from "./src/LogoMark.jsx";
-import { Activity, AlertTriangle, ArrowUpRight, Award, BarChart2, BarChart3, Bell, Building2, CalendarClock, CheckCircle, ChevronDown, ChevronRight, ClipboardList, Clock, Database, Download, Edit, Eye, EyeOff, FileCheck, FileText, Info, Key, Layers, LayoutDashboard, Link2, Loader2, Lock, LogOut, Mail, Menu, MessageCircle, MessageSquare, Plus, RefreshCw, Search, Send, Settings, Shield, Sparkles, Star, Target, Trash2, TrendingUp, UserCheck, Users, X, Zap } from "lucide-react";
+import { Activity, AlertTriangle, ArrowUpRight, Award, BarChart2, BarChart3, Bell, Building2, CalendarClock, CheckCircle, ChevronDown, ChevronRight, ClipboardList, Clock, Copy, Database, Download, Edit, Eye, EyeOff, FileCheck, FileText, Info, Key, Layers, LayoutDashboard, Link2, Loader2, Lock, LogOut, Mail, Menu, MessageCircle, MessageSquare, Pencil, Plus, RefreshCw, Search, Send, Settings, Shield, Sparkles, Star, Target, Trash2, TrendingUp, UserCheck, Users, X, Zap } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, Radar
@@ -714,7 +714,65 @@ function Dashboard({ setPage }) {
 
 
 // ─── SURVEY LIST ───────────────────────────────────────────────────────────────
-function SurveyList({ onCreateNew, onView }) {
+/* Histórico de alterações de uma pesquisa, com as versões arquivadas. */
+function HistoryPanel({ survey, onClose }) {
+  const { t } = useLang();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try { const d = await api.surveys.history(survey.id); if (alive) setData(d); }
+      catch { if (alive) setData(null); }
+      if (alive) setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [survey.id]);
+  const quando = (d) => { try { return new Date(d.endsWith("Z") ? d : d.replace(" ", "T") + "Z").toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); } catch { return d; } };
+  return (
+    <div className="fixed inset-0 z-[95] bg-slate-900/60 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8">
+        <div className="flex items-start justify-between gap-3 p-6 border-b border-slate-100">
+          <div className="min-w-0">
+            <h2 className="font-bold text-slate-800 flex items-center gap-2"><Clock size={16} className="text-purple-600" />{t('sh_title')}</h2>
+            <p className="text-xs text-slate-500 mt-0.5 truncate">{survey.name}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 flex-shrink-0"><X size={18} /></button>
+        </div>
+        <div className="p-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-slate-400 text-sm gap-2"><Loader2 size={18} className="animate-spin" />{t('common_loading')}</div>
+          ) : !data || !data.changes.length ? (
+            <p className="text-sm text-slate-400 text-center py-8">{t('sh_empty')}</p>
+          ) : (
+            <div className="space-y-3">
+              {data.changes.map(c => (
+                <div key={c.id} className="flex gap-3 border-l-2 border-purple-200 pl-4 pb-1">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-slate-800">{t('sh_act_'+c.action) || c.action}</span>
+                      {c.version ? <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">{t('sh_version',{v:c.version})}</span> : null}
+                    </div>
+                    <div className="text-xs text-slate-400 mt-0.5">{quando(c.created_at)}{c.user_name ? " · " + c.user_name : ""}</div>
+                    {c.detail && typeof c.detail === "object" && (c.detail.quebras || c.detail.seguras) ? (
+                      <div className="text-xs text-slate-500 mt-1">
+                        {c.detail.quebras ? <span className="text-amber-700 font-medium">{t('sh_breaking_n',{n:c.detail.quebras})}</span> : null}
+                        {c.detail.quebras && c.detail.seguras ? " · " : null}
+                        {c.detail.seguras ? <span>{t('sh_safe_n',{n:c.detail.seguras})}</span> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SurveyList({ onCreateNew, onView, onEdit }) {
   const { t } = useLang();
   const [search,  setSearch]  = useState("");
   const [filter,  setFilter]  = useState("todos");
@@ -757,6 +815,13 @@ function SurveyList({ onCreateNew, onView }) {
     return ms && mf;
   });
 
+  const handleDuplicate = async (sv) => {
+    setDupId(sv.id);
+    try { await api.surveys.duplicate(sv.id); await load(); }
+    catch (e) { alert((e && e.message) || ""); }
+    setDupId(null);
+  };
+
   const handleDelete = async (s) => {
     if (!window.confirm(t('sl_delete_confirm',{name:s.name}))) return;
     try {
@@ -767,6 +832,8 @@ function SurveyList({ onCreateNew, onView }) {
     }
   };
 
+  const [dupId, setDupId]       = useState(null);
+  const [histOf, setHistOf]     = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const handleCopyLink = async (s) => {
     if (!s.token) return;
@@ -857,6 +924,7 @@ function SurveyList({ onCreateNew, onView }) {
         ))}
       </div>
 
+      {histOf && <HistoryPanel survey={histOf} onClose={() => setHistOf(null)} />}
       <div className="space-y-4">
         {filtered.map(s => {
           const pct = s.total>0 ? Math.round((s.responses/s.total)*100) : 0;
@@ -882,6 +950,13 @@ function SurveyList({ onCreateNew, onView }) {
                     <div className="flex items-center gap-1.5">
                       <button onClick={() => onView && onView(s)} title={t('sl_view_results')}
                         className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><Eye size={14} /></button>
+                      <button onClick={() => onEdit && onEdit(s)} title={t('sl_edit_survey')}
+                        className="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"><Pencil size={14} /></button>
+                      <button onClick={() => handleDuplicate(s)} disabled={dupId===s.id} title={t('sl_duplicate')}
+                        className="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors disabled:opacity-40">
+                        {dupId===s.id ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}</button>
+                      <button onClick={() => setHistOf(s)} title={t('sl_history')}
+                        className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><Clock size={14} /></button>
                       <button onClick={() => handleDelete(s)} title={t('sl_delete_survey')}
                         className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 size={14} /></button>
                     </div>
@@ -953,7 +1028,7 @@ function SurveyList({ onCreateNew, onView }) {
 }
 
 // ─── SURVEY BUILDER ────────────────────────────────────────────────────────────
-function SurveyBuilder({ onBack, initial }) {
+function SurveyBuilder({ onBack, initial, editSurvey }) {
   const { t } = useLang();
   const [tab,       setTab]       = useState("builder");
   const [surveyName,setSurveyName]= useState(initial?.name || "");
@@ -980,6 +1055,53 @@ function SurveyBuilder({ onBack, initial }) {
   const [importInfo,  setImportInfo]  = useState("");
 
   const GROUP_MAP = { "Gestores":"gestores", "Fornecedores":"fornecedores", "Subordinados":"subordinados", "Todos":"todos" };
+
+  // Modo edição: carrega o questionário da pesquisa existente.
+  const [editConfirm, setEditConfirm] = useState(null);   // { quebras, respostas }
+  const [loadingEdit, setLoadingEdit] = useState(!!editSurvey);
+  useEffect(() => {
+    if (!editSurvey) return;
+    let alive = true;
+    (async () => {
+      try {
+        const d = await api.surveys.get(editSurvey.id);
+        if (!alive) return;
+        const PJ = v => { if (Array.isArray(v)) return v; try { const p = JSON.parse(v); return Array.isArray(p) ? p : null; } catch { return null; } };
+        setSurveyName(d.survey.name || "");
+        if (d.survey.category) setCategory(d.survey.category);
+        setQuestions((d.questions || []).map((q, i) => ({
+          id: q.id, serverId: q.id, text: q.text, type: q.type,
+          text_en: q.text_en || "", text_es: q.text_es || "",
+          ...(PJ(q.options) ? { options: PJ(q.options) } : {}),
+          ...(PJ(q.option_points) ? { option_points: PJ(q.option_points) } : {}),
+          ...(q.single_choice ? { singleChoice: true } : {}),
+          ...(q.text_self ? { text_self: q.text_self } : {}),
+        })));
+      } catch (e) { setError((e && e.message) || ""); }
+      if (alive) setLoadingEdit(false);
+    })();
+    return () => { alive = false; };
+  }, [editSurvey]);
+
+  const payloadQuestions = () => questions.map(q => ({
+    ...(q.serverId ? { id: q.serverId } : {}),
+    type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "",
+    options: q.options, options_en: q.options_en, options_es: q.options_es,
+    ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}),
+    ...(q.singleChoice ? { singleChoice: true } : {}),
+    ...(q.text_self ? { text_self: q.text_self } : {}),
+    ...(q.dimensoes ? { dimensoes: q.dimensoes } : {}),
+  }));
+
+  const saveEdit = async (confirm) => {
+    setError(null); setSaving(true);
+    try {
+      const r = await api.surveys.updateQuestions(editSurvey.id, payloadQuestions(), confirm);
+      if (r && r.precisaConfirmar) { setEditConfirm(r); setSaving(false); return; }
+      setEditConfirm(null);
+      onBack();
+    } catch (e) { setError((e && e.message) || t('sb_save_error')); setSaving(false); }
+  };
 
   const handleSubmit = async (publishNow) => {
     setError(null);
@@ -1125,20 +1247,58 @@ function SurveyBuilder({ onBack, initial }) {
           <ChevronRight size={17} className="rotate-180" />
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">{t('new_survey')}</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{t('sb_subtitle')}</p>
+          <h1 className="text-2xl font-bold text-slate-800">{editSurvey ? t('sb_edit_title') : t('new_survey')}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{editSurvey ? (editSurvey.name || "") : t('sb_subtitle')}</p>
         </div>
         <div className="ml-auto flex gap-3">
-          <button onClick={() => handleSubmit(false)} disabled={saving}
-            className="px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2">
-            {saving ? <><Loader2 size={14} className="animate-spin" />{t('common_saving')}</> : t('sb_save_draft')}
-          </button>
-          <button onClick={() => handleSubmit(true)} disabled={saving || !lgpdOk} title={!lgpdOk?t('sb_confirm_lgpd_title'):""}
-            className="px-4 py-2 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity flex items-center gap-2" style={{ background:GRAD }}>
-            {saving ? <><Loader2 size={14} className="animate-spin" />{t('sb_publishing')}</> : <><Send size={14} />{t('sb_publish')}</>}
-          </button>
+          {editSurvey ? (
+            <>
+              <button onClick={onBack} className="px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50">{t('common_cancel')}</button>
+              <button onClick={() => saveEdit(false)} disabled={saving || loadingEdit}
+                className="px-4 py-2 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-50 flex items-center gap-2" style={{ background:GRAD }}>
+                {saving ? <><Loader2 size={14} className="animate-spin" />{t('common_saving')}</> : <><CheckCircle size={14} />{t('sb_save_changes')}</>}
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => handleSubmit(false)} disabled={saving}
+                className="px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2">
+                {saving ? <><Loader2 size={14} className="animate-spin" />{t('common_saving')}</> : t('sb_save_draft')}
+              </button>
+              <button onClick={() => handleSubmit(true)} disabled={saving || !lgpdOk} title={!lgpdOk?t('sb_confirm_lgpd_title'):""}
+                className="px-4 py-2 text-sm text-white rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity flex items-center gap-2" style={{ background:GRAD }}>
+                {saving ? <><Loader2 size={14} className="animate-spin" />{t('sb_publishing')}</> : <><Send size={14} />{t('sb_publish')}</>}
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      {editConfirm && (
+        <div className="fixed inset-0 z-[95] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0"><AlertTriangle size={18} className="text-amber-600" /></div>
+              <h2 className="font-bold text-slate-800">{t('sb_break_title')}</h2>
+            </div>
+            <p className="text-sm text-slate-600 mb-3">{t('sb_break_body',{n:editConfirm.respostas})}</p>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 max-h-48 overflow-y-auto">
+              {(editConfirm.quebras || []).map((q,i) => (
+                <div key={i} className="text-xs text-amber-900 mb-1.5">
+                  <span className="font-semibold">{t('sb_break_'+q.tipo) || q.tipo}</span>{q.texto ? <> — {q.texto}</> : null}
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 mb-4">{t('sb_break_note',{v:(editConfirm.versaoAtual||1)+1})}</p>
+            <div className="flex gap-2">
+              <button onClick={() => setEditConfirm(null)} className="flex-1 py-2.5 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">{t('common_cancel')}</button>
+              <button onClick={() => saveEdit(true)} disabled={saving} className="flex-1 py-2.5 text-sm text-white font-semibold rounded-xl disabled:opacity-50" style={{ background:GRAD }}>
+                {saving ? <Loader2 size={14} className="inline animate-spin" /> : t('sb_break_confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-5 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 flex items-center gap-2 text-sm">
@@ -5032,6 +5192,7 @@ export default function RHSurvey() {
   const [page,     setPage]    = useState("dashboard");
   const [creating, setCreating]= useState(false);
   const [tmpl,     setTmpl]    = useState(null);
+  const [editSv,   setEditSv]  = useState(null);
   const [lgpdOk,       setLgpdOk]       = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [lang,     setLang]    = useState(getStoredLang);
@@ -5078,10 +5239,11 @@ export default function RHSurvey() {
   const handleNav = p => { setCreating(false); setTmpl(null); setPage(p); setNavOpen(false); };
 
   const renderContent = () => {
+    if (editSv)   return <SurveyBuilder onBack={() => { setEditSv(null); }} editSurvey={editSv} />;
     if (creating) return <SurveyBuilder onBack={() => { setCreating(false); setTmpl(null); }} initial={tmpl} />;
     switch (page) {
       case "dashboard":     return <Dashboard     setPage={handleNav} />;
-      case "surveys":       return <SurveyList    onCreateNew={() => setCreating(true)} onView={() => handleNav("results")} />;
+      case "surveys":       return <SurveyList    onCreateNew={() => setCreating(true)} onView={() => handleNav("results")} onEdit={(sv) => setEditSv(sv)} />;
       case "respondents":   return <RespondentManager />;
       case "estrutura":     return <OrgStructure />;
       case "evaluation360": return <Evaluation360 />;

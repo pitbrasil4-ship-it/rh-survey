@@ -4,7 +4,7 @@ set -u
 rm -f test.db test.db-wal test.db-shm
 SQLITE_PATH=./test.db node src/utils/seed.js >/dev/null 2>&1 || { echo "seed falhou"; exit 1; }
 fail=0
-for f in tests/fase1.js tests/fase2.js tests/fase3.js tests/smoke.js; do
+for f in tests/fase1.js tests/fase2.js tests/fase3.js tests/fase4.js tests/smoke.js; do
   echo "═══ $f ═══"
   out=$(node "$f" 2>&1 | grep -vE "Experimental|trace-warnings|ExperimentalWarning|info\b|\[32m")
   echo "$out"

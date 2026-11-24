@@ -173,6 +173,21 @@ function initSchema() {
 
   // Modalidade do respondente (mensalista, horista...), para o recorte dos resultados.
   try { db.exec("ALTER TABLE responses ADD COLUMN modalidade TEXT"); } catch (e) {}
+
+  // Versionamento: editar uma pesquisa que já tem respostas não pode corromper a série.
+  // Toda alteração que muda o significado guarda o questionário anterior e sobe a versão.
+  try { db.exec("ALTER TABLE surveys ADD COLUMN version INTEGER DEFAULT 1"); } catch (e) {}
+  try { db.exec("ALTER TABLE responses ADD COLUMN survey_version INTEGER DEFAULT 1"); } catch (e) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS survey_versions (
+    id TEXT PRIMARY KEY, survey_id TEXT NOT NULL, version INTEGER NOT NULL,
+    snapshot TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')), created_by TEXT
+  )`); } catch (e) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS survey_changes (
+    id TEXT PRIMARY KEY, survey_id TEXT NOT NULL, version INTEGER,
+    user_id TEXT, user_name TEXT, action TEXT, detail TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`); } catch (e) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_changes_survey ON survey_changes(survey_id, created_at)"); } catch (e) {}
   // Quem nunca acessou ainda está com a senha provisória -> força a troca no 1º acesso.
   try { db.exec("UPDATE users SET must_change_password = 1 WHERE last_login IS NULL AND must_change_password = 0"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN weight REAL DEFAULT 1"); } catch (e) {}

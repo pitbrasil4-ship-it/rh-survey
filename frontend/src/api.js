@@ -109,6 +109,7 @@ export const api = {
   },
   surveys: {
     list:       ()         => request('GET', '/surveys'),
+    get:        (id)       => request('GET', `/surveys/${id}`),
     create:     (data)     => request('POST', '/surveys', data),
     generateAI: (context, count) => request('POST', '/surveys/generate-ai', { context, count }),
     translate:  (id)       => request('POST', `/surveys/${id}/translate`),
@@ -116,6 +117,9 @@ export const api = {
     segmentLinks:     (id) => request('POST', `/surveys/${id}/segment-links`),
     listSegmentLinks: (id) => request('GET',  `/surveys/${id}/segment-links`),
     bulk:             (payload) => request('POST', '/surveys/bulk', payload),
+    updateQuestions:  (id, questions, confirm) => request('PUT', `/surveys/${id}/questions`, { questions, ...(confirm ? { confirm: true } : {}) }),
+    duplicate:        (id, name) => request('POST', `/surveys/${id}/duplicate`, name ? { name } : {}),
+    history:          (id)       => request('GET', `/surveys/${id}/history`),
   },
   respondents: {
     list:   ()     => request('GET', '/respondents'),
