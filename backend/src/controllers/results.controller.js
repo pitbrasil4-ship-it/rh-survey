@@ -1,6 +1,7 @@
 'use strict';
 const PDFDocument = require('pdfkit');
 const { neutralIndexes, earnedPct, favorability }     = require('../utils/scoring');
+const { responseScopeSql, canSeeSurvey }              = require('../utils/scope');
 const { getDB }                                       = require('../config/database');
 const { calculateNPS, calculateAverage, calculateFrequency, calculateNPSWeighted, calculateAverageWeighted } = require('../utils/nps');
 const { ok, err, notFound, badReq }                   = require('../utils/response');
@@ -12,13 +13,18 @@ function getSurveyResults(req, res) {
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ? AND tenant_id = ?').get(req.params.surveyId, req.user.tenant_id);
     if (!survey) return notFound(res, 'Pesquisa');
 
+    if (!canSeeSurvey(req.user, survey)) return notFound(res, 'Pesquisa');
+    const esc = responseScopeSql(req.user, 'r');   // gestor amarrado a distritos vê só os dele
+
     const questions    = db.prepare('SELECT * FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
-    const totalResp    = db.prepare('SELECT COUNT(*) as cnt FROM responses WHERE survey_id = ? AND completed_at IS NOT NULL').get(survey.id).cnt;
-    const startedResp  = db.prepare('SELECT COUNT(*) as cnt FROM responses WHERE survey_id = ?').get(survey.id).cnt;
+    const totalResp    = db.prepare(`SELECT COUNT(*) as cnt FROM responses r WHERE r.survey_id = ? AND r.completed_at IS NOT NULL${esc.sql}`).get(survey.id, ...esc.args).cnt;
+    const startedResp  = db.prepare(`SELECT COUNT(*) as cnt FROM responses r WHERE r.survey_id = ?${esc.sql}`).get(survey.id, ...esc.args).cnt;
     let gScoreSum = 0, gScoreN = 0; // acumulador da média geral atingida (pontuação por opção)
 
     const questionResults = questions.map(q => {
-      const answers = db.prepare('SELECT value_text, value_num, value_json FROM answers WHERE question_id = ?').all(q.id);
+      const answers = db.prepare(`SELECT a.value_text, a.value_num, a.value_json FROM answers a
+        JOIN responses r ON r.id = a.response_id
+        WHERE a.question_id = ? AND r.completed_at IS NOT NULL${esc.sql}`).all(q.id, ...esc.args);
 
       let result = { questionId: q.id, type: q.type, text: q.text, responseCount: answers.length };
 
@@ -419,6 +425,8 @@ function getDimensionResults(req, res) {
 
     // Filtros opcionais do recorte.
     const where = ['r.survey_id = ?', 'r.completed_at IS NOT NULL']; const args = [surveyId];
+    const escD = responseScopeSql(req.user, 'r');
+    if (escD.sql) { where.push(escD.sql.replace(/^ AND /, '')); args.push(...escD.args); }
     if (req.query.distrito)      { where.push('r.distrito_id = ?');      args.push(req.query.distrito); }
     if (req.query.departamento)  { where.push('r.departamento_id = ?');  args.push(req.query.departamento); }
     if (req.query.modalidade)    { where.push('LOWER(r.modalidade) = LOWER(?)'); args.push(req.query.modalidade); }

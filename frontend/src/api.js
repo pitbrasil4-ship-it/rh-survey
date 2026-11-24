@@ -120,6 +120,7 @@ export const api = {
     updateQuestions:  (id, questions, confirm) => request('PUT', `/surveys/${id}/questions`, { questions, ...(confirm ? { confirm: true } : {}) }),
     duplicate:        (id, name) => request('POST', `/surveys/${id}/duplicate`, name ? { name } : {}),
     history:          (id)       => request('GET', `/surveys/${id}/history`),
+    options:          (id, opts)  => request('PUT', `/surveys/${id}`, opts),
   },
   respondents: {
     list:   ()     => request('GET', '/respondents'),

@@ -201,6 +201,17 @@ function initSchema() {
   try { db.exec("ALTER TABLE questions ADD COLUMN page_break INTEGER DEFAULT 0"); } catch (e) {}
   try { db.exec("ALTER TABLE questions ADD COLUMN logic TEXT"); } catch (e) {}
   try { db.exec("ALTER TABLE questions ADD COLUMN jump TEXT"); } catch (e) {}
+
+  // Escopo do usuário: distritos que ele enxerga e categorias bloqueadas. Vazio = tudo.
+  try { db.exec("ALTER TABLE users ADD COLUMN scope_distritos TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN blocked_categories TEXT"); } catch (e) {}
+
+  // Opções do coletor.
+  try { db.exec("ALTER TABLE surveys ADD COLUMN access_password TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE surveys ADD COLUMN quota_enabled INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE surveys ADD COLUMN shuffle_questions INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE surveys ADD COLUMN shuffle_options INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE surveys ADD COLUMN allow_edit INTEGER DEFAULT 0"); } catch (e) {}
   // Quem nunca acessou ainda está com a senha provisória -> força a troca no 1º acesso.
   try { db.exec("UPDATE users SET must_change_password = 1 WHERE last_login IS NULL AND must_change_password = 0"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN weight REAL DEFAULT 1"); } catch (e) {}

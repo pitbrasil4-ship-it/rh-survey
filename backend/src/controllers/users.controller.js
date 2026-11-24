@@ -21,7 +21,7 @@ function list(req, res) {
   try {
     const db = getDB();
     const rows = db.prepare(
-      `SELECT id, name, email, role, active, two_fa_enabled, last_login, created_at
+      `SELECT id, name, email, role, active, two_fa_enabled, last_login, created_at, scope_distritos, blocked_categories
        FROM users WHERE tenant_id = ? ORDER BY created_at DESC`
     ).all(req.user.tenant_id);
     return ok(res, { users: rows, total: rows.length });
@@ -82,7 +82,7 @@ function update(req, res) {
     const user = db.prepare('SELECT * FROM users WHERE id = ? AND tenant_id = ?').get(req.params.id, req.user.tenant_id);
     if (!user) return notFound(res, 'Usuário');
 
-    const { name, role, active } = req.body;
+    const { name, role, active, scopeDistritos, blockedCategories } = req.body;
     if (role !== undefined && !VALID_ROLES.includes(role)) return badReq(res, `Papel inválido. Use: ${VALID_ROLES.join(', ')}`);
 
     // Prevent an admin from demoting or deactivating themselves (lockout guard).
@@ -91,10 +91,13 @@ function update(req, res) {
       if (active === false || active === 0)        return forbidden(res, 'Você não pode desativar a sua própria conta');
     }
 
-    db.prepare('UPDATE users SET name=?, role=?, active=? WHERE id=?').run(
+    const comoJson = v => (v === undefined ? undefined : (Array.isArray(v) && v.length ? JSON.stringify(v) : null));
+    db.prepare('UPDATE users SET name=?, role=?, active=?, scope_distritos=?, blocked_categories=? WHERE id=?').run(
       name ?? user.name,
       role ?? user.role,
       active === undefined ? user.active : (active ? 1 : 0),
+      comoJson(scopeDistritos) === undefined ? user.scope_distritos : comoJson(scopeDistritos),
+      comoJson(blockedCategories) === undefined ? user.blocked_categories : comoJson(blockedCategories),
       req.params.id
     );
     return ok(res, { id: req.params.id }, 'Usuário atualizado');

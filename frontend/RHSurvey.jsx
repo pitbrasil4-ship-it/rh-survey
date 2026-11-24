@@ -890,6 +890,27 @@ function SurveyList({ onCreateNew, onView, onEdit }) {
   const [dlSurvey, setDlSurvey] = useState(null);
   const [dlValue,  setDlValue]  = useState("");
   const [dlSaving, setDlSaving] = useState(false);
+
+  // Opções do coletor: senha, cota, embaralhar e permitir correção.
+  const [colSurvey, setColSurvey] = useState(null);
+  const [colOpts,   setColOpts]   = useState({});
+  const [colSaving, setColSaving] = useState(false);
+  const openColetor = (s) => {
+    setColSurvey(s);
+    setColOpts({
+      accessPassword:   s.access_password || "",
+      quotaEnabled:     !!s.quota_enabled,
+      shuffleQuestions: !!s.shuffle_questions,
+      shuffleOptions:   !!s.shuffle_options,
+      allowEdit:        !!s.allow_edit,
+    });
+  };
+  const saveColetor = async () => {
+    setColSaving(true);
+    try { await api.surveys.options(colSurvey.id, colOpts); setColSurvey(null); await load(); }
+    catch (e) { alert((e && e.message) || t('sl_col_err')); }
+    setColSaving(false);
+  };
   const openDeadline = (s) => { setDlSurvey(s); setDlValue(s.deadline ? String(s.deadline).slice(0,10) : ""); };
   const saveDeadline = async (clear) => {
     setDlSaving(true);
@@ -1009,6 +1030,7 @@ function SurveyList({ onCreateNew, onView, onEdit }) {
                       </button>
                       <button onClick={() => handleWhatsApp(s)} disabled={!s.token || s.status!=="ativo"} title={s.status!=="ativo" ? t('sl_publish_send') : t('sl_open_whatsapp')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-green-600 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"><Send size={11} />WhatsApp</button>
                       <button onClick={() => openDeadline(s)} title={t('sl_deadline_title')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium"><CalendarClock size={11} />{t('sl_deadline_btn')}</button>
+                      <button onClick={() => openColetor(s)} title={t('sl_col_title')} className="flex items-center gap-1 text-xs text-slate-500 hover:text-purple-600 transition-colors font-medium"><Settings size={11} />{t('sl_col_btn')}</button>
                     </div>
                   </div>
                 </div>
@@ -1017,6 +1039,43 @@ function SurveyList({ onCreateNew, onView, onEdit }) {
           );
         })}
       </div>
+
+      {colSurvey && (
+        <div onClick={() => !colSaving && setColSurvey(null)} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3" style={{ background:"rgba(15,23,42,0.45)" }}>
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background:GRAD }}><Settings size={17} /></div>
+              <h3 className="font-semibold text-slate-800 text-sm">{t('sl_col_title')}</h3>
+            </div>
+            <p className="text-xs text-slate-500 mb-4 truncate">{colSurvey.name}</p>
+
+            <label className="text-xs font-medium text-slate-600 block mb-1">{t('sl_col_pwd')}</label>
+            <input type="text" value={colOpts.accessPassword} onChange={e => setColOpts(o => ({ ...o, accessPassword:e.target.value }))}
+              placeholder={t('sl_col_pwd_ph')} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-purple-400 bg-white" />
+            <p className="text-[11px] text-slate-400 mt-1 mb-4">{t('sl_col_pwd_hint')}</p>
+
+            {[
+              { k:'quotaEnabled',     lab:t('sl_col_quota'),    hint:t('sl_col_quota_hint') },
+              { k:'shuffleQuestions', lab:t('sl_col_shufq'),    hint:t('sl_col_shufq_hint') },
+              { k:'shuffleOptions',   lab:t('sl_col_shufo'),    hint:t('sl_col_shufo_hint') },
+              { k:'allowEdit',        lab:t('sl_col_edit'),     hint:t('sl_col_edit_hint') },
+            ].map(op => (
+              <label key={op.k} className="flex items-start gap-2 mb-3 cursor-pointer">
+                <input type="checkbox" checked={!!colOpts[op.k]} onChange={e => setColOpts(o => ({ ...o, [op.k]:e.target.checked }))} className="mt-0.5 accent-purple-600" />
+                <span>
+                  <span className="text-xs font-medium text-slate-700 block">{op.lab}</span>
+                  <span className="text-[11px] text-slate-400">{op.hint}</span>
+                </span>
+              </label>
+            ))}
+
+            <div className="flex gap-2 mt-4">
+              <button onClick={saveColetor} disabled={colSaving} className="flex-1 text-xs font-bold text-white rounded-lg px-3 py-2 disabled:opacity-50" style={{ background:GRAD }}>{colSaving ? t('sl_col_saving') : t('sl_col_save')}</button>
+              <button onClick={() => setColSurvey(null)} disabled={colSaving} className="text-xs font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50 disabled:opacity-50">{t('sl_deadline_cancel')}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {dlSurvey && (
         <div onClick={() => !dlSaving && setDlSurvey(null)} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3" style={{ background:"rgba(15,23,42,0.45)" }}>
@@ -4145,6 +4204,33 @@ function TeamManagement() {
     catch (e) { setError(e.message || t('tm_role_error')); }
   }
 
+  // Escopo do gestor: quais distritos ele vê e quais categorias ficam bloqueadas.
+  const [escUser, setEscUser] = useState(null);
+  const [escDist, setEscDist] = useState([]);       // ids marcados; vazio = todos
+  const [escCat,  setEscCat]  = useState([]);       // categorias bloqueadas
+  const [escSaving, setEscSaving] = useState(false);
+  const [distritos, setDistritos] = useState([]);
+  const categorias = Array.from(new Set(SURVEY_TEMPLATES.map(x => x.category)));
+
+  const comoArray = (v) => { if (Array.isArray(v)) return v; if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } } return []; };
+  const openEscopo = async (u) => {
+    setEscUser(u);
+    setEscDist(comoArray(u.scope_distritos));
+    setEscCat(comoArray(u.blocked_categories));
+    if (distritos.length === 0) {
+      try { const d = await api.org.list(); setDistritos(d.distritos || []); } catch { setDistritos([]); }
+    }
+  };
+  const saveEscopo = async () => {
+    setEscSaving(true);
+    try {
+      await api.users.update(escUser.id, { scopeDistritos: escDist, blockedCategories: escCat });
+      setEscUser(null); await loadUsers();
+    } catch (e) { setError(e.message || t('tm_esc_err')); }
+    setEscSaving(false);
+  };
+  const toggleIn = (arr, setArr, v) => setArr(arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]);
+
   async function handleDeactivate(id, name) {
     if (!window.confirm(t('tm_deactivate_confirm',{name}))) return;
     try { await api.users.remove(id); await loadUsers(); }
@@ -4296,6 +4382,12 @@ function TeamManagement() {
                         <option value="manager">{t('role_manager')}</option>
                         <option value="viewer">{t('role_viewer')}</option>
                       </select>
+                      {u.active && u.role !== 'admin' && (
+                        <button onClick={() => openEscopo(u)}
+                          className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title={t('tm_esc_title')}>
+                          <Shield size={13} />
+                        </button>
+                      )}
                       {u.active && (
                         <button onClick={() => handleDeactivate(u.id, u.name)}
                           className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title={t('tm_deactivate_title')}>
@@ -4309,6 +4401,50 @@ function TeamManagement() {
             </div>
           )}
         </div>
+
+        {escUser && (
+          <div onClick={() => !escSaving && setEscUser(null)} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3" style={{ background:"rgba(15,23,42,0.45)" }}>
+            <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background:GRAD }}><Shield size={17} /></div>
+                <h3 className="font-semibold text-slate-800 text-sm">{t('tm_esc_title')}</h3>
+              </div>
+              <p className="text-xs text-slate-500 mb-4 truncate">{escUser.name} · {escUser.email}</p>
+
+              <div className="text-xs font-semibold text-slate-600 mb-1">{t('tm_esc_dist')}</div>
+              <p className="text-[11px] text-slate-400 mb-2">{t('tm_esc_dist_hint')}</p>
+              {distritos.length === 0 ? (
+                <p className="text-xs text-slate-400 mb-4">{t('tm_esc_no_dist')}</p>
+              ) : (
+                <div className="border border-slate-100 rounded-xl p-2 mb-4 max-h-44 overflow-y-auto">
+                  {distritos.map(d => (
+                    <label key={d.id} className="flex items-center gap-2 px-1 py-1 cursor-pointer hover:bg-slate-50 rounded">
+                      <input type="checkbox" checked={escDist.includes(d.id)} onChange={() => toggleIn(escDist, setEscDist, d.id)} className="accent-purple-600" />
+                      <span className="text-xs text-slate-700">{d.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              <div className="text-xs font-semibold text-slate-600 mb-1">{t('tm_esc_cat')}</div>
+              <p className="text-[11px] text-slate-400 mb-2">{t('tm_esc_cat_hint')}</p>
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {categorias.map(c => (
+                  <button key={c} onClick={() => toggleIn(escCat, setEscCat, c)}
+                    className={`text-[11px] px-2 py-1 rounded-lg border font-medium transition-colors ${escCat.includes(c) ? "bg-red-50 border-red-200 text-red-600" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}>
+                    {escCat.includes(c) ? "🚫 " : ""}{c}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={saveEscopo} disabled={escSaving} className="flex-1 text-xs font-bold text-white rounded-lg px-3 py-2 disabled:opacity-50" style={{ background:GRAD }}>{escSaving ? t('tm_esc_saving') : t('tm_esc_save')}</button>
+                <button onClick={() => { setEscDist([]); setEscCat([]); }} disabled={escSaving} className="text-xs font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50 disabled:opacity-50">{t('tm_esc_clear')}</button>
+                <button onClick={() => setEscUser(null)} disabled={escSaving} className="text-xs font-medium text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50 disabled:opacity-50">{t('sl_deadline_cancel')}</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Permission matrix */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">

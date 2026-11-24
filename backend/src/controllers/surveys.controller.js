@@ -4,6 +4,7 @@ const { getDB }      = require('../config/database');
 const { ok, created, err, notFound, badReq } = require('../utils/response');
 const logger         = require('../utils/logger');
 const { linkQuestionDimensoes } = require('./dimensoes.controller');
+const { canSeeSurvey }          = require('../utils/scope');
 const { diffQuestions, respostasDe, logChange, bumpVersion } = require('../utils/versioning');
 const { translateSurvey, aiEnabled } = require('../utils/translate');
 
@@ -33,7 +34,8 @@ function list(req, res) {
       FROM surveys s LEFT JOIN users u ON s.created_by_id = u.id
       WHERE s.tenant_id = ? AND s.status != 'excluido' ORDER BY s.created_at DESC
     `).all(req.user.tenant_id);
-    return ok(res, { surveys, total: surveys.length });
+    const visiveis = surveys.filter(sv => canSeeSurvey(req.user, sv));   // categorias bloqueadas somem
+    return ok(res, { surveys: visiveis, total: visiveis.length });
   } catch (e) { return err(res, 'Erro ao listar pesquisas', 500, e.message); }
 }
 
@@ -269,8 +271,16 @@ function update(req, res) {
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ? AND tenant_id = ?').get(req.params.id, req.user.tenant_id);
     if (!survey) return notFound(res, 'Pesquisa');
 
-    const { name, description, category, targetGroup, anonymous, deadline, status } = req.body;
-    db.prepare(`UPDATE surveys SET name=?, description=?, category=?, target_group=?, anonymous=?, deadline=?, status=? WHERE id=?`).run(
+    const { name, description, category, targetGroup, anonymous, deadline, status,
+            accessPassword, quotaEnabled, shuffleQuestions, shuffleOptions, allowEdit } = req.body;
+    // Opções do coletor: só mudam quando vêm no corpo; o resto é preservado.
+    const bin = (v, atual) => v === undefined ? atual : (v ? 1 : 0);
+    const senha = accessPassword === undefined
+      ? survey.access_password
+      : (String(accessPassword).trim() ? String(accessPassword).trim() : null);
+
+    db.prepare(`UPDATE surveys SET name=?, description=?, category=?, target_group=?, anonymous=?, deadline=?, status=?,
+                access_password=?, quota_enabled=?, shuffle_questions=?, shuffle_options=?, allow_edit=? WHERE id=?`).run(
       name        ?? survey.name,
       description ?? survey.description,
       category    ?? survey.category,
@@ -278,6 +288,11 @@ function update(req, res) {
       anonymous === undefined ? survey.anonymous : (anonymous ? 1 : 0),
       deadline    ?? survey.deadline,
       status      ?? survey.status,
+      senha,
+      bin(quotaEnabled,     survey.quota_enabled),
+      bin(shuffleQuestions, survey.shuffle_questions),
+      bin(shuffleOptions,   survey.shuffle_options),
+      bin(allowEdit,        survey.allow_edit),
       req.params.id
     );
     return ok(res, { id: req.params.id }, 'Pesquisa atualizada');

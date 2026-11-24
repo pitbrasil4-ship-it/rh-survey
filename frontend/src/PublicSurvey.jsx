@@ -59,8 +59,9 @@ function segmentFromUrl() {
   } catch { return { distrito: null, departamento: null, modalidade: null }; }
 }
 
-async function pub(method, token, body) {
-  const res = await fetch(`${API_URL}/api/v1/public/survey/${encodeURIComponent(token)}`, {
+async function pub(method, token, body, senha) {
+  const qs = senha ? `?pwd=${encodeURIComponent(senha)}` : '';
+  const res = await fetch(`${API_URL}/api/v1/public/survey/${encodeURIComponent(token)}${qs}`, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
@@ -267,6 +268,9 @@ export default function PublicSurvey({ token }) {
   const [pageIdx, setPageIdx] = useState(0);
   const [trilha, setTrilha]   = useState([]);   // páginas já percorridas, para o Voltar respeitar os saltos
   const [errMsg, setErrMsg] = useState('');
+  const [senha, setSenha]     = useState('');     // senha digitada, quando a pesquisa pede
+  const [senhaOk, setSenhaOk] = useState('');     // senha já aceita pelo servidor
+  const [senhaErr, setSenhaErr] = useState(false);
   const [lang, setLang] = useState(initialLang);
   const tr = (k, v) => t(lang, k, v);
   const changeLang = (l) => { setLang(l); storeLang(l); };
@@ -278,10 +282,13 @@ export default function PublicSurvey({ token }) {
         const data = await pub('GET', token);
         if (!alive) return;
         if (data.closed) { setSurvey(data.survey); setState('closed'); return; }
+        // Pesquisa protegida: pede a senha antes de mostrar as perguntas.
+        if (data.requiresPassword) { setSurvey(data.survey); setState('password'); return; }
         setSurvey(data.survey);
         setQuestions(data.questions || []);
         // Uma resposta por navegador: se este aparelho já respondeu, não abre o formulário de novo.
-        if (alreadyAnswered(token)) { setState('answered'); return; }
+        // Quando a pesquisa permite correção, o formulário abre de novo para a pessoa refazer.
+        if (alreadyAnswered(token) && !data.survey?.allowEdit) { setState('answered'); return; }
         setState('ready');
       } catch (e) {
         if (!alive) return;
@@ -344,7 +351,7 @@ export default function PublicSurvey({ token }) {
     setSubmitting(true);
     try {
       const seg = segmentFromUrl();
-      await pub('POST', token, { answers: payload, clientId: clientId(), distrito: seg.distrito, departamento: seg.departamento, modalidade: seg.modalidade });
+      await pub('POST', token, { answers: payload, clientId: clientId(), distrito: seg.distrito, departamento: seg.departamento, modalidade: seg.modalidade, password: senhaOk || undefined });
       markAnswered(token);
       setState('done');
     } catch (e) {
@@ -355,6 +362,38 @@ export default function PublicSurvey({ token }) {
 
   if (state === 'loading') {
     return <Shell><div style={{ textAlign:'center', color:'#64748B', paddingTop:80 }}>{tr('loading_survey')}</div></Shell>;
+  }
+  if (state === 'password') {
+    const tentar = async () => {
+      setSenhaErr(false);
+      try {
+        const data = await pub('GET', token, undefined, senha);
+        if (data.requiresPassword) { setSenhaErr(true); return; }
+        setSenhaOk(senha);
+        setSurvey(data.survey);
+        setQuestions(data.questions || []);
+        if (alreadyAnswered(token) && !data.survey?.allowEdit) { setState('answered'); return; }
+        setState('ready');
+      } catch { setSenhaErr(true); }
+    };
+    return <Shell><LangPicker lang={lang} setLang={changeLang} />
+      <div style={{ marginBottom:16 }}><Logo /></div>
+      <Card>
+        <div style={{ textAlign:'center', fontSize:40, marginBottom:8 }}>🔐</div>
+        <h2 style={{ color:'#0F172A', fontSize:18, margin:'0 0 6px', textAlign:'center' }}>{tr('pwd_title')}</h2>
+        <p style={{ color:'#64748B', fontSize:13, margin:'0 0 16px', textAlign:'center' }}>{tr('pwd_body')}</p>
+        <input type="password" value={senha} autoFocus
+          onChange={e => { setSenha(e.target.value); setSenhaErr(false); }}
+          onKeyDown={e => { if (e.key === 'Enter' && senha.trim()) tentar(); }}
+          placeholder={tr('pwd_placeholder')}
+          style={{ width:'100%', padding:'12px 14px', border:`1px solid ${senhaErr ? '#EF4444' : '#E2E8F0'}`, borderRadius:10, fontSize:15, boxSizing:'border-box' }} />
+        {senhaErr ? <p style={{ color:'#B91C1C', fontSize:12, margin:'8px 0 0', fontWeight:600 }}>{tr('pwd_wrong')}</p> : null}
+        <button onClick={tentar} disabled={!senha.trim()}
+          style={{ width:'100%', marginTop:14, padding:'12px', background: senha.trim() ? RED : '#CBD5E1', color:'white', border:'none', borderRadius:10, cursor: senha.trim() ? 'pointer' : 'default', fontWeight:700, fontSize:15 }}>
+          {tr('pwd_enter')}
+        </button>
+      </Card>
+    </Shell>;
   }
   if (state === 'notfound') {
     return <Shell><LangPicker lang={lang} setLang={changeLang} /><Card style={{ textAlign:'center' }}>
