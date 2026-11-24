@@ -151,6 +151,12 @@ function initSchema() {
   // Uma resposta por navegador: identificador do aparelho, usado para recusar a repetição.
   try { db.exec("ALTER TABLE responses ADD COLUMN client_id TEXT"); } catch (e) {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_responses_client ON responses(survey_id, client_id)"); } catch (e) {}
+  // Anonimato do ciclo 360°: mínimo de respostas por perspectiva para o resultado aparecer.
+  try { db.exec("ALTER TABLE eval_cycles ADD COLUMN min_responses INTEGER DEFAULT 5"); } catch (e) {}
+  // Múltipla escolha: 1 = aceita só uma alternativa; 0/NULL = aceita várias.
+  try { db.exec("ALTER TABLE questions ADD COLUMN single_choice INTEGER DEFAULT 0"); } catch (e) {}
+  // Texto alternativo da pergunta quando a pessoa está se autoavaliando.
+  try { db.exec("ALTER TABLE questions ADD COLUMN text_self TEXT"); } catch (e) {}
   // Quem nunca acessou ainda está com a senha provisória -> força a troca no 1º acesso.
   try { db.exec("UPDATE users SET must_change_password = 1 WHERE last_login IS NULL AND must_change_password = 0"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN weight REAL DEFAULT 1"); } catch (e) {}

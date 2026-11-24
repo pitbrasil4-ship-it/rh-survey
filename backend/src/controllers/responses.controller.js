@@ -15,9 +15,9 @@ function getPublic(req, res) {
     if (!survey) return notFound(res, 'Pesquisa');
     const closed = survey.status !== 'ativo' || (survey.deadline && new Date(survey.deadline).getTime() < Date.now());
     if (closed) return ok(res, { closed: true, survey: { name: survey.name, name_en: survey.name_en, name_es: survey.name_es } }, 'Pesquisa encerrada');
-    const questions = db.prepare('SELECT id, order_num, type, text, text_en, text_es, options, options_en, options_es FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
+    const questions = db.prepare('SELECT id, order_num, type, text, text_en, text_es, options, options_en, options_es, single_choice FROM questions WHERE survey_id = ? ORDER BY order_num').all(survey.id);
     const PJ = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
-    const parsed    = questions.map(q => ({ ...q, options: PJ(q.options), options_en: PJ(q.options_en), options_es: PJ(q.options_es) }));
+    const parsed    = questions.map(q => ({ ...q, options: PJ(q.options), options_en: PJ(q.options_en), options_es: PJ(q.options_es), singleChoice: !!q.single_choice }));
     const { status, deadline, ...pub } = survey;
     return ok(res, { survey: pub, questions: parsed });
   } catch (e) { return err(res, 'Erro ao carregar pesquisa', 500, e.message); }

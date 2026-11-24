@@ -174,6 +174,17 @@ export const api = {
     addAssignment:    (cycleId, data)  => request('POST', `/eval/cycles/${cycleId}/assignments`, data),
     removeAssignment: (id)             => request('DELETE', `/eval/assignments/${id}`),
     results:          (cycleId)        => request('GET', `/eval/results/${cycleId}`),
+    subjectResults:   (cycleId, sid)   => request('GET', `/eval/results/${cycleId}/subject/${sid}`),
+    bulkAssign:       (cycleId, rows)  => request('POST', `/eval/cycles/${cycleId}/assignments/bulk`, { rows }),
+    pending:          (cycleId)        => request('GET', `/eval/cycles/${cycleId}/pending`),
+    subjectPdf: async (cycleId, sid) => {
+      const path = `/eval/results/${cycleId}/subject/${sid}/pdf`;
+      let resp = await rawRequest('GET', path, null, getToken());
+      if (resp.status === 401 && await tryRefresh()) resp = await rawRequest('GET', path, null, getToken());
+      if (resp.status === 401) { endSession(); throw new Error('Sessão expirada'); }
+      if (!resp.ok) throw new Error('Falha ao gerar o PDF da devolutiva');
+      return resp.blob();
+    },
   },
   audit: {
     list: () => request('GET', '/audit'),

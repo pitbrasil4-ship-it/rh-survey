@@ -53,12 +53,13 @@ async function create(req, res) {
 
     const qIds = [];
     if (questions.length > 0) {
-      const stmt = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+      const stmt = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points, single_choice, text_self) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
       const J = a => (Array.isArray(a) && a.length) ? JSON.stringify(a) : null;
       questions.forEach((q, i) => {
         const qid = uuid(); qIds.push(qid);
         stmt.run(qid, surveyId, i+1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es),
-          (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null);
+          (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null,
+          q.singleChoice ? 1 : 0, q.text_self || null);
       });
     }
 
@@ -87,7 +88,7 @@ function bulkCreate(req, res) {
     const db  = getDB();
     const insS = db.prepare(`INSERT INTO surveys (id, tenant_id, created_by_id, name, category, target_group, anonymous, deadline, lgpd_basis, public_token, status, published_at)
                              VALUES (?,?,?,?,?,?,?,?,?,?, 'ativo', datetime('now'))`);
-    const insQ = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, options, option_points) VALUES (?,?,?,?,?,?,?)');
+    const insQ = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, options, option_points, single_choice, text_self) VALUES (?,?,?,?,?,?,?,?,?)');
     const J = a => (Array.isArray(a) && a.length) ? JSON.stringify(a) : null;
     const out = [];
     db.exec('BEGIN');
@@ -97,7 +98,8 @@ function bulkCreate(req, res) {
         insS.run(sid, req.user.tenant_id, req.user.id, `${(baseName || 'Avaliação').trim()} — ${nm}`, category || null, nm,
           anonymous !== false ? 1 : 0, deadline || null, 'consentimento', tok);
         questions.forEach((q, i) => insQ.run(uuid(), sid, i + 1, q.type, q.text, J(q.options),
-          (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null));
+          (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null,
+          q.singleChoice ? 1 : 0, q.text_self || null));
         out.push({ name: nm, surveyId: sid, token: tok });
       }
       db.exec('COMMIT');

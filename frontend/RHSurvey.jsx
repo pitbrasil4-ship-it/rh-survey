@@ -959,7 +959,7 @@ function SurveyBuilder({ onBack, initial }) {
   const [surveyName,setSurveyName]= useState(initial?.name || "");
   const [questions, setQuestions] = useState(
     Array.isArray(initial?.questions)
-      ? initial.questions.map((q, i) => ({ id: Date.now() + i, text: q.text, type: q.type, ...(q.options ? { options: q.options } : {}), ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}) }))
+      ? initial.questions.map((q, i) => ({ id: Date.now() + i, text: q.text, type: q.type, ...(q.options ? { options: q.options } : {}), ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}), ...(q.singleChoice ? { singleChoice: true } : {}), ...(q.text_self ? { text_self: q.text_self } : {}) }))
       : []
   );
   const [aiContext, setAiContext]  = useState("");
@@ -994,7 +994,7 @@ function SurveyBuilder({ onBack, initial }) {
         targetGroup: GROUP_MAP[targetGroup] || "todos",
         anonymous,
         deadline: deadline ? deadline + "T23:59:59-03:00" : null,
-        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es, ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}) })),
+        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es, ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}), ...(q.singleChoice ? { singleChoice: true } : {}), ...(q.text_self ? { text_self: q.text_self } : {}) })),
         lgpdBasis: "consentimento",
       });
       const id = result && result.survey && result.survey.id;
@@ -1346,10 +1346,20 @@ function SurveyBuilder({ onBack, initial }) {
                   </span>
                   {Array.isArray(q.options) && q.options.length > 0 && (q.type === 'scale' || q.type === 'multiple') && (
                     <div className="mt-2">
-                      <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
-                        <input type="checkbox" checked={!!q.option_points} onChange={() => toggleScore(q.id)} className="accent-purple-600" />
-                        {t('sb_score_toggle')}
-                      </label>
+                      <div className="flex flex-wrap items-center gap-4">
+                        <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                          <input type="checkbox" checked={!!q.option_points} onChange={() => toggleScore(q.id)} className="accent-purple-600" />
+                          {t('sb_score_toggle')}
+                        </label>
+                        {q.type === 'multiple' && (
+                          <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                            <input type="checkbox" checked={!!q.singleChoice}
+                              onChange={e => setQuestions(p => p.map(x => x.id === q.id ? { ...x, singleChoice: e.target.checked } : x))}
+                              className="accent-purple-600" />
+                            {t('sb_single_choice')}
+                          </label>
+                        )}
+                      </div>
                       {q.option_points && (
                         <div className="mt-2 space-y-1 bg-white rounded-lg border border-slate-100 p-2">
                           {q.options.map((opt, oi) => (
@@ -1877,8 +1887,160 @@ function Evaluation360() {
   );
 }
 
+/* Devolutiva individual: o resultado pergunta a pergunta de um avaliado, por perspectiva. */
+function SubjectReportPanel({ cycleId, row, onClose }) {
+  const { t } = useLang();
+  const [rep, setRep] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [errMsg, setErrMsg] = useState("");
+  const [pdfing, setPdfing] = useState(false);
+  const RELNAME = { auto:'cd_m_auto', gestor:'cd_m_gestor', par:'cd_m_par', subordinado:'cd_m_subord' };
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true); setErrMsg("");
+      try { const d = await api.eval.subjectResults(cycleId, row.subjectId); if (alive) setRep(d); }
+      catch (e) { if (alive) setErrMsg(e.message || ""); }
+      if (alive) setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [cycleId, row.subjectId]);
+
+  const exportPdf = async () => {
+    setPdfing(true);
+    try {
+      const blob = await api.eval.subjectPdf(cycleId, row.subjectId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `devolutiva-${(row.subjectName||'avaliado').replace(/[^\w\s-]/g,'').trim().replace(/\s+/g,'-').toLowerCase()}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { alert((e && e.message) || ""); }
+    setPdfing(false);
+  };
+
+  const exportExcel = () => {
+    if (!rep) return;
+    const head = [t('cd_rep_question'), t('cd_m_overall'), t('cd_m_auto'), t('cd_m_gestor'), t('cd_m_par'), t('cd_m_subord')];
+    const rows = [head, ...rep.perguntas.map(p => [p.text, p.overall ?? "", p.byRel.auto ?? "", p.byRel.gestor ?? "", p.byRel.par ?? "", p.byRel.subordinado ?? ""])];
+    const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = [{wch:62},{wch:10},{wch:10},{wch:10},{wch:10},{wch:10}];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Devolutiva');
+    XLSX.writeFile(wb, `devolutiva-${(row.subjectName||'avaliado').replace(/[^\w\s-]/g,'').trim().replace(/\s+/g,'-').toLowerCase()}.xlsx`);
+  };
+
+  const bar = (pct) => (
+    <div className="flex items-center gap-2 flex-1 min-w-[120px]">
+      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div className="h-full rounded-full" style={{ width:`${Math.min(100,pct)}%`, background: pct>=70?"#16A34A":pct>=40?"#D97706":"#DC2626" }} />
+      </div>
+      <span className="text-xs font-bold text-slate-700 w-9 text-right">{pct}%</span>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[95] bg-slate-900/60 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-8">
+        <div className="flex items-start justify-between gap-3 p-6 border-b border-slate-100">
+          <div className="min-w-0">
+            <h2 className="font-bold text-slate-800 text-lg truncate">{row.subjectName}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{t('cd_rep_subtitle')}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {rep && rep.released && (
+              <>
+                <button onClick={exportExcel} className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50"><Download size={13} />Excel</button>
+                <button onClick={exportPdf} disabled={pdfing} className="flex items-center gap-1.5 px-3 py-2 text-white rounded-xl text-xs font-semibold disabled:opacity-50" style={{ background:GRAD }}>
+                  {pdfing ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}PDF
+                </button>
+              </>
+            )}
+            <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600"><X size={18} /></button>
+          </div>
+        </div>
+
+        <div className="p-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-16 text-slate-400 text-sm gap-2"><Loader2 size={18} className="animate-spin" />{t('common_loading')}</div>
+          ) : errMsg ? (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{errMsg}</div>
+          ) : !rep ? null : !rep.released ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-4 text-sm text-amber-800">
+              <div className="font-semibold flex items-center gap-2 mb-1"><Lock size={14} />{t('cd_rep_locked_title',{a:rep.totalResponses,b:rep.minResponses})}</div>
+              <p className="text-xs">{t('cd_rep_locked_body')}</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                  <div className="text-2xl font-bold" style={{ color:"#5B21B6" }}>{rep.geral ?? "—"}%</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{t('cd_m_overall')}</div>
+                </div>
+                {["auto","gestor","par","subordinado"].map(rel => {
+                  const vals = rep.perguntas.map(p => p.byRel[rel]).filter(v => v != null);
+                  if (!vals.length) return null;
+                  return (
+                    <div key={rel} className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                      <div className="text-2xl font-bold text-slate-700">{Math.round(vals.reduce((a,b)=>a+b,0)/vals.length)}%</div>
+                      <div className="text-xs text-slate-400 mt-0.5">{t(RELNAME[rel])} · {rep.counts[rel]}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {rep.melhores.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                    <h4 className="text-xs font-bold text-green-800 mb-2">{t('cd_rep_best')}</h4>
+                    {rep.melhores.map((m,i) => <div key={i} className="text-xs text-green-900 mb-1 flex gap-2"><span className="font-bold w-9 flex-shrink-0">{m.pct}%</span><span className="flex-1">{m.text}</span></div>)}
+                  </div>
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                    <h4 className="text-xs font-bold text-red-800 mb-2">{t('cd_rep_worst')}</h4>
+                    {rep.piores.map((m,i) => <div key={i} className="text-xs text-red-900 mb-1 flex gap-2"><span className="font-bold w-9 flex-shrink-0">{m.pct}%</span><span className="flex-1">{m.text}</span></div>)}
+                  </div>
+                </div>
+              )}
+
+              <h4 className="text-sm font-semibold text-slate-800 mb-3">{t('cd_rep_byquestion')}</h4>
+              <div className="space-y-4">
+                {rep.perguntas.map((p,i) => (
+                  <div key={p.questionId} className="border border-slate-100 rounded-xl p-4">
+                    <div className="text-sm text-slate-700 font-medium mb-2">{i+1}. {p.text}</div>
+                    <div className="space-y-1.5">
+                      {p.overall != null && (
+                        <div className="flex items-center gap-3"><span className="text-xs font-semibold text-slate-600 w-24">{t('cd_m_overall')}</span>{bar(p.overall)}</div>
+                      )}
+                      {["auto","gestor","par","subordinado"].map(rel => p.byRel[rel] == null ? null : (
+                        <div key={rel} className="flex items-center gap-3"><span className="text-xs text-slate-400 w-24">{t(RELNAME[rel])}</span>{bar(p.byRel[rel])}</div>
+                      ))}
+                    </div>
+                    {p.comments && p.comments.length > 0 && (
+                      <div className="mt-3 space-y-1.5">
+                        <div className="text-xs font-semibold text-slate-400">{t('cd_rep_comments',{n:p.comments.length})}</div>
+                        {p.comments.map((c,j) => <div key={j} className="text-xs text-slate-600 bg-slate-50 rounded-lg px-3 py-2">{c}</div>)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CycleDetail({ cycleId, onBack }) {
   const { t } = useLang();
+  const [openSubject, setOpenSubject] = useState(null);
+  const [minResp, setMinResp]   = useState(5);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulking, setBulking]   = useState(false);
+  const [bulkMsg, setBulkMsg]   = useState("");
+  const [bulkErrs, setBulkErrs] = useState([]);
+  const [pending, setPending]   = useState(null);
   const [data, setData]         = useState(null);   // { cycle, assignments }
   const [matrix, setMatrix]     = useState([]);
   const [respondents, setResp]  = useState([]);
@@ -1898,6 +2060,7 @@ function CycleDetail({ cycleId, onBack }) {
         api.respondents.list().catch(() => ({ respondents:[] })),
       ]);
       setData(d); setMatrix(res.matrix || []); setResp(rp.respondents || []);
+      if (res.minResponses) setMinResp(res.minResponses);
     } catch (e) { setError(e.message || t('cd_load_error')); }
     setLoading(false);
   };
@@ -1909,6 +2072,31 @@ function CycleDetail({ cycleId, onBack }) {
     const url = linkFor(token);
     try { navigator.clipboard.writeText(url).then(() => { setCopiedId(id); setTimeout(()=>setCopiedId(null),1500); }, () => fallbackCopy(url, id)); }
     catch { fallbackCopy(url, id); }
+  };
+
+  /* Importação em massa: uma linha por avaliador — Avaliado; Relação; Avaliador; E-mail */
+  const parseBulk = () => bulkText.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+    const c = l.split(/[;\t]|,(?=\s)/).map(x => x.trim());
+    return { subjectName: c[0] || "", relationship: (c[1] || "").toLowerCase(), evaluatorName: c[2] || "", evaluatorEmail: c[3] || "" };
+  }).filter(r => r.subjectName && r.relationship);
+
+  const runBulk = async () => {
+    const rows = parseBulk();
+    if (!rows.length) return;
+    setBulking(true); setBulkMsg(""); setBulkErrs([]);
+    try {
+      const d = await api.eval.bulkAssign(cycleId, rows);
+      setBulkMsg(t('cd_bulk_done',{n:(d.criados||[]).length}));
+      setBulkErrs(d.erros || []);
+      if (!(d.erros||[]).length) setBulkText("");
+      await load();
+    } catch (e) { setError(e.message || ""); }
+    setBulking(false);
+  };
+
+  const loadPending = async () => {
+    try { const d = await api.eval.pending(cycleId); setPending(d.pending || []); }
+    catch (e) { setError(e.message || ""); }
   };
 
   const submitAssign = async () => {
@@ -1956,7 +2144,58 @@ function CycleDetail({ cycleId, onBack }) {
       ) : (
         <>
           <div className="bg-white rounded-2xl p-5 mb-6 border border-slate-100 shadow-sm">
-            <h3 className="font-semibold text-slate-800 text-sm mb-3">{t('cd_assign_title')}</h3>
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <h3 className="font-semibold text-slate-800 text-sm">{t('cd_assign_title')}</h3>
+              <div className="flex gap-2">
+                <button onClick={() => setShowBulk(v => !v)} className="flex items-center gap-1.5 px-3 py-2 border border-purple-200 bg-purple-50 text-purple-700 rounded-xl text-xs font-medium hover:bg-purple-100">
+                  <Users size={13} />{t('cd_bulk_open')}
+                </button>
+                <button onClick={loadPending} className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-medium hover:bg-slate-50">
+                  <Bell size={13} />{t('cd_pending_btn',{n:(data&&data.assignments?data.assignments.filter(a=>!a.completed).length:0)})}
+                </button>
+              </div>
+            </div>
+
+            {showBulk && (
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-4">
+                <p className="text-xs text-slate-600 mb-2">{t('cd_bulk_desc')}</p>
+                <textarea rows={6} value={bulkText} onChange={e => setBulkText(e.target.value)} placeholder={t('cd_bulk_ph')}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-mono bg-white focus:outline-none focus:border-purple-400" />
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <button onClick={runBulk} disabled={bulking || !parseBulk().length}
+                    className="px-4 py-2 text-white rounded-xl text-xs font-semibold disabled:opacity-50" style={{ background:GRAD }}>
+                    {bulking ? <><Loader2 size={12} className="inline mr-1.5 animate-spin" />{t('common_loading')}</> : t('cd_bulk_btn',{n:parseBulk().length})}
+                  </button>
+                  {bulkMsg && <span className="text-xs text-green-700 font-medium">{bulkMsg}</span>}
+                  {bulkErrs.length > 0 && <span className="text-xs text-amber-700">{t('cd_bulk_errors',{n:bulkErrs.length})}: {bulkErrs.slice(0,3).map(e=>`linha ${e.linha} (${e.motivo})`).join(', ')}</span>}
+                </div>
+              </div>
+            )}
+
+            {pending && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                {pending.length === 0 ? (
+                  <p className="text-xs text-amber-800">{t('cd_pending_none')}</p>
+                ) : (
+                  <>
+                    <div className="max-h-40 overflow-y-auto space-y-1 mb-2">
+                      {pending.map((p,i) => (
+                        <div key={i} className="text-xs text-amber-900 flex gap-2">
+                          <span className="font-medium w-36 truncate">{p.subject_name || "—"}</span>
+                          <span className="w-24 text-amber-700">{p.relationship}</span>
+                          <span className="flex-1 truncate">{p.evaluator_name || p.evaluator_email || "—"}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <button onClick={() => { const em = pending.map(p=>p.evaluator_email).filter(Boolean).join('; '); try { navigator.clipboard.writeText(em); setBulkMsg(t('sl_copied')); setTimeout(()=>setBulkMsg(''),1500);} catch {} }}
+                        className="px-3 py-1.5 bg-white border border-amber-300 text-amber-800 rounded-lg text-xs font-semibold hover:bg-amber-100">{t('cd_pending_copy')}</button>
+                      <button onClick={() => setPending(null)} className="px-3 py-1.5 text-xs text-amber-700 hover:underline">{t('common_cancel')}</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('cd_subject')}</label>
@@ -2051,16 +2290,25 @@ function CycleDetail({ cycleId, onBack }) {
                   {matrix.map((row,i) => (
                     <tr key={row.subjectId} className={`hover:bg-slate-50 transition-colors ${i<matrix.length-1?"border-b border-slate-50":""}`}>
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full text-white text-xs font-bold flex items-center justify-center" style={{ background:GRAD }}>{(row.subjectName||"?").charAt(0)}</div>
-                          <span className="text-sm font-medium text-slate-800">{row.subjectName}</span>
-                        </div>
+                        <button onClick={() => setOpenSubject(row)} className="flex items-center gap-2 text-left group">
+                          <div className="w-7 h-7 rounded-full text-white text-xs font-bold flex items-center justify-center flex-shrink-0" style={{ background:GRAD }}>{(row.subjectName||"?").charAt(0)}</div>
+                          <span className="text-sm font-medium text-slate-800 group-hover:text-purple-700 group-hover:underline">{row.subjectName}</span>
+                        </button>
                       </td>
-                      {[row.auto,row.gestor,row.par,row.subordinado].map((v,j) => (
-                        <td key={j} className="px-5 py-4 text-center text-sm font-semibold text-slate-700">{v==null?"—":v}</td>
+                      {["auto","gestor","par","subordinado"].map((rel,j) => (
+                        <td key={j} className="px-5 py-4 text-center text-sm font-semibold text-slate-700">
+                          {row[rel] != null ? row[rel]
+                            : (row.hidden && row.hidden[rel])
+                              ? <span title={t('cd_hidden_tip',{n:minResp})} className="inline-flex items-center gap-1 text-xs text-slate-400"><Lock size={11} />{row.counts ? `${row.counts[rel]}/${minResp}` : ""}</span>
+                              : "—"}
+                        </td>
                       ))}
                       <td className="px-5 py-4 text-center">
-                        <span className={`text-sm font-bold px-2.5 py-1 rounded-full ${score360Color(row.overall)}`}>{row.overall==null?"—":row.overall}</span>
+                        {row.overall != null
+                          ? <span className={`text-sm font-bold px-2.5 py-1 rounded-full ${score360Color(row.overall)}`}>{row.overall}</span>
+                          : row.overallHidden
+                            ? <span className="text-xs text-slate-400 inline-flex items-center gap-1"><Lock size={11} />{row.totalResponses}/{minResp}</span>
+                            : <span className="text-sm text-slate-400">—</span>}
                       </td>
                     </tr>
                   ))}
@@ -2070,6 +2318,7 @@ function CycleDetail({ cycleId, onBack }) {
           </div>
         </>
       )}
+      {openSubject && <SubjectReportPanel cycleId={cycleId} row={openSubject} onClose={() => setOpenSubject(null)} />}
     </div>
   );
 }
@@ -2270,6 +2519,9 @@ function ResultsDashboard() {
   const [exporting,     setExporting]     = useState(false);
   const [segQ,          setSegQ]          = useState(null);
   const [exportingPdf,  setExportingPdf]  = useState(false);
+  const [rdSearch,      setRdSearch]      = useState("");
+  const [rdCat,         setRdCat]         = useState("");
+  const [rdShowAll,     setRdShowAll]     = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -2447,15 +2699,47 @@ function ResultsDashboard() {
       ) : (
       <>
       <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm mb-6">
-        <div className="flex gap-2 overflow-x-auto">
-          {surveys.map(s => (
-            <button key={s.id} onClick={() => setSelectedId(s.id)}
-              className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${selectedId===s.id?"text-white":"border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-              style={selectedId===s.id?{ background:GRAD }:{}}>
-              {s.name}
-            </button>
-          ))}
-        </div>
+        {surveys.length > 6 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={rdSearch} onChange={e => setRdSearch(e.target.value)} placeholder={t('rd_search_ph')}
+                className="w-full border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
+            </div>
+            <select value={rdCat} onChange={e => setRdCat(e.target.value)}
+              className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-purple-400">
+              <option value="">{t('rd_all_categories')}</option>
+              {Array.from(new Set(surveys.map(s => s.category).filter(Boolean))).sort().map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        )}
+        {(() => {
+          const term = rdSearch.trim().toLowerCase();
+          const filtered = surveys.filter(s =>
+            (!term || (s.name || "").toLowerCase().includes(term)) &&
+            (!rdCat || s.category === rdCat));
+          if (!filtered.length) return <div className="text-sm text-slate-400 py-3 text-center">{t('rd_no_match')}</div>;
+          const shown = filtered.slice(0, rdShowAll ? filtered.length : 24);
+          return (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {shown.map(s => (
+                  <button key={s.id} onClick={() => setSelectedId(s.id)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-all max-w-full truncate ${selectedId===s.id?"text-white":"border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                    style={selectedId===s.id?{ background:GRAD }:{}} title={s.name}>
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+              {filtered.length > shown.length && (
+                <button onClick={() => setRdShowAll(true)} className="mt-3 text-xs font-medium text-purple-600 hover:opacity-80">
+                  {t('rd_show_all',{n:filtered.length})}
+                </button>
+              )}
+              {term || rdCat ? <div className="mt-2 text-xs text-slate-400">{t('rd_found_n',{n:filtered.length})}</div> : null}
+            </>
+          );
+        })()}
       </div>
 
       {loadingResult ? (

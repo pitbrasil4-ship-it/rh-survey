@@ -139,7 +139,7 @@ function YesNoInput({ value, onChange, tr }) {
   return <div style={{ display:'flex', gap:10 }}>{opt('sim', tr('yes'))}{opt('nao', tr('no'))}</div>;
 }
 
-function MultipleInput({ options, value, onToggle, tr }) {
+function MultipleInput({ options, value, onToggle, tr, single }) {
   const opts = options && options.length ? options : [];
   const arr = Array.isArray(value) ? value : [];
   if (opts.length === 0) return <p style={{ fontSize:13, color:'#94A3B8' }}>{tr('no_options')}</p>;
@@ -152,7 +152,7 @@ function MultipleInput({ options, value, onToggle, tr }) {
             style={{ textAlign:'left', padding:'12px 14px', borderRadius:10, cursor:'pointer', fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:10,
               border: sel ? `2px solid ${RED}` : '1px solid #E2E8F0',
               background: sel ? '#FEF2F2' : 'white', color: sel ? RED_DARK : '#475569' }}>
-            <span style={{ width:18, height:18, borderRadius:5, border: sel ? `2px solid ${RED}` : '2px solid #CBD5E1', background: sel ? RED : 'white', color:'white', fontSize:12, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{sel ? '✓' : ''}</span>
+            <span style={{ width:18, height:18, borderRadius: single ? '50%' : 5, border: sel ? `2px solid ${RED}` : '2px solid #CBD5E1', background: sel ? RED : 'white', color:'white', fontSize:12, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{sel ? (single ? '●' : '✓') : ''}</span>
             {label}
           </button>
         );
@@ -192,8 +192,9 @@ export default function PublicEval({ token }) {
   }, [token]);
 
   const setAns = (qid, value) => setAnswers(prev => ({ ...prev, [qid]: value }));
-  const toggleMulti = (qid, opt) => setAnswers(prev => {
+  const toggleMulti = (qid, opt, single) => setAnswers(prev => {
     const cur = Array.isArray(prev[qid]) ? prev[qid] : [];
+    if (single) return { ...prev, [qid]: cur.includes(opt) ? [] : [opt] };   // resposta única
     return { ...prev, [qid]: cur.includes(opt) ? cur.filter(o => o !== opt) : [...cur, opt] };
   });
 
@@ -294,7 +295,7 @@ export default function PublicEval({ token }) {
           {q.type === 'scale'    && <ScaleInput options={q.options} value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'rating'   && <RatingInput value={answers[q.id]} onChange={v => setAns(q.id, v)} />}
           {q.type === 'yesno'    && <YesNoInput value={answers[q.id]} onChange={v => setAns(q.id, v)} tr={tr} />}
-          {q.type === 'multiple' && hasOpts && <MultipleInput options={q.options} value={answers[q.id]} onToggle={opt => toggleMulti(q.id, opt)} tr={tr} />}
+          {q.type === 'multiple' && hasOpts && <MultipleInput options={q.options} value={answers[q.id]} single={!!q.singleChoice} onToggle={opt => toggleMulti(q.id, opt, !!q.singleChoice)} tr={tr} />}
           {!specialized &&
             <textarea value={answers[q.id] || ''} onChange={e => setAns(q.id, e.target.value)} rows={4}
               placeholder={tr('answer_placeholder')}

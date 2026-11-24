@@ -11,4 +11,8 @@ router.get('/cycles/:id',                ctrl.getCycle);
 router.post('/cycles/:id/assignments',   authorize('admin', 'manager'), auditLog('eval.assign', 'eval'), ctrl.addAssignment);
 router.delete('/assignments/:id',        authorize('admin', 'manager'), auditLog('eval.unassign', 'eval'), ctrl.removeAssignment);
 router.get('/results/:cycleId',          ctrl.results);
+router.get('/results/:cycleId/subject/:subjectId',     ctrl.subjectResults);
+router.get('/results/:cycleId/subject/:subjectId/pdf', auditLog('eval.subject_pdf','eval'), ctrl.subjectPdf);
+router.post('/cycles/:id/assignments/bulk', authorize('admin','manager'), auditLog('eval.assign_bulk','eval'), ctrl.bulkAssign);
+router.get('/cycles/:id/pending',           ctrl.pendingList);
 module.exports = router;
