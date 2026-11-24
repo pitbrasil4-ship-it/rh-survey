@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LANGS, t, storeLang } from './i18n.js';
+import { perguntaVisivel, montarPaginas, proximaPagina, paginaTemConteudo } from './logic.js';
 import LogoMark from './LogoMark.jsx';
 
 function initialLang() {
@@ -263,6 +264,8 @@ export default function PublicSurvey({ token }) {
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [pageIdx, setPageIdx] = useState(0);
+  const [trilha, setTrilha]   = useState([]);   // páginas já percorridas, para o Voltar respeitar os saltos
   const [errMsg, setErrMsg] = useState('');
   const [lang, setLang] = useState(initialLang);
   const tr = (k, v) => t(lang, k, v);
@@ -301,9 +304,40 @@ export default function PublicSurvey({ token }) {
     return v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0);
   }).length;
 
+  const porId   = Object.fromEntries((questions || []).map(q => [q.id, q]));
+  const paginas = montarPaginas(questions || []);
+  const pagina  = paginas[Math.min(pageIdx, paginas.length - 1)] || [];
+  const visiveisDaPagina = pagina.filter(q => perguntaVisivel(q, answers, porId));
+  const ultimaPagina = (() => {
+    // É a última se não houver página seguinte com conteúdo visível.
+    for (let i = pageIdx + 1; i < paginas.length; i++) if (paginaTemConteudo(paginas[i], answers, porId)) return false;
+    return true;
+  })();
+
+  const avancar = () => {
+    const salto = proximaPagina(pagina, answers, porId);
+    let alvo = salto != null ? salto : pageIdx + 1;
+    // Pula páginas que ficaram sem nenhuma pergunta visível.
+    while (alvo < paginas.length && !paginaTemConteudo(paginas[alvo], answers, porId)) alvo++;
+    if (alvo >= paginas.length) return;
+    setTrilha(t2 => [...t2, pageIdx]);
+    setPageIdx(alvo);
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+  };
+  const voltar = () => {
+    setTrilha(t2 => {
+      const copia = [...t2];
+      const anterior = copia.pop();
+      setPageIdx(anterior != null ? anterior : Math.max(0, pageIdx - 1));
+      return copia;
+    });
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+  };
+
   const submit = async () => {
     setErrMsg('');
     const payload = questions
+      .filter(q => perguntaVisivel(q, answers, porId))
       .map(q => ({ questionId: q.id, value: answers[q.id] }))
       .filter(a => a.value !== undefined && a.value !== '' && !(Array.isArray(a.value) && a.value.length === 0) && !(a.value !== null && typeof a.value === 'object' && !Array.isArray(a.value) && Object.keys(a.value).length === 0));
     if (payload.length === 0) { setErrMsg(tr('at_least_one')); return; }
@@ -388,7 +422,19 @@ export default function PublicSurvey({ token }) {
         </div>
       </Card>
 
-      {questions.map((q, idx) => {
+      {paginas.length > 1 && (
+        <div style={{ marginBottom:14 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'#64748B', marginBottom:6 }}>
+            <span>{tr('page_of', { a: pageIdx + 1, b: paginas.length })}</span>
+            <span>{tr('answered_of', { a: answeredCount, b: questions.length })}</span>
+          </div>
+          <div style={{ height:6, background:'#E2E8F0', borderRadius:99, overflow:'hidden' }}>
+            <div style={{ height:'100%', width:`${Math.round(((pageIdx + 1) / paginas.length) * 100)}%`, background:RED, borderRadius:99, transition:'width .25s ease' }} />
+          </div>
+        </div>
+      )}
+
+      {visiveisDaPagina.map((q, idx) => {
         const hasOpts = Array.isArray(q.options) && q.options.length > 0;
         const optsLabels = (lang !== 'pt' && Array.isArray(q['options_'+lang]) && q['options_'+lang].length === (q.options || []).length) ? q['options_'+lang] : q.options;
         const specialized = q.type === 'nps' || q.type === 'enps' || q.type === 'scale' || q.type === 'rating' || q.type === 'yesno' || q.type === 'matrix' || q.type === 'dropdown' || q.type === 'ranking' || (q.type === 'multiple' && hasOpts);
@@ -417,11 +463,25 @@ export default function PublicSurvey({ token }) {
       {errMsg ? <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', color:'#B91C1C', borderRadius:10, padding:'12px 14px', fontSize:14, marginBottom:14 }}>⚠️ {errMsg}</div> : null}
 
       <Card style={{ position:'sticky', bottom:16, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
-        <span style={{ fontSize:13, color:'#64748B' }}>{tr('answered_of', { a: answeredCount, b: questions.length })}</span>
-        <button onClick={submit} disabled={submitting}
-          style={{ padding:'12px 24px', background: submitting ? '#FCA5A5' : RED, color:'white', border:'none', borderRadius:10, cursor: submitting ? 'default' : 'pointer', fontWeight:700, fontSize:14 }}>
-          {submitting ? tr('sending') : tr('submit_answers')}
-        </button>
+        {(pageIdx > 0 || trilha.length > 0) ? (
+          <button onClick={voltar} disabled={submitting}
+            style={{ padding:'12px 20px', background:'white', color:'#475569', border:'1px solid #E2E8F0', borderRadius:10, cursor:'pointer', fontWeight:600, fontSize:14 }}>
+            ← {tr('back')}
+          </button>
+        ) : (
+          <span style={{ fontSize:13, color:'#64748B' }}>{paginas.length > 1 ? '' : tr('answered_of', { a: answeredCount, b: questions.length })}</span>
+        )}
+        {ultimaPagina ? (
+          <button onClick={submit} disabled={submitting}
+            style={{ padding:'12px 24px', background: submitting ? '#FCA5A5' : RED, color:'white', border:'none', borderRadius:10, cursor: submitting ? 'default' : 'pointer', fontWeight:700, fontSize:14 }}>
+            {submitting ? tr('sending') : tr('submit_answers')}
+          </button>
+        ) : (
+          <button onClick={avancar}
+            style={{ padding:'12px 24px', background:RED, color:'white', border:'none', borderRadius:10, cursor:'pointer', fontWeight:700, fontSize:14 }}>
+            {tr('continue')} →
+          </button>
+        )}
       </Card>
 
       <p style={{ textAlign:'center', fontSize:11, color:'#94A3B8', marginTop:16 }}>

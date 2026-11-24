@@ -193,6 +193,14 @@ function initSchema() {
   try { db.exec("ALTER TABLE questions ADD COLUMN rows_json TEXT"); } catch (e) {}
   // Alternativa neutra marcada pela tela, sem depender do texto do rótulo.
   try { db.exec("ALTER TABLE questions ADD COLUMN neutral_idx TEXT"); } catch (e) {}
+
+  // Páginas e lógica condicional do formulário.
+  // page_break = 1 abre uma página nova antes desta pergunta (as páginas são calculadas a partir daí,
+  // o que sobrevive a reordenar perguntas). logic = condição para a pergunta aparecer.
+  // jump = regras de salto avaliadas ao avançar a página.
+  try { db.exec("ALTER TABLE questions ADD COLUMN page_break INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE questions ADD COLUMN logic TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE questions ADD COLUMN jump TEXT"); } catch (e) {}
   // Quem nunca acessou ainda está com a senha provisória -> força a troca no 1º acesso.
   try { db.exec("UPDATE users SET must_change_password = 1 WHERE last_login IS NULL AND must_change_password = 0"); } catch (e) {}
   try { db.exec("ALTER TABLE responses ADD COLUMN weight REAL DEFAULT 1"); } catch (e) {}

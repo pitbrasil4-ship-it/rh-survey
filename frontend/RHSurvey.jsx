@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import api from "./src/api.js";
 import { LANGS, t as translate, getStoredLang, storeLang, LangContext, useLang } from "./src/i18n.js";
 import LogoMark from "./src/LogoMark.jsx";
-import { Activity, AlertTriangle, ArrowUpRight, Award, BarChart2, BarChart3, Bell, Building2, CalendarClock, CheckCircle, ChevronDown, ChevronRight, ClipboardList, Clock, Copy, Database, Download, Edit, Eye, EyeOff, FileCheck, FileText, Info, Key, Layers, LayoutDashboard, Link2, Loader2, Lock, LogOut, Mail, Menu, MessageCircle, MessageSquare, Pencil, Plus, RefreshCw, Search, Send, Settings, Shield, Sparkles, Star, Target, Trash2, TrendingUp, UserCheck, Users, X, Zap } from "lucide-react";
+import { Activity, AlertTriangle, ArrowUpRight, Award, BarChart2, BarChart3, Bell, Building2, CalendarClock, CheckCircle, ChevronDown, ChevronRight, ClipboardList, Clock, Copy, Database, Download, Edit, Eye, EyeOff, FileCheck, FileText, GitBranch, Info, Key, Layers, LayoutDashboard, Link2, Loader2, Lock, LogOut, Mail, Menu, MessageCircle, MessageSquare, Pencil, Plus, RefreshCw, Search, Send, Settings, Shield, Sparkles, Star, Target, Trash2, TrendingUp, UserCheck, Users, X, Zap } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, Radar
@@ -1042,6 +1042,127 @@ function SurveyList({ onCreateNew, onView, onEdit }) {
 }
 
 // ─── SURVEY BUILDER ────────────────────────────────────────────────────────────
+/* Painel de lógica de uma pergunta: quebra de página, condição para aparecer e salto. */
+function LogicPanel({ q, anteriores, totalPaginas, onChange }) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  const L = q.logic || { mode: "all", conditions: [] };
+  const conds = Array.isArray(L.conditions) ? L.conditions : [];
+  const jumps = Array.isArray(q.jump) ? q.jump : [];
+  const temLogica = conds.length > 0 || jumps.length > 0 || q.pageBreak;
+
+  const setLogic = (novo) => onChange({ ...q, logic: (novo.conditions || []).length ? novo : undefined });
+  const addCond = () => setLogic({ mode: L.mode || "all", conditions: [...conds, { questionId: anteriores[0]?.id || "", op: "eq", value: "" }] });
+  const setCond = (i, campo, val) => setLogic({ mode: L.mode || "all", conditions: conds.map((c, j) => j === i ? { ...c, [campo]: val } : c) });
+  const delCond = (i) => setLogic({ mode: L.mode || "all", conditions: conds.filter((_, j) => j !== i) });
+
+  const setJump = (i, campo, val) => onChange({ ...q, jump: jumps.map((r, j) => j === i ? { ...r, [campo]: val } : r) });
+  const addJump = () => onChange({ ...q, jump: [...jumps, { op: "eq", value: "", toPage: Math.min(totalPaginas, 2) }] });
+  const delJump = (i) => { const novo = jumps.filter((_, j) => j !== i); onChange({ ...q, jump: novo.length ? novo : undefined }); };
+
+  const opcoesDe = (qid) => { const alvo = anteriores.find(a => a.id === qid); return Array.isArray(alvo?.options) ? alvo.options : null; };
+
+  return (
+    <div className="mt-2">
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+          <input type="checkbox" checked={!!q.pageBreak} onChange={e => onChange({ ...q, pageBreak: e.target.checked || undefined })} className="accent-purple-600" />
+          {t('sb_page_break')}
+        </label>
+        <button onClick={() => setOpen(v => !v)}
+          className={`text-xs font-medium flex items-center gap-1 ${temLogica ? "text-purple-700" : "text-slate-400 hover:text-slate-600"}`}>
+          <GitBranch size={12} />{t('sb_logic')}{conds.length ? ` (${conds.length})` : ""}{jumps.length ? ` · ${t('sb_jump_n',{n:jumps.length})}` : ""}
+          <ChevronDown size={12} className={open ? "rotate-180 transition-transform" : "transition-transform"} />
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-2 bg-white border border-slate-200 rounded-xl p-3 space-y-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+              <span className="text-xs font-semibold text-slate-600">{t('sb_show_if')}</span>
+              {conds.length > 1 && (
+                <select value={L.mode || "all"} onChange={e => setLogic({ ...L, mode: e.target.value, conditions: conds })}
+                  className="text-xs border border-slate-200 rounded-md px-1.5 py-0.5 bg-white">
+                  <option value="all">{t('sb_logic_all')}</option>
+                  <option value="any">{t('sb_logic_any')}</option>
+                </select>
+              )}
+            </div>
+            {anteriores.length === 0 ? (
+              <p className="text-xs text-slate-400">{t('sb_logic_needs_prev')}</p>
+            ) : (
+              <>
+                {conds.map((c, i) => {
+                  const opts = opcoesDe(c.questionId);
+                  return (
+                    <div key={i} className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                      <select value={c.questionId} onChange={e => setCond(i, "questionId", e.target.value)}
+                        className="text-xs border border-slate-200 rounded-md px-1.5 py-1 bg-white flex-1 min-w-[140px] max-w-[260px]">
+                        {anteriores.map(a => <option key={a.id} value={a.id}>{(a.text || "").slice(0, 46)}</option>)}
+                      </select>
+                      <select value={c.op} onChange={e => setCond(i, "op", e.target.value)}
+                        className="text-xs border border-slate-200 rounded-md px-1.5 py-1 bg-white">
+                        <option value="eq">{t('sb_op_eq')}</option>
+                        <option value="neq">{t('sb_op_neq')}</option>
+                        <option value="contains">{t('sb_op_contains')}</option>
+                        <option value="gt">{t('sb_op_gt')}</option>
+                        <option value="lt">{t('sb_op_lt')}</option>
+                        <option value="answered">{t('sb_op_answered')}</option>
+                        <option value="empty">{t('sb_op_empty')}</option>
+                      </select>
+                      {(c.op !== "answered" && c.op !== "empty") && (
+                        opts ? (
+                          <select value={c.value} onChange={e => setCond(i, "value", e.target.value)}
+                            className="text-xs border border-slate-200 rounded-md px-1.5 py-1 bg-white flex-1 min-w-[110px]">
+                            <option value="">—</option>
+                            {opts.map((o, oi) => <option key={oi} value={o}>{o}</option>)}
+                          </select>
+                        ) : (
+                          <input value={c.value} onChange={e => setCond(i, "value", e.target.value)} placeholder={t('sb_logic_value')}
+                            className="text-xs border border-slate-200 rounded-md px-1.5 py-1 flex-1 min-w-[110px]" />
+                        )
+                      )}
+                      <button onClick={() => delCond(i)} className="text-slate-300 hover:text-red-500 p-1"><X size={12} /></button>
+                    </div>
+                  );
+                })}
+                <button onClick={addCond} className="text-xs text-purple-600 font-medium hover:opacity-80">+ {t('sb_add_condition')}</button>
+              </>
+            )}
+          </div>
+
+          <div className="border-t border-slate-100 pt-2.5">
+            <div className="text-xs font-semibold text-slate-600 mb-1.5">{t('sb_jump_title')}</div>
+            {jumps.map((r, i) => {
+              const opts = Array.isArray(q.options) ? q.options : null;
+              return (
+                <div key={i} className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                  <span className="text-xs text-slate-400">{t('sb_jump_if')}</span>
+                  {opts ? (
+                    <select value={r.value} onChange={e => setJump(i, "value", e.target.value)} className="text-xs border border-slate-200 rounded-md px-1.5 py-1 bg-white flex-1 min-w-[110px]">
+                      <option value="">—</option>
+                      {opts.map((o, oi) => <option key={oi} value={o}>{o}</option>)}
+                    </select>
+                  ) : (
+                    <input value={r.value} onChange={e => setJump(i, "value", e.target.value)} placeholder={t('sb_logic_value')}
+                      className="text-xs border border-slate-200 rounded-md px-1.5 py-1 flex-1 min-w-[110px]" />
+                  )}
+                  <span className="text-xs text-slate-400">{t('sb_jump_to')}</span>
+                  <input type="number" min="1" max={Math.max(1, totalPaginas)} value={r.toPage} onChange={e => setJump(i, "toPage", Number(e.target.value))}
+                    className="text-xs border border-slate-200 rounded-md px-1.5 py-1 w-16" />
+                  <button onClick={() => delJump(i)} className="text-slate-300 hover:text-red-500 p-1"><X size={12} /></button>
+                </div>
+              );
+            })}
+            <button onClick={addJump} className="text-xs text-purple-600 font-medium hover:opacity-80">+ {t('sb_add_jump')}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SurveyBuilder({ onBack, initial, editSurvey }) {
   const { t } = useLang();
   const [tab,       setTab]       = useState("builder");
@@ -1092,6 +1213,9 @@ function SurveyBuilder({ onBack, initial, editSurvey }) {
           ...(q.text_self ? { text_self: q.text_self } : {}),
           ...(PJ(q.rows_json) ? { rows: PJ(q.rows_json) } : {}),
           ...(PJ(q.neutral_idx) ? { neutralIdx: PJ(q.neutral_idx) } : {}),
+          ...(q.page_break ? { pageBreak: true } : {}),
+          ...(q.logic ? { logic: (() => { try { return JSON.parse(q.logic); } catch { return null; } })() } : {}),
+          ...(PJ(q.jump) ? { jump: PJ(q.jump) } : {}),
         })));
       } catch (e) { setError((e && e.message) || ""); }
       if (alive) setLoadingEdit(false);
@@ -1109,6 +1233,9 @@ function SurveyBuilder({ onBack, initial, editSurvey }) {
     ...(q.dimensoes ? { dimensoes: q.dimensoes } : {}),
     ...(Array.isArray(q.rows) && q.rows.length ? { rows: q.rows } : {}),
     ...(Array.isArray(q.neutralIdx) && q.neutralIdx.length ? { neutralIdx: q.neutralIdx } : {}),
+    ...(q.pageBreak ? { pageBreak: true } : {}),
+    ...(q.logic ? { logic: q.logic } : {}),
+    ...(Array.isArray(q.jump) && q.jump.length ? { jump: q.jump } : {}),
   }));
 
   const saveEdit = async (confirm) => {
@@ -1134,7 +1261,7 @@ function SurveyBuilder({ onBack, initial, editSurvey }) {
         targetGroup: GROUP_MAP[targetGroup] || "todos",
         anonymous,
         deadline: deadline ? deadline + "T23:59:59-03:00" : null,
-        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es, ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}), ...(q.singleChoice ? { singleChoice: true } : {}), ...(q.text_self ? { text_self: q.text_self } : {}), ...(q.dimensoes ? { dimensoes: q.dimensoes } : {}), ...(Array.isArray(q.rows) && q.rows.length ? { rows: q.rows } : {}), ...(Array.isArray(q.neutralIdx) && q.neutralIdx.length ? { neutralIdx: q.neutralIdx } : {}) })),
+        questions: questions.map(q => ({ type: q.type, text: q.text, text_en: q.text_en || "", text_es: q.text_es || "", options: q.options, options_en: q.options_en, options_es: q.options_es, ...(Array.isArray(q.option_points) && q.option_points.length ? { option_points: q.option_points } : {}), ...(q.singleChoice ? { singleChoice: true } : {}), ...(q.text_self ? { text_self: q.text_self } : {}), ...(q.dimensoes ? { dimensoes: q.dimensoes } : {}), ...(Array.isArray(q.rows) && q.rows.length ? { rows: q.rows } : {}), ...(Array.isArray(q.neutralIdx) && q.neutralIdx.length ? { neutralIdx: q.neutralIdx } : {}), ...(q.pageBreak ? { pageBreak: true } : {}), ...(q.logic ? { logic: q.logic } : {}), ...(Array.isArray(q.jump) && q.jump.length ? { jump: q.jump } : {}) })),
         lgpdBasis: "consentimento",
       });
       const id = result && result.survey && result.survey.id;
@@ -1541,6 +1668,8 @@ function SurveyBuilder({ onBack, initial, editSurvey }) {
                   <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[q.type]||"bg-slate-100 text-slate-600"}`}>
                     {t('type_'+q.type)}
                   </span>
+                  <LogicPanel q={q} anteriores={questions.slice(0, i)} totalPaginas={Math.max(1, questions.filter((x,xi) => xi>0 && x.pageBreak).length + 1)}
+                    onChange={nq => setQuestions(p => p.map(x => x.id === q.id ? nq : x))} />
                   {Array.isArray(q.options) && q.options.length > 0 && (q.type === 'scale' || q.type === 'multiple') && (
                     <div className="mt-2">
                       <div className="flex flex-wrap items-center gap-4">

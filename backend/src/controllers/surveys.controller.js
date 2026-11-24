@@ -55,13 +55,14 @@ async function create(req, res) {
 
     const qIds = [];
     if (questions.length > 0) {
-      const stmt = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points, single_choice, text_self, rows_json, neutral_idx) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+      const stmt = db.prepare('INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points, single_choice, text_self, rows_json, neutral_idx, page_break, logic, jump) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
       const J = a => (Array.isArray(a) && a.length) ? JSON.stringify(a) : null;
       questions.forEach((q, i) => {
         const qid = uuid(); qIds.push(qid);
         stmt.run(qid, surveyId, i+1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es),
           (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null,
-          q.singleChoice ? 1 : 0, q.text_self || null, J(q.rows), J(q.neutralIdx));
+          q.singleChoice ? 1 : 0, q.text_self || null, J(q.rows), J(q.neutralIdx),
+          q.pageBreak ? 1 : 0, q.logic ? JSON.stringify(q.logic) : null, J(q.jump));
         // Dimensões vindas da planilha ou do construtor: { clima: [...], hse: [...] }
         if (q.dimensoes) { try { linkQuestionDimensoes(db, req.user.tenant_id, qid, q.dimensoes); } catch (e) { logger.warn('Vínculo de dimensão falhou: ' + e.message); } }
       });
@@ -92,7 +93,8 @@ function updateQuestions(req, res) {
     const comoLista = v => { if (Array.isArray(v)) return v; if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : null; } catch { return null; } } return null; };
     const novas = brutas.map(q => ({ ...q,
       options: comoLista(q.options), options_en: comoLista(q.options_en), options_es: comoLista(q.options_es),
-      option_points: comoLista(q.option_points), rows: comoLista(q.rows), neutralIdx: comoLista(q.neutralIdx) }));
+      option_points: comoLista(q.option_points), rows: comoLista(q.rows), neutralIdx: comoLista(q.neutralIdx), jump: comoLista(q.jump),
+      logic: (q.logic && typeof q.logic === 'string') ? (() => { try { return JSON.parse(q.logic); } catch { return null; } })() : q.logic }));
 
     const atuais = db.prepare('SELECT * FROM questions WHERE survey_id=? ORDER BY order_num').all(survey.id);
     const { quebras, seguras } = diffQuestions(atuais, novas);
@@ -118,18 +120,19 @@ function updateQuestions(req, res) {
       } });
 
       const upd = db.prepare(`UPDATE questions SET order_num=?, type=?, text=?, text_en=?, text_es=?, options=?, options_en=?, options_es=?,
-        option_points=?, single_choice=?, text_self=?, rows_json=?, neutral_idx=? WHERE id=?`);
-      const ins = db.prepare(`INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points, single_choice, text_self, rows_json, neutral_idx)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+        option_points=?, single_choice=?, text_self=?, rows_json=?, neutral_idx=?, page_break=?, logic=?, jump=? WHERE id=?`);
+      const ins = db.prepare(`INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points, single_choice, text_self, rows_json, neutral_idx, page_break, logic, jump)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 
       novas.forEach((q, i) => {
         const pts = (Array.isArray(q.option_points) && q.option_points.length) ? JSON.stringify(q.option_points.map(n => Number(n) || 0)) : null;
         let qid = q.id;
         if (qid && atuais.some(a => a.id === qid)) {
-          upd.run(i + 1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es), pts, q.singleChoice ? 1 : 0, q.text_self || null, J(q.rows), J(q.neutralIdx), qid);
+          upd.run(i + 1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es), pts, q.singleChoice ? 1 : 0, q.text_self || null, J(q.rows), J(q.neutralIdx), q.pageBreak ? 1 : 0, q.logic ? JSON.stringify(q.logic) : null, J(q.jump), qid);
         } else {
           qid = uuid();
-          ins.run(qid, survey.id, i + 1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es), pts, q.singleChoice ? 1 : 0, q.text_self || null, J(q.rows), J(q.neutralIdx));
+          ins.run(qid, survey.id, i + 1, q.type, q.text, q.text_en || null, q.text_es || null, J(q.options), J(q.options_en), J(q.options_es), pts, q.singleChoice ? 1 : 0, q.text_self || null, J(q.rows), J(q.neutralIdx),
+          q.pageBreak ? 1 : 0, q.logic ? JSON.stringify(q.logic) : null, J(q.jump));
         }
         if (q.dimensoes) {
           db.prepare('DELETE FROM question_dimensoes WHERE question_id=?').run(qid);
@@ -162,13 +165,13 @@ function duplicate(req, res) {
       db.prepare(`INSERT INTO surveys (id, tenant_id, created_by_id, name, description, category, target_group, anonymous, lgpd_basis, public_token, status, version)
                   VALUES (?,?,?,?,?,?,?,?,?,?, 'rascunho', 1)`)
         .run(novoId, origem.tenant_id, req.user.id, nome, origem.description, origem.category, origem.target_group, origem.anonymous, origem.lgpd_basis, uuid());
-      const ins = db.prepare(`INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points, single_choice, text_self, rows_json, neutral_idx)
-                              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      const ins = db.prepare(`INSERT INTO questions (id, survey_id, order_num, type, text, text_en, text_es, options, options_en, options_es, option_points, single_choice, text_self, rows_json, neutral_idx, page_break, logic, jump)
+                              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
       const dims = db.prepare('SELECT dimensao_id FROM question_dimensoes WHERE question_id=?');
       const insDim = db.prepare('INSERT OR IGNORE INTO question_dimensoes (question_id, dimensao_id) VALUES (?,?)');
       questions.forEach((q, i) => {
         const qid = uuid();
-        ins.run(qid, novoId, i + 1, q.type, q.text, q.text_en, q.text_es, q.options, q.options_en, q.options_es, q.option_points, q.single_choice || 0, q.text_self, q.rows_json, q.neutral_idx);
+        ins.run(qid, novoId, i + 1, q.type, q.text, q.text_en, q.text_es, q.options, q.options_en, q.options_es, q.option_points, q.single_choice || 0, q.text_self, q.rows_json, q.neutral_idx, q.page_break || 0, q.logic, q.jump);
         dims.all(q.id).forEach(d => insDim.run(qid, d.dimensao_id));
       });
       logChange(db, { surveyId: novoId, version: 1, user: req.user, action: 'duplicada', detail: { de: origem.id, nome: origem.name } });
